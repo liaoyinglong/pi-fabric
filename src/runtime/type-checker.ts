@@ -1,5 +1,9 @@
 import path from "node:path";
 import ts from "typescript";
+import {
+  BETTER_ALL_GUEST_LINE_COUNT,
+  withBetterAllGuestPrelude,
+} from "./better-all-guest.js";
 
 export interface FabricTypeError {
   line: number;
@@ -106,7 +110,8 @@ class FabricTypeChecker {
   }
 
   check(code: string): FabricTypeCheckResult {
-    this.#sourceText = `async function __piFabricMain() {\n${code}\n}\n`;
+    const executableCode = withBetterAllGuestPrelude(code);
+    this.#sourceText = `async function __piFabricMain() {\n${executableCode}\n}\n`;
     this.#sourceFile = ts.createSourceFile(
       this.#guestFile,
       this.#sourceText,
@@ -132,8 +137,16 @@ class FabricTypeChecker {
         return { line: 0, column: 0, message };
       }
       const position = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
+      const executableLine = Math.max(1, position.line);
+      if (executableLine <= BETTER_ALL_GUEST_LINE_COUNT) {
+        return {
+          line: 1,
+          column: position.character + 1,
+          message: `Fabric all() guest prelude: ${message}`,
+        };
+      }
       return {
-        line: Math.max(1, position.line),
+        line: executableLine - BETTER_ALL_GUEST_LINE_COUNT,
         column: position.character + 1,
         message,
       };
@@ -169,12 +182,15 @@ const checkerFor = (declarations: string): FabricTypeChecker => {
 };
 
 export const transpileFabricCode = (code: string): string =>
-  ts.transpileModule(`async function __piFabricMain() {\n${code}\n}\n`, {
-    compilerOptions: {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.ESNext,
+  ts.transpileModule(
+    `async function __piFabricMain() {\n${withBetterAllGuestPrelude(code)}\n}\n`,
+    {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ESNext,
+      },
     },
-  }).outputText;
+  ).outputText;
 
 export const typeCheckFabricCode = (
   code: string,

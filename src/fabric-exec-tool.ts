@@ -71,6 +71,13 @@ import { countNewlines } from "./util.js";
 
 const RESULT_FORMATS = ["auto", "yaml", "json", "text"] as const;
 const MAX_FABRIC_CODE_TRANSFER_LINES = 12;
+const LEGACY_FANOUT_GUIDANCE =
+  "Batch independent operations in one `fabric_exec` program (`Promise.all` for parallel, sequential `await` for ordered), not one call per tool; keep dependent/conditional steps sequential.";
+const DEPENDENCY_AWARE_GUIDANCE =
+  "Batch related operations in one `fabric_exec` program. Prefer `all({...})` for dependency graphs: independent tasks start immediately and dependent tasks await `this.$.<task>`. Use `parallel(...)` for bounded homogeneous fan-out and sequential `await` for true ordering.";
+
+export const rewriteFabricExecGuideline = (guideline: string): string =>
+  guideline.replace(LEGACY_FANOUT_GUIDANCE, DEPENDENCY_AWARE_GUIDANCE);
 
 type FabricRendererState = {
   fabricWriteBindingsCode?: string;
@@ -100,7 +107,7 @@ export const createFabricExecTool = (
     promptSnippet:
       "Pi core tools, MCP, Fabric providers, discovery, and extensions",
     promptGuidelines: [
-      "Batch independent operations in one `fabric_exec` program (`Promise.all` for parallel, sequential `await` for ordered), not one call per tool; keep dependent/conditional steps sequential. Coalesce non-dependent replacements from one file snapshot into one `pi.edit({path, edits:[...]})`; use `all:true` only for intentional repeated exact anchors. Return only the compact final value; intermediate results stay in the sandbox.",
+      "Batch related operations in one `fabric_exec` program. Prefer `all({...})` for dependency graphs: independent tasks start immediately; dependent tasks await `this.$.<task>`. Use `parallel(...)` for bounded homogeneous fan-out and sequential `await` for ordering. Coalesce non-dependent replacements into one `pi.edit({path, edits:[...]})`; use `all:true` only for intentional repeated exact anchors. Return only the compact final value.",
       "Search before reading: use `pi.grep`/`pi.find` to locate relevant lines, then `pi.read({path, offset, limit})` that range. Escape regex metacharacters, or use `literal:true` for exact punctuated text. Keep fan-out search limits small and widen only on misses. An unbounded `pi.read` returns at most 2000 lines or 50KB and, when truncated, ends with a `Use offset=…` continuation notice; reserve whole-file reads for small files you will use in full.",
       "For coding tasks, keep an acceptance ledger: turn the request into concrete checks, trace the relevant execution path before editing, implement end to end, then run targeted tests and direct behavioral probes. Mechanically confirm requested public symbols, registrations, and configuration entries. Use the smallest checks that cover the ledger, escalating only for failures or cross-cutting risk; inspect failures and iterate instead of rerunning unchanged passing checks. A build alone is not completion.",
       "Amortize round trips without inflating context: batch only independent, bounded work. Keep search→read and edit→verify sequential when an output determines the next action. Use `settle:true` for tests or probes whose nonzero result is evidence rather than an exceptional stop; for a known long suite, set `pi.bash` `timeout` in seconds once instead of retrying a timed-out call. Filter or summarize noisy command output inside the program and return decisions, failures, and evidence—not raw logs or unused intermediate results.",
