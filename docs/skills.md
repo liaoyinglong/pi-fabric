@@ -35,6 +35,8 @@ A mandatory pointer is disclosure for legibility and single-source maintenance, 
 
 ## User-invoked workflows
 
+中文使用说明见：[Fabric Skills 中文指南](fabric-skills.zh-CN.md)。
+
 - `/skill:fabric-guide` — choose a workflow.
 - `/skill:fabric-workflow` — finite fan-out/pipeline work with verification.
 - `/skill:fabric-council` — same-model role diversity.
