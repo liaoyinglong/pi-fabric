@@ -11,6 +11,25 @@ description: >-
 
 One type-checked TS program in a fresh executor (isolated QuickJS by default). Only the `return` value reaches the model; `print()`/`console.log` go to the activity panel. `π` is not a tool.
 
+## Dependency-aware composition
+
+Use `all({...})` when one `fabric_exec` program contains heterogeneous work with dependencies. Every task starts as soon as it can; a task waits for another task by awaiting `this.$.<name>`. Independent tasks therefore overlap without manually arranging `Promise.all` stages:
+
+```ts
+const result = await all({
+  manifest: () => pi.read("package.json"),
+  sources: () => pi.find("*.ts", "src"),
+  async summary() {
+    const manifest = await this.$.manifest;
+    const sources = await this.$.sources;
+    return { name: JSON.parse(manifest).name, sources };
+  },
+});
+return result.summary;
+```
+
+Use `parallel(items, mapper, { concurrency })` instead for homogeneous fan-out when a concurrency bound matters, especially child-agent/RLM work. Keep sequential `await` for genuine ordering or side effects. Phase 1 of `all` provides the task-map / `this.$` dependency model only; it does not expose `allSettled`, `flow`, debug waterfall output, or a per-task abort signal.
+
 ## `pi` core tools (full code mode only)
 `pi.<tool>(arg)` — single arg: bare string (primary field) or options object, or a two-arg `(primary, options)` merge for the string-primary tools (`read`/`bash`/`ls`/`grep`/`find`): `pi.read('index.ts', { limit: 120 })` becomes `{ path: 'index.ts', limit: 120 }`, the positional string winning the primary field on conflict; a non-object second arg on those is still a type error. Positional tuple calls are accepted for `grep`/`find` (`pattern, path, limit`), `write` (`path, content`), and `edit` (`path, oldText, newText`).
 

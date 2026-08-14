@@ -38,20 +38,25 @@ You keep talking to Pi the way you always do. Fabric gives the model **one progr
 2. **Pi writes one program** that calls the tools, agents, and MCP servers it needs. The program is type-checked before it runs.
 3. **Only the result returns** to your conversation. Intermediate work stays in the sandbox and surfaces in the activity panel and dashboard.
 
-Under the hood, the model writes something like this — you don't:
+Under the hood, the model can express independent work and its dependencies directly — you don't:
 
 ```ts
-const [manifest, sources] = await Promise.all([
-  pi.read({ path: "package.json" }),
-  pi.find({ pattern: "**/*.ts", path: "src" }),
-]);
-return {
-  package: JSON.parse(manifest).name,
-  sourceCount: sources.split("\n").filter(Boolean).length,
-};
+const { manifest, sources, summary } = await all({
+  manifest: () => pi.read({ path: "package.json" }),
+  sources: () => pi.find({ pattern: "**/*.ts", path: "src" }),
+  async summary() {
+    const manifest = await this.$.manifest;
+    const sources = await this.$.sources;
+    return {
+      package: JSON.parse(manifest).name,
+      sourceCount: sources.split("\n").filter(Boolean).length,
+    };
+  },
+});
+return summary;
 ```
 
-Independent calls run in parallel; only the returned object enters the model context. Known providers use concise direct calls such as `mcp.fal_ai.get_model_schema(...)`, `memory.recall(...)`, `state.get()`, `schema.status()`, and `compact.status()`; `tools.call({ ref, args })` remains the fallback for refs discovered or computed at runtime.
+`all({...})` starts independent tasks immediately and lets dependent tasks await `this.$.<task>` without manually staging `Promise.all` blocks. Use `parallel(...)` instead for homogeneous fan-out when an explicit concurrency bound matters, especially agent/RLM work. Known providers use concise direct calls such as `mcp.fal_ai.get_model_schema(...)`, `memory.recall(...)`, `state.get()`, `schema.status()`, and `compact.status()`; `tools.call({ ref, args })` remains the fallback for refs discovered or computed at runtime.
 
 ## Install
 
