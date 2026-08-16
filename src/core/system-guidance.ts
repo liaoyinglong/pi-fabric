@@ -1,22 +1,22 @@
 export const fabricExecutionKernelGuidance = (fullCodeMode: boolean): string =>
   fullCodeMode
-    ? "Pi Fabric full code mode: `fabric_exec` is the only way to call Pi core tools — use them as `pi.*` inside `code`."
-    : "Pi Fabric is in orchestration-only mode. Pi core and registered extension tools stay on their native direct execution path; inside fabric_exec, `pi.*` and `extensions.*` are unavailable.";
+    ? "Pi Code Mode: use `fabric_exec` as the model-facing execution gateway. Call Pi core tools as `pi.*` inside `code`; compose related operations in one program and return only the bounded result needed by the caller."
+    : "Pi Fabric is in orchestration-only mode. Pi core and registered extension tools remain on their native direct execution path.";
 
 const dependencyAwareCompositionGuidance =
-  " For heterogeneous dependency graphs inside one `fabric_exec`, prefer `all({...})`: independent tasks start immediately and dependent tasks await `this.$.<task>`. Use `parallel(...)` for bounded homogeneous fan-out and sequential `await` for true ordering or side effects.";
+  " For dependent work inside one `fabric_exec`, use ordinary `await`; use `parallel(...)` or `all({...})` only for independent work. Keep side effects explicitly ordered.";
 
 export const defaultFabricExecutionGuidance = (fullCodeMode: boolean): string =>
   (fullCodeMode
-    ? "Examples and returns: `pi.read('/x')`, `pi.grep('TODO','src')` / `pi.grep({pattern:'TODO', path:'src', ignoreCase:true, context:2})`, `pi.find({pattern:'*.ts', path:'src', limit:20})`, and `pi.ls('src')` return strings; `pi.bash({cmd:'ls'})`, `pi.edit({path:'/x', old:'a', new:'b'})`, and `pi.write({path:'/y', text:'z'})` return `{ok, output, details}` (read `.output`); failed core calls reject, including `bash` on an ordinary nonzero exit; pass `settle: true` to `pi.bash` to get `{ ok: false, exitCode, output, error }` instead. Timeout, cancellation, approval, and security failures still reject.\n`tools` is discovery + generic calls only (`providers`/`catalog`/`list`/`search`/`describe`/`call`/`models`). Call known MCP tools as `mcp.<sanitized_server>.<sanitized_tool>(args)`, captured tools as `extensions.<tool>(args)`, and stable providers as `memory.*`, `state.*`, `schema.*`, or `compact.*`. Use `tools.call({ref,args})` for computed refs. `pi` is the core tools; `π.<key>` reads named `strings` (not a tool)."
-    : "Call known actions through `mcp.<sanitized_server>.<sanitized_tool>(args)`, `memory.*`, `state.*`, `schema.*`, `components.*`, `compact.*`, `agents.*`, or `mesh.*`; use `tools.catalog`/`search`/`describe`/`list` for discovery and `tools.call({ref,args})` for computed refs. Other surfaces are opt-in via user-loaded skills.") + dependencyAwareCompositionGuidance;
+    ? "Inside `fabric_exec`, use `pi.*` for Pi core tools, `extensions.*` for captured extension tools, and `mcp.<server>.<tool>(args)` for known MCP tools. Use `tools.search`/`tools.describe` for discovery and `tools.call({ref,args})` only for computed or dynamic refs. Named one-shot workers are available through `agents.*`; workflow helpers such as `agent(...)`, `parallel(...)`, and `pipeline(...)` orchestrate those workers inside the same Code Mode program. Detailed contracts stay progressive in the `fabric-exec`, `fabric-subagents`, and `fabric-workflow` skills rather than in the system prompt."
+    : "Use `fabric_exec` only for orchestration surfaces that are explicitly needed by the task; native Pi tools remain direct.") + dependencyAwareCompositionGuidance;
 
 export const fabricSchemaGuidance = (mode: "off" | "audit" | "enforce"): string | undefined => {
   if (mode === "enforce") {
-    return "Schema enforce mode is fixed for this session. Reads remain available, but protected-workspace changes must use schema.hypothesize → schema.verify → schema.commit in the same fabric_exec invocation. Direct pi.edit/write/bash, agents, state/mesh writes, compaction requests, MCP, extensions, and external providers are blocked by the host gate.";
+    return "Schema enforce mode is a legacy compatibility mode for this branch. Protected-workspace changes must follow the configured schema gate.";
   }
   if (mode === "audit") {
-    return "Schema audit mode reports actions that enforce mode would block, but preserves their current behavior.";
+    return "Schema audit mode is a legacy compatibility mode and reports actions that enforce mode would block.";
   }
   return undefined;
 };
