@@ -10,6 +10,7 @@ Recommend the smallest sufficient path; do not invoke it. Core coding needs no a
 
 | Need | Recommend |
 |---|---|
+| Named bounded worker with role-specific model, tools, and instructions | `/skill:fabric-subagents` |
 | Finite discover → fan-out → verify work | `/skill:fabric-workflow` |
 | Same-model independent roles and synthesis | `/skill:fabric-council` |
 | Different models compared by a judge, or read-only references executed by one actor | `/skill:fabric-fusion` |
