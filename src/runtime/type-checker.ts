@@ -1,5 +1,6 @@
 import path from "node:path";
 import ts from "typescript";
+import { withBetterAllGuestEpilogue } from "./better-all-guest.js";
 
 export interface FabricTypeError {
   line: number;
@@ -44,9 +45,13 @@ let nextCheckerId = 0;
 export const normalizeTypeScriptPath = (fileName: string): string =>
   fileName.replaceAll("\\", "/");
 
-/** Guest programs execute inside this wrapper; user code starts on wrapped line 2. */
+/**
+ * Guest programs execute inside this wrapper; user code starts on wrapped line 2.
+ * Generated dependency helpers are appended after author code so source-map and
+ * diagnostic coordinates for user statements remain stable.
+ */
 export const wrapFabricGuestCode = (code: string): string =>
-  `async function __piFabricMain() {\n${code}\n}\n`;
+  `async function __piFabricMain() {\n${withBetterAllGuestEpilogue(code)}\n}\n`;
 
 class FabricTypeChecker {
   readonly #guestFile: string;
