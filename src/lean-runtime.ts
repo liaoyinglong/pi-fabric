@@ -34,18 +34,11 @@ const leanConfig = (context: ExtensionContext): FabricConfig => {
     agentDir: getAgentDir(),
     projectTrusted: context.isProjectTrusted(),
   });
-  // V2 deliberately ignores the historical persistent-runtime switches even
-  // when an old config file still contains them. Keeping the fields readable
-  // makes migration painless while the runtime itself has only the lean graph.
   config.fullCodeMode = true;
-  config.mesh.enabled = false;
-  config.memory.enabled = false;
   config.schema.mode = "off";
-  config.components = [];
   config.capture.enabled = true;
   config.capture.hideFromModel = true;
   config.capture.advisory.mode = "disabled";
-  config.compaction.engine = "pi";
   return config;
 };
 

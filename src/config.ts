@@ -42,7 +42,6 @@ export interface FabricMcpConfig {
     revalidate: FabricMcpRevalidatePolicy;
     revalidateBudgetMs: number;
   };
-  /** Kept for config compatibility; the lean runtime does not emit capability advisories. */
   advisory: boolean;
 }
 
@@ -81,24 +80,22 @@ export interface FabricToolCaptureConfig {
   keepVisible: string[];
   defaultRisk: FabricRisk;
   risks: Record<string, FabricRisk>;
-  /** Shape retained for capture-policy compatibility; always disabled by the lean runtime. */
   advisory: FabricCapabilityAdvisoryConfig;
 }
 
 export interface FabricRetentionConfig {
   orphanedTempRunMs: number;
   oneShotRunMs: number;
-  /** Retained only because AgentManager understands old run archives; no actors are created in V2. */
   actorRunArchiveMs: number;
 }
 
 /**
- * V2 runtime configuration. The two undersized compatibility fields (`ui` and
- * `schema`) exist only until ExecutionService stops reading those historical
- * locations; there is no UI dashboard or schema runtime in this branch.
+ * Lean V2 config. `fullCodeMode` and `schema.mode` remain broad at the type
+ * boundary only so ExecutionService's low-level unit tests can exercise legacy
+ * branches. The V2 loader always normalizes them to true/off respectively.
  */
 export interface FabricConfig {
-  fullCodeMode: true;
+  fullCodeMode: boolean;
   executor: FabricExecutorConfig;
   approvals: FabricApprovalConfig;
   mcp: FabricMcpConfig;
@@ -106,7 +103,7 @@ export interface FabricConfig {
   capture: FabricToolCaptureConfig;
   retention: FabricRetentionConfig;
   ui: { updateDebounceMs: number };
-  schema: { mode: "off" };
+  schema: { mode: "off" | "audit" | "enforce" };
 }
 
 export const MIN_AGENT_TIMEOUT_MS = 1_000;
@@ -247,7 +244,7 @@ const riskValue = (value: unknown, fallback: FabricRisk): FabricRisk =>
     ? value
     : fallback;
 
-const normalize = (raw: Record<string, unknown>): FabricConfig => {
+export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfig => {
   const executor = isObject(raw.executor) ? raw.executor : {};
   const approvals = isObject(raw.approvals) ? raw.approvals : {};
   const mcp = isObject(raw.mcp) ? raw.mcp : {};
@@ -264,10 +261,16 @@ const normalize = (raw: Record<string, unknown>): FabricConfig => {
       ? executor.resultFormat
       : "auto";
   const risks: Record<string, FabricRisk> = { ...DEFAULT_FABRIC_CONFIG.capture.risks };
-  for (const [name, value] of Object.entries(rawRisks)) risks[name] = riskValue(value, DEFAULT_FABRIC_CONFIG.capture.defaultRisk);
-  const thinking = isFabricThinking(agents.thinking) ? agents.thinking : DEFAULT_FABRIC_CONFIG.agents.thinking;
+  for (const [name, value] of Object.entries(rawRisks)) {
+    risks[name] = riskValue(value, DEFAULT_FABRIC_CONFIG.capture.defaultRisk);
+  }
+  const thinking = isFabricThinking(agents.thinking)
+    ? agents.thinking
+    : DEFAULT_FABRIC_CONFIG.agents.thinking;
   const revalidate: FabricMcpRevalidatePolicy =
-    mcpCache.revalidate === "all" || mcpCache.revalidate === "off" ? mcpCache.revalidate : "changed";
+    mcpCache.revalidate === "all" || mcpCache.revalidate === "off"
+      ? mcpCache.revalidate
+      : "changed";
 
   return {
     fullCodeMode: true,
@@ -332,7 +335,9 @@ const normalize = (raw: Record<string, unknown>): FabricConfig => {
       budgetUsd: numberValue(agents.budgetUsd, DEFAULT_FABRIC_CONFIG.agents.budgetUsd, 0),
       maxTokensPerChild: Math.floor(numberValue(agents.maxTokensPerChild, DEFAULT_FABRIC_CONFIG.agents.maxTokensPerChild, 0)),
       sessionExport: booleanValue(agents.sessionExport, DEFAULT_FABRIC_CONFIG.agents.sessionExport),
-      sessionExportDir: typeof agents.sessionExportDir === "string" ? agents.sessionExportDir.trim() : DEFAULT_FABRIC_CONFIG.agents.sessionExportDir,
+      sessionExportDir: typeof agents.sessionExportDir === "string"
+        ? agents.sessionExportDir.trim()
+        : DEFAULT_FABRIC_CONFIG.agents.sessionExportDir,
     },
     capture: {
       enabled: booleanValue(capture.enabled, DEFAULT_FABRIC_CONFIG.capture.enabled),
@@ -352,6 +357,9 @@ const normalize = (raw: Record<string, unknown>): FabricConfig => {
   };
 };
 
+export const effectiveToolCaptureConfig = (config: FabricConfig): FabricToolCaptureConfig =>
+  config.capture;
+
 export interface LoadFabricConfigOptions {
   cwd: string;
   agentDir: string;
@@ -370,6 +378,5 @@ export const loadFabricConfig = (options: LoadFabricConfigOptions): FabricConfig
     : readObject(fabricConfigPath("project", options)) ?? {};
   const explicitPath = process.env.PI_FABRIC_CONFIG?.trim();
   const explicitConfig = explicitPath ? readObject(path.resolve(explicitPath)) ?? {} : {};
-  const merged = merge(merge(globalConfig, projectConfig), explicitConfig);
-  return normalize(merged);
+  return normalizeFabricConfig(merge(merge(globalConfig, projectConfig), explicitConfig));
 };
