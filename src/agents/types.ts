@@ -6,7 +6,8 @@ import type {
 import type { FabricAgentRunner, FabricAgentTransport } from "../config.js";
 import type { ThinkingTransferInput } from "./thinking-transfer.js";
 import type { FabricThinking } from "../thinking.js";
-import type { FabricParticipantResidency } from "../topology/types.js";
+
+export type FabricParticipantResidency = "session" | "durable";
 
 export type AgentRunStatus =
   | "queued"
@@ -21,7 +22,7 @@ export type AgentToolResultMessage = Extract<
   { role: "toolResult" }
 >;
 
-/** Deterministic Fabric compaction applied to the inherited handoff trajectory. */
+/** Legacy trajectory seed retained for child-worker compatibility. */
 export interface HandoffCompactionRequest {
   instructions?: string;
   preserve?: string[];
@@ -31,7 +32,6 @@ export interface AgentSessionSeed {
   sourceSessionId: string;
   sourceSessionFile?: string;
   sourceBranchLeafId: string;
-  /** Present only when the source session is in memory and must be materialized. */
   sourceBranch?: SessionEntry[];
   sourceModel?: { provider: string; modelId: string };
   sourceThinkingLevel?: string;
@@ -45,7 +45,6 @@ export interface AgentRunRequest {
   runner?: FabricAgentRunner;
   transport?: FabricAgentTransport;
   model?: string;
-  /** Veda persona name; only used when runner is "veda". */
   persona?: string;
   thinking?: FabricThinking;
   tools?: string[];
@@ -63,11 +62,8 @@ export interface AgentRunRequest {
   capabilityDigest?: string;
   meshRoot?: string;
   runnerSessionId?: string;
-  /** Host-created Pi branch seed ending with the native outer fabric_exec result. */
   sessionSeed?: AgentSessionSeed;
-  /** Source/executor reasoning channels for trajectory thinking transfer. */
   thinkingTransfer?: ThinkingTransferInput | undefined;
-  /** Compact the inherited trajectory with Fabric's deterministic compactor before the executor resumes. */
   handoffCompact?: HandoffCompactionRequest;
 }
 
@@ -236,7 +232,6 @@ export interface AgentTransportAdapter {
 }
 
 export interface FabricLogLine {
-  /** Legacy absolute line index; newer paged readers expose byte offset instead. */
   index?: number;
   offset: number;
   raw: string;
