@@ -29,7 +29,7 @@
     "test": "vitest run",
     "certify:context": "pnpm run build && node scripts/certify-context.mjs",
     "benchmark:real-resume": "pnpm run build && node scripts/benchmark-real-resume.mjs",
-    "benchmark:memory-heads": "pnpm run build && node scripts/benchmark-memory-heads.mjs",
+    "benchmark:memory-heads": "pnpm run benchmark:memory-heads",
     "lint:dead": "knip --no-gitignore",
     "check": "pnpm run typecheck && pnpm run build && pnpm run assert:lazy-graph && pnpm run test && pnpm run lint:dead",
     "assert:lazy-graph": "node scripts/assert-lazy-graph-host-free.mjs",
@@ -61,8 +61,7 @@
   },
   "pi": {
     "extensions": [
-      "./dist/lean-bootstrap.js",
-      "./dist/index.js"
+      "./dist/lean-index.js"
     ],
     "skills": [
       "./skills"
