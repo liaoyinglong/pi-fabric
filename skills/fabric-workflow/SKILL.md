@@ -63,12 +63,6 @@ for (let offset = 0; offset < items.length; offset += batchSize) {
   const batch = items.slice(offset, offset + batchSize);
   const settled = await parallel(
     batch.map((item) => async (): Promise<WorkOutcome> => {
-      await workflow.item({
-        id: `analyze-${offset}-${item}`.slice(0, 80),
-        label: item,
-        status: "running",
-        kind: "agent",
-      });
       try {
         const finding = await agent(
           `Analyze this bounded item with evidence: ${item}\n\nObjective:\n${π.task}`,
