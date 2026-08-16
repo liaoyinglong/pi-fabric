@@ -1,46 +1,41 @@
-# Pi Fabric — Lean Code Mode Runtime
+# Pi Fabric Lean V2
 
-A focused **Programmatic Tool Calling runtime for Pi**.
+A focused Programmatic Tool Calling runtime for Pi.
 
-This fork keeps the parts of Fabric that are useful for everyday coding-agent work and makes them the default product surface:
+This fork keeps three product surfaces:
 
-1. **Code Mode / `fabric_exec`** — one type-checked TypeScript program can call many tools, branch, loop, fan out in parallel, aggregate results, and return only the bounded result to the model.
-2. **Captured Pi extension tools** — existing extension tools (for example FFF) remain callable from Code Mode through Fabric's registered-tool capture and Pi lifecycle replay.
-3. **Named one-shot subagents** — reusable semantic roles such as `research`, `explore`, `deep`, and `review` can bind to their own runner, model, thinking level, tools, persona, and instructions.
-4. **Workflow orchestration** — phases, parallel fan-out, pipelines, and aggregation reuse the same one-shot subagent runtime instead of introducing another agent system.
+1. **Code Mode (`fabric_exec`)**: one type-checked TypeScript program can call many tools, branch, loop, fan out, aggregate intermediate values, and return one bounded result to the model.
+2. **Named one-shot subagents**: semantic roles such as `research`, `explore`, `deep`, and `review` can bind to different runners, models, thinking levels, tools, personas, and instructions.
+3. **Workflow orchestration**: `agent`, `parallel`, `pipeline`, and workflow phase helpers compose the same one-shot subagent runtime.
 
-The lean entrypoint intentionally disables the heavy persistent-agent surface by default: Mesh and Fabric Memory are disabled, dynamic Components are empty, and Actor/mailbox/persistent-topology actions are not advertised.
+V2 physically removes the persistent Fabric systems that are outside this scope: Actor, Mesh, State, Schema runtime, Memory, RLM skills, Prewalk, resident hosts, the Component supervisor, trajectory handoff, the Fabric dashboard, and main-session Fabric compaction.
 
-> The original implementation files are still present during this extraction phase so the well-tested Code Mode/capture path can be reused without a risky rewrite. The package entrypoint and Pi skill surface use the lean runtime.
-
-## Why
-
-The core goal is simple:
+## Runtime shape
 
 ```text
-LLM
-  │  writes one TypeScript program
-  ▼
+Pi Main
+  |
+  v
 fabric_exec
-  ├─ read / grep / find / bash
-  ├─ captured extension tools
-  ├─ MCP tools
-  ├─ named subagents
-  └─ parallel / pipeline workflow helpers
-  │
-  ▼
+  |-- pi.*          Pi core tools
+  |-- extensions.*  captured Pi extension tools
+  |-- mcp.*         MCP tools
+  |-- agents.*      named one-shot subagents
+  `-- workflow      agent / parallel / pipeline / phases
+  |
+  v
 bounded result
-  │
-  ▼
-LLM
+  |
+  v
+Pi Main
 ```
 
-Instead of repeatedly doing `LLM -> tool -> LLM -> tool -> LLM`, mechanical tool orchestration stays inside the runtime.
+Mechanical tool orchestration stays inside one runtime execution. Intermediate reads, searches, loops, filtering, and aggregation do not require a model round trip for every tool call.
 
 ## Install this branch
 
 ```bash
-pi install git:github.com/liaoyinglong/pi-fabric#agent/code-mode-runtime-lite
+pi install git:github.com/liaoyinglong/pi-fabric#agent/code-mode-runtime-v2
 ```
 
 For local development:
@@ -56,7 +51,7 @@ Requires Node.js 24+ and Pi 0.80.6+.
 
 ## Code Mode
 
-The model primarily sees `fabric_exec`. A single program can make many calls and process intermediate values locally:
+The model-facing execution gateway is `fabric_exec`.
 
 ```ts
 const [manifest, sources] = await Promise.all([
@@ -70,23 +65,33 @@ return {
 };
 ```
 
-Captured extension tools remain registered in Pi for compatibility with permissions/auditors, but can be hidden from the model's active tool set and invoked through Code Mode.
+Use sequential `await` when a result determines the next operation. Use `parallel(...)`, `Promise.all(...)`, or `all({...})` for independent work.
+
+### Captured Pi extension tools
+
+The capture layer is retained because it is one of the important parts of the original Fabric implementation.
+
+It observes Pi's internal registered-tool catalog, stores the executable registered tool and its owning `ExtensionRunner`, then replays Pi's normal tool lifecycle when Code Mode invokes it. Existing extension tools such as FFF can therefore remain ordinary Pi extensions while Code Mode calls them through `extensions.*`.
+
+Captured tools remain registered in Pi so permission, audit, and lifecycle extensions can still observe them. Full Code Mode hides captured tools from the model's active tool set unless they are listed in `capture.keepVisible`.
+
+Known read-only captured tools can be assigned `read` risk. Unknown captured tools default to `execute` risk unless configured explicitly.
 
 ## Named subagent roles
 
-Define global roles in:
+Global roles live at:
 
 ```text
 ~/.pi/agent/fabric/subagents.yaml
 ```
 
-Or project roles in:
+Project roles live at:
 
 ```text
 .pi/fabric/subagents.yaml
 ```
 
-Project values override global values field-by-field. `PI_FABRIC_SUBAGENTS_FILE` can append an explicit config file.
+Project fields override global fields. `PI_FABRIC_SUBAGENTS_FILE` can add one explicit role file.
 
 Example:
 
@@ -123,7 +128,7 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-Roles support these defaults:
+A role can define:
 
 - `description`
 - `instructions`
@@ -138,37 +143,36 @@ Roles support these defaults:
 - `recursive`
 - `worktree`
 
-Explicit arguments on a call override role defaults.
-
-Run a configured role:
+Explicit call arguments override role defaults.
 
 ```ts
-const result = await agents.run({
+const evidence = await agents.run({
   name: "research",
   task: "Find the upstream behavior relevant to this bug.",
 });
 
-return result;
+return evidence;
 ```
 
-If `name` matches a configured role it selects that role automatically. The low-level provider also accepts `role` explicitly.
+When `name` matches a configured role, the role profile is selected automatically. The low-level provider also accepts an explicit `role` field.
 
-Discover configured roles:
+Discover roles:
 
 ```ts
 return tools.call({ ref: "agents.roles", args: {} });
 ```
 
+The one-shot agent surface keeps `run`, `spawn`, `wait`, `status`, `list`, `roles`, `models`, `stop`, `cleanup`, `steer`, `followUp`, steering/follow-up modes, and child `compact`.
+
+Child `compact` remains because it controls a running child Pi session. V2 does not install Fabric main-session compaction.
+
 ## Workflow
 
-Workflow is deliberately only an orchestration layer. It does **not** own another model router or child-agent runtime.
+Workflow is a thin orchestration layer over named one-shot subagents.
 
 ```text
-Workflow -> named subagent roles -> one-shot AgentManager
-Code Mode -> Pi / MCP / captured extension tools
+Workflow -> named subagent roles -> AgentManager
 ```
-
-Example:
 
 ```ts
 const findings = await parallel(
@@ -189,33 +193,39 @@ const review = await agent(
 return review;
 ```
 
-This lets model choice remain a property of the semantic role. A workflow can use cheap research workers and strong review workers without hard-coding model IDs into every workflow.
+Model routing stays in role configuration. A workflow can use cheap evidence-gathering roles and strong reasoning roles without embedding model IDs throughout the workflow.
 
-## Lean defaults
+## Configuration
 
-The lean bootstrap currently sets:
+V2 reads the existing global and project Fabric config paths for migration convenience:
 
-- `fullCodeMode = true`
-- extension-tool capture enabled
-- captured extension tools hidden from the model by default
-- Mesh disabled
-- Fabric Memory disabled
-- capability advisory disabled
-- Pi compaction used by default
-- dynamic Components empty
-- only one-shot agent actions exposed, plus `agents.roles`
+```text
+~/.pi/agent/fabric.json
+.pi/fabric.json
+```
 
-Retained one-shot actions include `run`, `spawn`, `wait`, `status`, `list`, `models`, `stop`, `cleanup`, `steer`, `followUp`, steering/follow-up modes, and `compact`.
+Only the lean runtime groups are used:
+
+- `executor`
+- `approvals`
+- `mcp`
+- `agents`
+- `capture`
+- `retention`
+
+Legacy persistent-runtime fields are ignored. V2 always runs Full Code Mode and does not enable the old Schema runtime.
 
 ## Included Pi skills
 
-The package only registers:
+The package registers and ships only:
 
 - `fabric-exec`
 - `fabric-subagents`
 - `fabric-workflow`
 
-See [`docs/lean-code-mode.md`](docs/lean-code-mode.md) for the extraction design and detailed behavior.
+Pi's normal skill catalog is still available. Because Full Code Mode hides the model-facing `read` tool, the extension adapts Pi's progressive skill-loading instruction to use `pi.read` inside `fabric_exec`.
+
+See [`docs/lean-code-mode.md`](docs/lean-code-mode.md) for the runtime boundary and implementation notes.
 
 ## Development
 
@@ -230,7 +240,7 @@ The GitHub Actions workflow runs these checks on Ubuntu and Windows for `agent/*
 
 ## Upstream
 
-This fork is based on [monotykamary/pi-fabric](https://github.com/monotykamary/pi-fabric) and intentionally reuses its mature Code Mode, tool capture, runtime, and one-shot agent implementation while narrowing the default product surface.
+This fork is based on [monotykamary/pi-fabric](https://github.com/monotykamary/pi-fabric). It keeps the mature Code Mode, tool capture, execution, MCP, and one-shot agent paths while removing the persistent multi-agent runtime.
 
 ## License
 

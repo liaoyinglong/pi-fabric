@@ -8,6 +8,15 @@ import {
 import type { FabricToolCaptureConfig } from "../config.js";
 import type { FabricRisk } from "../protocol.js";
 
+const KNOWN_READ_ONLY_CAPTURE_TOOLS = new Set([
+  "fovea_sketch",
+  "fovea_focus",
+  "fovea_dwell",
+  "fovea_impact",
+  "fffind",
+  "ffgrep",
+]);
+
 export interface CapturedToolEntry {
   name: string;
   definition: ToolDefinition<any, any, any>;
@@ -56,7 +65,11 @@ export class CapturedToolCatalog {
         sourceInfo,
         runner,
         wrappedTool: wrapRegisteredTool(registeredTool, runner),
-        risk: config.risks[definition.name] ?? config.defaultRisk,
+        risk:
+          config.risks[definition.name] ??
+          (KNOWN_READ_ONLY_CAPTURE_TOOLS.has(definition.name)
+            ? "read"
+            : config.defaultRisk),
       });
     }
     this.#emit();
