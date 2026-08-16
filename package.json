@@ -17,8 +17,10 @@
   },
   "files": [
     "dist/",
-    "skills/",
-    "docs/",
+    "skills/fabric-exec/",
+    "skills/fabric-subagents/",
+    "skills/fabric-workflow/",
+    "docs/lean-code-mode.md",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md"
