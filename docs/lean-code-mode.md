@@ -2,9 +2,9 @@
 
 This branch narrows Pi Fabric around three capabilities:
 
-1. **Programmatic Tool Calling / Code Mode** — `fabric_exec` remains the primary model-facing tool. One model turn can generate a program that calls many Pi, MCP, or captured extension tools and returns only the bounded result.
-2. **Named one-shot Subagents** — bounded workers remain available, but persistent Actor/Mesh APIs are removed from the default agent surface. Roles bind semantic names to runner/model/thinking/tools/instructions.
-3. **Workflow orchestration** — workflows stay code-held: phases, parallel fan-out, pipelines, and result aggregation execute inside the same Code Mode program and delegate worker execution to named subagents.
+1. **Programmatic Tool Calling / Code Mode**: `fabric_exec` remains the primary model-facing tool. One model turn can generate a program that calls many Pi, MCP, or captured extension tools and returns only the bounded result.
+2. **Named one-shot Subagents**: bounded workers remain available, but persistent Actor/Mesh APIs are removed from the default agent surface. Roles bind semantic names to runner/model/thinking/tools/instructions.
+3. **Workflow orchestration**: workflows stay code-held. Phases, parallel fan-out, pipelines, and result aggregation execute inside the same Code Mode program and delegate worker execution to named subagents.
 
 ## Default runtime surface
 
@@ -80,18 +80,18 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-Discover roles:
+Discover roles through the generic action surface:
 
 ```ts
-const catalog = await agents.roles();
+const catalog = await tools.call({ ref: "agents.roles", args: {} });
 return catalog;
 ```
 
-Run by role:
+Run by role using the compatibility selector:
 
 ```ts
 const evidence = await agents.run({
-  role: "research",
+  name: "research",
   task: "Find the upstream behavior relevant to this bug.",
 });
 ```
@@ -100,35 +100,34 @@ Explicit call arguments override role defaults:
 
 ```ts
 const evidence = await agents.run({
-  role: "research",
+  name: "research",
   task: "This research needs a stronger model.",
   model: "azure-openai-responses/gpt-5.6-sol",
   thinking: "high",
 });
 ```
 
-`name` remains a display name. For compatibility, when `role` is omitted and `name` exactly matches a configured role, it is also treated as the role selector.
+When `name` exactly matches a configured role, that profile is selected automatically. The low-level provider also accepts an explicit `role` field. The `name` compatibility form is preferred in Code Mode today because it already fits Fabric's existing static guest declarations.
 
 ## Workflow model
 
-Workflow is orchestration, not another agent runtime. It should call the same `agents.run` / `agents.spawn` substrate:
+Workflow is orchestration, not another agent runtime. It calls the same one-shot `agents.run` substrate through the Code Mode `agent()` helper:
 
 ```ts
 const findings = await parallel(
   items.map((item) => () =>
-    agents.run({
-      role: "explore",
-      name: `explore ${item}`,
-      task: `Collect bounded evidence for ${item}`,
+    agent(`Collect bounded evidence for ${item}`, {
+      label: `explore ${item}`,
+      name: "explore",
     })
   ),
   { concurrency: 4 },
 );
 
-const review = await agents.run({
-  role: "review",
-  task: `Verify these findings:\n${JSON.stringify(findings)}`,
-});
+const review = await agent(
+  `Verify these findings:\n${JSON.stringify(findings)}`,
+  { label: "verify", name: "review" },
+);
 
 return review;
 ```
