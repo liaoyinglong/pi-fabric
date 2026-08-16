@@ -3,18 +3,9 @@ import { build } from "esbuild";
 
 const result = await build({
   entryPoints: [
-    "src/index.ts",
     "src/lean-index.ts",
     "src/protocol.ts",
     "src/worker.ts",
-    "src/residency/host.ts",
-    "src/compaction/hook.ts",
-    "src/core/action-registry.ts",
-    "src/memory/digest.ts",
-    "src/memory/search.ts",
-    "src/memory/discovery.ts",
-    "src/memory/normalize.ts",
-    "src/providers/memory-provider.ts",
   ],
   outdir: "dist",
   outbase: "src",
