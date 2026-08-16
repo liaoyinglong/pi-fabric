@@ -36,7 +36,7 @@ This is why ordinary Pi extension tools can remain installed normally and still 
 
 ### Named one-shot subagents
 
-`LeanAgentsProvider` wraps the existing one-shot `AgentManager` rather than the old persistent AgentsProvider.
+`LeanAgentsProvider` wraps the existing one-shot `AgentManager`; the old persistent AgentsProvider is not part of V2.
 
 Role files:
 
@@ -158,4 +158,4 @@ src/protocol.ts
 src/worker.ts
 ```
 
-Both esbuild and declaration generation follow those roots. The build assertion rejects legacy Actor/Mesh/State/Schema/Memory/Residency/Prewalk modules if they become reachable again. This makes the lean boundary an enforced build property rather than a documentation convention.
+Both esbuild and declaration generation follow those roots. The build assertion rejects legacy Actor/Mesh/State/Schema/Memory/Residency/Prewalk modules if they become reachable again. This makes the lean boundary an enforced build property backed by CI.
