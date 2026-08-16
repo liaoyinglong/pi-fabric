@@ -1,7 +1,7 @@
 {
   "name": "pi-fabric",
   "version": "0.61.0",
-  "description": "A programmable tool and agent runtime for Pi",
+  "description": "Programmatic tool calling runtime for Pi with named subagents and workflows",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -40,14 +40,10 @@
     "pi-package",
     "pi-extension",
     "codemode",
+    "programmatic-tool-calling",
     "mcp",
-    "agents",
-    "actors",
-    "steering",
-    "mesh",
-    "swarm",
+    "subagents",
     "workflows",
-    "rlm",
     "orchestration"
   ],
   "license": "MIT",
@@ -65,6 +61,7 @@
   },
   "pi": {
     "extensions": [
+      "./dist/lean-bootstrap.js",
       "./dist/index.js"
     ],
     "skills": [
@@ -91,7 +88,7 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.84.2",
     "@earendil-works/pi-tui": "0.84.2",
-    "@types/cross-spawn": "^6.0.6",
+    "@types/cross-spawn": "^7.0.6",
     "@types/node": "^26.1.2",
     "esbuild": "^0.25.12",
     "knip": "^6.29.0",
