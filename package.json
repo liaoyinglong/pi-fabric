@@ -3,12 +3,12 @@
   "version": "0.61.0",
   "description": "Programmatic tool calling runtime for Pi with named subagents and workflows",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/lean-index.js",
+  "types": "./dist/lean-index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./dist/lean-index.d.ts",
+      "import": "./dist/lean-index.js"
     },
     "./protocol": {
       "types": "./dist/protocol.d.ts",
