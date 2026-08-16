@@ -3,11 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 
-export type SubagentRoleRunner = "pi" | "claude" | "veda";
-export type SubagentRoleTransport = "auto" | "process" | "tmux" | "screen" | "localterm" | "herdr";
-export type SubagentRoleThinking = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+type SubagentRoleRunner = "pi" | "claude" | "veda";
+type SubagentRoleTransport = "auto" | "process" | "tmux" | "screen" | "localterm" | "herdr";
+type SubagentRoleThinking = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
-export interface SubagentRoleProfile {
+interface SubagentRoleProfile {
   description?: string;
   instructions?: string;
   runner?: SubagentRoleRunner;
@@ -22,12 +22,12 @@ export interface SubagentRoleProfile {
   worktree?: boolean;
 }
 
-export interface SubagentRoleCatalog {
+interface SubagentRoleCatalog {
   roles: Record<string, SubagentRoleProfile>;
   sources: string[];
 }
 
-export interface ResolvedSubagentRole {
+interface ResolvedSubagentRole {
   role?: string;
   profile?: SubagentRoleProfile;
   args: Record<string, unknown>;
@@ -86,13 +86,17 @@ const roleProfile = (value: unknown): SubagentRoleProfile | undefined => {
     ? Math.floor(input.timeoutMs)
     : undefined;
   const tools = stringList(input.tools);
-  const profile: SubagentRoleProfile = {
-    ...(nonEmptyString(input.description) ? { description: nonEmptyString(input.description)! } : {}),
-    ...(nonEmptyString(input.instructions) ? { instructions: nonEmptyString(input.instructions)! } : {}),
+  const description = nonEmptyString(input.description);
+  const instructions = nonEmptyString(input.instructions);
+  const model = nonEmptyString(input.model);
+  const persona = nonEmptyString(input.persona);
+  return {
+    ...(description ? { description } : {}),
+    ...(instructions ? { instructions } : {}),
     ...(runner ? { runner } : {}),
     ...(transport ? { transport } : {}),
-    ...(nonEmptyString(input.model) ? { model: nonEmptyString(input.model)! } : {}),
-    ...(nonEmptyString(input.persona) ? { persona: nonEmptyString(input.persona)! } : {}),
+    ...(model ? { model } : {}),
+    ...(persona ? { persona } : {}),
     ...(thinking ? { thinking } : {}),
     ...(tools !== undefined ? { tools } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
@@ -100,7 +104,6 @@ const roleProfile = (value: unknown): SubagentRoleProfile | undefined => {
     ...(typeof input.recursive === "boolean" ? { recursive: input.recursive } : {}),
     ...(typeof input.worktree === "boolean" ? { worktree: input.worktree } : {}),
   };
-  return profile;
 };
 
 const parseRoleFile = (filePath: string): Record<string, SubagentRoleProfile> => {
@@ -136,7 +139,7 @@ const candidateFiles = (base: string): string[] => [
   path.join(base, "subagents.json"),
 ];
 
-export const subagentRoleFiles = (cwd: string): string[] => {
+const subagentRoleFiles = (cwd: string): string[] => {
   const globalBase = path.join(os.homedir(), ".pi", "agent", "fabric");
   const projectBase = path.join(projectRoot(cwd), ".pi", "fabric");
   const explicit = process.env.PI_FABRIC_SUBAGENTS_FILE?.trim();
@@ -147,7 +150,7 @@ export const subagentRoleFiles = (cwd: string): string[] => {
   ];
 };
 
-export const loadSubagentRoles = (cwd: string): SubagentRoleCatalog => {
+const loadSubagentRoles = (cwd: string): SubagentRoleCatalog => {
   const roles: Record<string, SubagentRoleProfile> = {};
   const sources: string[] = [];
   for (const filePath of subagentRoleFiles(cwd)) {
