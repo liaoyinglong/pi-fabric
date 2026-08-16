@@ -64,7 +64,9 @@
       "./dist/lean-index.js"
     ],
     "skills": [
-      "./skills"
+      "./skills/fabric-exec",
+      "./skills/fabric-subagents",
+      "./skills/fabric-workflow"
     ],
     "image": "https://raw.githubusercontent.com/monotykamary/pi-fabric/main/media/cover.jpg"
   },
