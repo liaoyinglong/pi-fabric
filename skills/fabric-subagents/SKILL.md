@@ -1,33 +1,34 @@
 ---
 name: fabric-subagents
 description: Delegates bounded work to named Pi Fabric subagent roles with role-specific runner, model, thinking, tools, and instructions. Use when a task benefits from isolated research, exploration, implementation, or review workers.
+disable-model-invocation: true
 ---
 
 # Fabric Named Subagents
 
 Use named roles instead of choosing raw models in every prompt. Roles are configured globally in `~/.pi/agent/fabric/subagents.yaml` or per project in `.pi/fabric/subagents.yaml`. Project roles override global roles field-by-field.
 
-Discover the active role catalog from Code Mode:
+Discover the active role catalog through the generic Code Mode action surface:
 
 ```ts
-return await agents.roles();
+return await tools.call({ ref: "agents.roles", args: {} });
 ```
 
-Run a role synchronously:
+Run a configured role synchronously by using the role name as the run name:
 
 ```ts
 const finding = await agents.run({
-  role: "research",
+  name: "research",
   task: "Find the relevant upstream documentation and return only evidence needed for this task.",
 });
 return finding;
 ```
 
-Or spawn a long-running role and wait later:
+Or spawn it and wait later:
 
 ```ts
 const handle = await agents.spawn({
-  role: "review",
+  name: "review",
   task: "Independently review the current diff for correctness regressions.",
 });
 // Do other bounded work here.
@@ -69,6 +70,8 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-Role defaults include `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, `recursive`, and `worktree`. Explicit arguments on `agents.run` / `agents.spawn` override role defaults. Role `instructions` are prepended to the child task. If `role` is omitted, a `name` matching a configured role is accepted for backwards compatibility.
+Role defaults include `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, `recursive`, and `worktree`. Explicit call arguments override role defaults. Role `instructions` are prepended to the child task.
+
+The lean runtime accepts both an explicit low-level `role` field and the compatibility form shown above. When `role` is omitted and `name` exactly matches a configured role, that profile is selected automatically. The compatibility form is preferred in Code Mode today because it already fits Fabric's existing static guest types; `name` remains an ordinary display name when it does not match a role.
 
 Prefer semantic roles (`research`, `explore`, `deep`, `review`) over model names. This keeps model routing in configuration and lets the main agent decide what kind of worker it needs rather than which provider implementation to call.
