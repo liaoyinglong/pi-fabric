@@ -21,7 +21,11 @@ export interface LeanExecutionRequest {
   tokenBudget?: number;
   agentBudget?: number;
   display?: { name?: string; description?: string };
-  onPartial?: (snapshot: { audits: unknown[]; phases: string[]; progress?: string }) => void;
+  onPartial?: (snapshot: {
+    audits: unknown[];
+    phases: string[];
+    progress?: string | undefined;
+  }) => void;
 }
 
 const leanConfig = (context: ExtensionContext): FabricConfig => {
