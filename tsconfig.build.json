@@ -8,6 +8,10 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"],
+  "include": [
+    "src/lean-index.ts",
+    "src/protocol.ts",
+    "src/worker.ts"
+  ],
   "exclude": ["tests/**"]
 }
