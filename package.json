@@ -90,7 +90,7 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.84.2",
     "@earendil-works/pi-tui": "0.84.2",
-    "@types/cross-spawn": "^7.0.6",
+    "@types/cross-spawn": "^6.0.6",
     "@types/node": "^26.1.2",
     "esbuild": "^0.25.12",
     "knip": "^6.29.0",
