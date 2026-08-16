@@ -242,7 +242,11 @@ describe("fabric-exec skill provider contracts", () => {
       pi: { skills: string[] };
     };
     expect(packageJson.files).toContain("docs/");
-    expect(packageJson.pi.skills).toContain("./skills");
+    expect(packageJson.pi.skills).toEqual([
+      "./skills/fabric-exec",
+      "./skills/fabric-subagents",
+      "./skills/fabric-workflow",
+    ]);
 
     for (const reference of fs.readdirSync("skills/fabric-exec/references")) {
       const markdown = fs.readFileSync(
