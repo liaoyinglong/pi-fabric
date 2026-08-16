@@ -49,7 +49,11 @@ describe("lean workflow skill behavior", () => {
       phase,
       parallel,
       agent: async (prompt: string, options: { label: string; name?: string }) => {
-        calls.push({ label: options.label, name: options.name, prompt });
+        calls.push({
+          label: options.label,
+          ...(options.name ? { name: options.name } : {}),
+          prompt,
+        });
         if (options.label === "inventory") return { items: ["a", "b", "c"] };
         if (options.label === "analyze b") throw new Error("worker failed");
         if (options.label === "verify synthesis") return "verified result";

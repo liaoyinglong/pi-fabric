@@ -1,6 +1,7 @@
 import type { FabricAgentRunner } from "../config.js";
 
 export const FABRIC_LIFECYCLE_EVENTS = [
+  "pi.turn_end",
   "run.completed",
   "run.failed",
   "run.stopped",
@@ -73,8 +74,6 @@ export const tokenUsagePayloadFromValue = (
     typeof value.cacheRead !== "number" ||
     typeof value.cacheWrite !== "number" ||
     typeof value.cost !== "number"
-  ) {
-    return undefined;
-  }
+  ) return undefined;
   return value as unknown as FabricTokenUsagePayload;
 };
