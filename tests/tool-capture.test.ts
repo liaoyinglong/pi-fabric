@@ -11,7 +11,7 @@ import {
   installRegisteredToolCapture,
   type RegisteredToolCaptureController,
 } from "../src/capture/interceptor.js";
-import { DEFAULT_FABRIC_CONFIG, effectiveToolCaptureConfig } from "../src/config.js";
+import { DEFAULT_FABRIC_CONFIG } from "../src/config.js";
 
 const controllers: RegisteredToolCaptureController[] = [];
 
@@ -45,9 +45,6 @@ afterEach(() => {
 
 describe("registered extension tool capture", () => {
   it("captures every extension tool while keeping it in Pi's registry", async () => {
-    // Captured tools must stay visible to pi.getAllTools() consumers (e.g.
-    // permission systems validating tool_call events); hiding from the model is
-    // handled through the active tool set by FabricToolOwnership, not here.
     const fabricTool = tool("fabric_exec");
     const customTool = tool("deploy_release");
     const readOverride = tool("read");
@@ -157,12 +154,11 @@ describe("registered extension tool capture", () => {
     ]);
     expect(catalog.list().map((entry) => entry.name)).toEqual(["first_tool", "second_tool"]);
 
-    controller.setPolicy(
-      effectiveToolCaptureConfig({
-        fullCodeMode: false,
-        capture: DEFAULT_FABRIC_CONFIG.capture,
-      }),
-    );
+    controller.setPolicy({
+      ...DEFAULT_FABRIC_CONFIG.capture,
+      enabled: false,
+      hideFromModel: false,
+    });
     expect(catalog.size).toBe(0);
     expect(runner.getAllRegisteredTools().map((entry) => entry.definition.name)).toEqual([
       "fabric_exec",
