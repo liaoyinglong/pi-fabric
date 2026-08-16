@@ -3,4 +3,5 @@ import { installLeanCodeMode } from "./lean-bootstrap.js";
 
 installLeanCodeMode();
 
+export * from "./index.js";
 export default fabricExtension;
