@@ -154,6 +154,8 @@ export interface FabricInvocationContext {
   extensionContext: ExtensionContext;
   update(message: string): void;
   activity?(update: FabricInvocationActivityUpdate): void;
+  /** Low-level ExecutionService test hook; Lean V2 does not install it. */
+  deferHandoff?(args: Record<string, unknown>): Record<string, unknown>;
   attachMedia?(blocks: FabricMediaBlock[], note?: string): void;
   updateArguments?(args: Record<string, unknown>): void;
   attachPreview?(preview: unknown): void;
