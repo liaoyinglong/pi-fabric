@@ -1,160 +1,236 @@
-<div align="center">
+# Pi Fabric — Lean Code Mode Runtime
 
-# 🧵 pi-fabric
+A focused **Programmatic Tool Calling runtime for Pi**.
 
-**A programmable tool and agent runtime for [Pi](https://github.com/earendil-works/pi-coding-agent)**
+This fork keeps the parts of Fabric that are useful for everyday coding-agent work and makes them the default product surface:
 
-_One type-checked program for tools, MCP, agents, workflows, actors, mesh, councils, and recursion._
+1. **Code Mode / `fabric_exec`** — one type-checked TypeScript program can call many tools, branch, loop, fan out in parallel, aggregate results, and return only the bounded result to the model.
+2. **Captured Pi extension tools** — existing extension tools (for example FFF) remain callable from Code Mode through Fabric's registered-tool capture and Pi lifecycle replay.
+3. **Named one-shot subagents** — reusable semantic roles such as `research`, `explore`, `deep`, and `review` can bind to their own runner, model, thinking level, tools, persona, and instructions.
+4. **Workflow orchestration** — phases, parallel fan-out, pipelines, and aggregation reuse the same one-shot subagent runtime instead of introducing another agent system.
 
-<p>
-  <img src="https://raw.githubusercontent.com/monotykamary/pi-fabric/main/media/cover.jpg" alt="Pi Fabric composing tools and agents in the Pi TUI" width="1100">
-</p>
+The lean entrypoint intentionally disables the heavy persistent-agent surface by default: Mesh and Fabric Memory are disabled, dynamic Components are empty, and Actor/mailbox/persistent-topology actions are not advertised.
 
-[![npm version](https://img.shields.io/npm/v/pi-fabric?style=for-the-badge&logo=npm&color=cb3837)](https://www.npmjs.com/package/pi-fabric)
-[![ARC-AGI-3 scorecard](https://img.shields.io/badge/ARC--AGI--3-100%25%20across%2025%20envs-16a34a?style=for-the-badge)](https://arcprize.org/scorecards/d4c56c67-136b-4643-b648-62ae28fe2a54)
-[![checks](https://img.shields.io/github/actions/workflow/status/monotykamary/pi-fabric/test.yml?branch=main&style=for-the-badge&label=checks)](https://github.com/monotykamary/pi-fabric/actions/workflows/test.yml)
-[![pi extension](https://img.shields.io/badge/pi-extension-8b5cf6?style=for-the-badge)](https://github.com/earendil-works/pi-coding-agent)
-[![license](https://img.shields.io/badge/license-MIT-f4c430?style=for-the-badge)](LICENSE)
+> The original implementation files are still present during this extraction phase so the well-tested Code Mode/capture path can be reused without a risky rewrite. The package entrypoint and Pi skill surface use the lean runtime.
 
-<p align="center">
-  🏆 <strong><a href="https://arcprize.org/scorecards/d4c56c67-136b-4643-b648-62ae28fe2a54">100% on ARC-AGI-3</a></strong>. A Fabric-powered agent won <strong>all 25 environments</strong> in one 22.4-hour session with 4 minutes of human time ($1,349 in model spend).
-</p>
+## Why
 
-</div>
+The core goal is simple:
 
----
+```text
+LLM
+  │  writes one TypeScript program
+  ▼
+fabric_exec
+  ├─ read / grep / find / bash
+  ├─ captured extension tools
+  ├─ MCP tools
+  ├─ named subagents
+  └─ parallel / pipeline workflow helpers
+  │
+  ▼
+bounded result
+  │
+  ▼
+LLM
+```
 
-Fabric gives Pi one programmable tool called `fabric_exec`, which composes core tools and MCP servers with captured extension tools in a checked TypeScript program. That program can call agents or actors, use durable coordination, and run inside QuickJS. Trusted workloads that exceed WASM32 memory may use the unsafe Node process. After execution, the conversation receives the result of the program's branches, loops, fan-out, and data flow.
+Instead of repeatedly doing `LLM -> tool -> LLM -> tool -> LLM`, mechanical tool orchestration stays inside the runtime.
 
-## Why Fabric?
+## Install this branch
 
-|     | Capability | What it unlocks |
-| :-: | ---------- | --------------- |
-| ⚡ | **Code mode** | One flat tool schema; branching, loops, fan-out, and data flow live in checked TypeScript. |
-| 🧰 | **Capability routing** | Call Pi core tools, MCP servers, captured extension tools, or Fabric providers through one runtime. |
-| 🧑‍🤝‍🧑 | **Agent runtime** | One-shot workers, durable resident agents, persistent event-driven actors, councils, and bounded recursive queries. |
-| 🕸️ | **Workflows + mesh** | Phased progress plus durable topics, shared tasks, and compare-and-swap state. |
-| 🛡️ | **Guardrails** | Approvals, isolation, timeouts, concurrency, recursion depth, and shared cost budgets. |
-| 🎛️ | **Native TUI** | Live activity, an interactive dashboard, and settings without leaving Pi. |
+```bash
+pi install git:github.com/liaoyinglong/pi-fabric#agent/code-mode-runtime-lite
+```
 
-## How it works
+For local development:
 
-1. **You ask** in plain language.
-2. **Pi writes one program** that calls the required tools and agents.
-3. **The type checker validates the program** before execution.
-4. **The result returns** to your conversation. Intermediate work stays in the sandbox and appears in the activity panel and dashboard.
+```bash
+pnpm install
+pnpm check
+pnpm build
+pi -e /absolute/path/to/pi-fabric
+```
 
-The model can write this program:
+Requires Node.js 24+ and Pi 0.80.6+.
+
+## Code Mode
+
+The model primarily sees `fabric_exec`. A single program can make many calls and process intermediate values locally:
 
 ```ts
 const [manifest, sources] = await Promise.all([
   pi.read({ path: "package.json" }),
   pi.find({ pattern: "**/*.ts", path: "src" }),
 ]);
+
 return {
   package: JSON.parse(manifest).name,
   sourceCount: sources.split("\n").filter(Boolean).length,
 };
 ```
 
-Independent calls run in parallel, and the returned object enters the model context. Known providers support concise direct calls such as `mcp.fal_ai.get_model_schema(...)`, `memory.recall(...)`, `state.get()`, `schema.status()`, and `compact.status()`. Refs found or computed at runtime use `tools.call({ ref, args })`.
+Captured extension tools remain registered in Pi for compatibility with permissions/auditors, but can be hidden from the model's active tool set and invoked through Code Mode.
 
-## Install
+## Named subagent roles
 
-Requires Node.js 24+ and Pi 0.80.6+. Fabric also checks a detectable Pi host version at startup and warns when an older host may ignore continuation APIs such as actor `triggerTurn`.
+Define global roles in:
 
-```bash
-pi install npm:pi-fabric
+```text
+~/.pi/agent/fabric/subagents.yaml
 ```
 
-<details>
-<summary>Other install methods</summary>
+Or project roles in:
 
-From GitHub:
-
-```bash
-pi install git:github.com/monotykamary/pi-fabric
+```text
+.pi/fabric/subagents.yaml
 ```
 
-From a local checkout:
+Project values override global values field-by-field. `PI_FABRIC_SUBAGENTS_FILE` can append an explicit config file.
 
-```bash
-pnpm install
-pnpm build
-pi install /absolute/path/to/pi-fabric
+Example:
+
+```yaml
+roles:
+  research:
+    description: Cheap bounded research
+    instructions: |
+      Gather concrete evidence and return only material needed by the caller.
+    runner: veda
+    model: agy/gemini-flash
+    persona: researcher
+    thinking: low
+    tools: [read, grep, find, ls]
+
+  explore:
+    description: Repository exploration
+    runner: pi
+    model: azure-openai-responses/gpt-5.6-luna
+    thinking: low
+    tools: [read, grep, find, ls]
+
+  deep:
+    description: Difficult reasoning and implementation decisions
+    runner: pi
+    model: azure-openai-responses/gpt-5.6-sol
+    thinking: high
+
+  review:
+    description: Strong independent verification
+    runner: pi
+    model: azure-openai-responses/gpt-5.6-sol
+    thinking: high
+    tools: [read, grep, find, ls]
 ```
 
-For one development run:
+Roles support these defaults:
 
-```bash
-pi -e /absolute/path/to/pi-fabric
+- `description`
+- `instructions`
+- `runner`: `pi`, `claude`, or `veda`
+- `transport`: `auto`, `process`, `tmux`, `screen`, `localterm`, or `herdr`
+- `model`
+- `persona`
+- `thinking`
+- `tools`
+- `timeoutMs`
+- `extensions`
+- `recursive`
+- `worktree`
+
+Explicit arguments on a call override role defaults.
+
+Run a configured role:
+
+```ts
+const result = await agents.run({
+  name: "research",
+  task: "Find the upstream behavior relevant to this bug.",
+});
+
+return result;
 ```
 
-</details>
+If `name` matches a configured role it selects that role automatically. The low-level provider also accepts `role` explicitly.
 
-## What you can ask for
+Discover configured roles:
 
-Pi loads advanced patterns after direct user invocation. Run `/skill:fabric-guide` for one recommendation, or invoke the exact `/skill:<name>` yourself. An ordinary coding task keeps Pi on the core `fabric-exec` path.
+```ts
+return tools.call({ ref: "agents.roles", args: {} });
+```
 
-| You want | Run |
-| -------- | --- |
-| Help choosing the smallest advanced mechanism | `/skill:fabric-guide Choose a mechanism to audit every auth file and verify the findings.` |
-| Parallel audits, migrations, or research with verification | `/skill:fabric-workflow Audit every auth file and synthesize verified findings.` |
-| Work too big for one context window | `/skill:fabric-rlm Produce a compact architecture map of this repo.` |
-| A persistent watcher for one measurable goal | `/skill:fabric-supervisor Watch this migration until it is complete and tested.` |
-| A strict auditor for one feature design spec | `/skill:fabric-spec Implement docs/specs/checkout.md to the tee; nothing missing, nothing extra.` |
-| A quiet decision-point reviewer | `/skill:fabric-advisor Focus on migration correctness.` |
-| Same-model independent reviewers and one decision | `/skill:fabric-council Review this design for correctness, security, and operability.` |
-| Multi-model compare-not-merge deliberation or act mode | `/skill:fabric-fusion Deliberate this design across models.` |
-| One command that chooses advisor or supervisor | `/skill:fabric-ambient advisor Focus on migration correctness.` |
-| A durable team coordinating through versioned tasks | `/skill:fabric-swarm Coordinate this migration across owned task partitions.` |
-| Evidence-gated edits with postconditions | `/skill:fabric-schema Make this parser change only if focused tests stay green.` |
+## Workflow
 
-The foundation is the `fabric-exec` reference skill: the model loads it before its first `fabric_exec` call and again when a call errors on argument shape.
+Workflow is deliberately only an orchestration layer. It does **not** own another model router or child-agent runtime.
 
-## The dashboard
+```text
+Workflow -> named subagent roles -> one-shot AgentManager
+Code Mode -> Pi / MCP / captured extension tools
+```
 
-Fabric includes a live activity surface in Pi:
+Example:
 
-- A compact widget above the chat (like `pi-supervisor`) whose header follows the current phase while its rows show active/completed agents, active actors, and their recent nested tool or code-change activity.
-- `/fabric` (or `/fabric dashboard`): opens the **Activity** and **Topology** views. The user-facing Pi session appears as **Main**. You can queue or steer participants and inspect the project topology.
-- `/fabric settings`: mirrors Pi's `/settings` and writes changes to `fabric.json`.
-- `Tool display` (`compact` by default, or `full`) is configured under `/fabric settings` → **UI**; compact elevates the declared display intent, hides the outer TypeScript, and applies to the current transcript immediately. Pi's tool-expand keybinding (`ctrl+o` by default) expands a compact card to the full transcript.
+```ts
+const findings = await parallel(
+  items.map((item) => () =>
+    agent(`Collect bounded evidence for ${item}`, {
+      label: `explore ${item}`,
+      name: "explore",
+    })
+  ),
+  { concurrency: 4 },
+);
 
-See the [interface & commands reference](docs/interface.md) for every view, keybinding, and slash command.
+const review = await agent(
+  `Verify these findings:\n${JSON.stringify(findings)}`,
+  { label: "verify", name: "review" },
+);
 
-## Reference
+return review;
+```
 
-- [Configuration](docs/configuration.md): `fabric.json`, code modes, tool capture, approvals, and budgets.
-- [Interface & commands](docs/interface.md): dashboard, settings, keybindings, slash commands, and headless runs.
-- [Agents, actors & mesh](docs/agents.md): model handoff, `/fabric prewalk`, runners, transports, actors, councils, recursive queries, and durable coordination.
-- [Components & committed capabilities](docs/components.md): supervised effects, exact requirements, external per-model guidance and execution-profile replacement, rolling provider generations, actor commitments, and both formal calculi.
-- [External providers](docs/providers.md): the versioned provider protocol for extensions.
-- [Architecture & security](docs/architecture.md): the host bridge, sandboxing, tool-call robustness, and limits.
-- [Skills](docs/skills.md): the core-first invocation policy and user-invoked advanced patterns.
+This lets model choice remain a property of the semantic role. A workflow can use cheap research workers and strong review workers without hard-coding model IDs into every workflow.
+
+## Lean defaults
+
+The lean bootstrap currently sets:
+
+- `fullCodeMode = true`
+- extension-tool capture enabled
+- captured extension tools hidden from the model by default
+- Mesh disabled
+- Fabric Memory disabled
+- capability advisory disabled
+- Pi compaction used by default
+- dynamic Components empty
+- only one-shot agent actions exposed, plus `agents.roles`
+
+Retained one-shot actions include `run`, `spawn`, `wait`, `status`, `list`, `models`, `stop`, `cleanup`, `steer`, `followUp`, steering/follow-up modes, and `compact`.
+
+## Included Pi skills
+
+The package only registers:
+
+- `fabric-exec`
+- `fabric-subagents`
+- `fabric-workflow`
+
+See [`docs/lean-code-mode.md`](docs/lean-code-mode.md) for the extraction design and detailed behavior.
 
 ## Development
 
 ```bash
-pnpm install
 pnpm typecheck
-pnpm test
 pnpm build
+pnpm test
+pnpm lint:dead
 ```
 
-The test suite covers:
+The GitHub Actions workflow runs these checks on Ubuntu and Windows for `agent/**` branches.
 
-- configuration and schema validation
-- provider dispatch, registered-tool execution, QuickJS isolation, and Pi built-in calls
-- agent fixtures for Claude and Veda
-- workflows, durable mesh state, actor mailboxes, subscriptions, and actor restoration
+## Upstream
 
-Claude and Veda fixtures use local test processes with zero billable requests.
-
-## Acknowledgments
-
-- Thanks to [@hazrid93](https://github.com/hazrid93), whose request for a token-efficient LLM advisor pattern led to Fabric's advisor.
-- Thanks to Chad Gibson at [Neuralwatt](https://neuralwatt.com), who supported extended tests of long MCR sessions and the related debugging work.
+This fork is based on [monotykamary/pi-fabric](https://github.com/monotykamary/pi-fabric) and intentionally reuses its mature Code Mode, tool capture, runtime, and one-shot agent implementation while narrowing the default product surface.
 
 ## License
 
