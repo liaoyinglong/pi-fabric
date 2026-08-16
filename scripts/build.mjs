@@ -4,6 +4,7 @@ import { build } from "esbuild";
 const result = await build({
   entryPoints: [
     "src/index.ts",
+    "src/lean-bootstrap.ts",
     "src/protocol.ts",
     "src/worker.ts",
     "src/residency/host.ts",
