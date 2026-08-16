@@ -23,9 +23,6 @@ const ONE_SHOT_AGENT_ACTIONS = new Set([
 ]);
 
 const applyLeanDefaults = (): void => {
-  // Code Mode remains the primary runtime. Keep MCP and captured Pi extension
-  // tools, but make the persistent multi-agent/state subsystems opt-in rather
-  // than part of the default execution path.
   DEFAULT_FABRIC_CONFIG.fullCodeMode = true;
   DEFAULT_FABRIC_CONFIG.mesh.enabled = false;
   DEFAULT_FABRIC_CONFIG.memory.enabled = false;
@@ -116,7 +113,3 @@ export const installLeanCodeMode = (): void => {
   configureAgentSurface();
   patchAgentsProvider();
 };
-
-export default function leanCodeModeBootstrap(): void {
-  installLeanCodeMode();
-}
