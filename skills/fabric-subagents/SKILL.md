@@ -48,28 +48,28 @@ roles:
       Gather concrete evidence. Avoid architecture decisions unless requested.
     runner: veda
     thinking: low
-    tools: [read, grep, find, ls]
 
   explore:
     description: Repository exploration
     runner: pi
     model: azure-openai-responses/gpt-5.6-luna
     thinking: low
-    tools: [read, grep, find, ls]
 
   deep:
     description: Difficult reasoning and implementation decisions
     runner: pi
     model: azure-openai-responses/gpt-5.6-sol
     thinking: high
+    tools: [read, grep, find, ls, edit, write, bash]
 
   review:
     description: Strong independent verification
     runner: pi
     model: azure-openai-responses/gpt-5.6-sol
     thinking: high
-    tools: [read, grep, find, ls]
 ```
+
+If `tools` is omitted, an ordinary one-shot child inherits the safe read-only allowlist `read`, `grep`, `find`, and `ls`. Add `bash`, `edit`, or `write` explicitly only for profiles that need execution or mutation. If `extensions` is omitted, ordinary Pi children do not auto-load extensions; this prevents an installed Fabric extension from capturing the child's core tools again. A profile can explicitly opt into extensions when it needs them.
 
 Profile configuration owns `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, and `worktree`. The public `agents.run`/`spawn` call surface intentionally does not expose raw model-routing fields; change the profile when routing policy changes. Profile `instructions` are prepended to the child task.
 
@@ -88,6 +88,6 @@ return await agents.recurse({
 });
 ```
 
-The profile selected by `agents.recurse` must resolve to `runner: pi`; Veda and Claude remain one-shot workers. Recursion is bounded by `agents.maxDepth`, the execution agent-call ceiling, child timeouts/token limits, and the shared `agents.budgetUsd` cost ledger when configured. Prefer ordinary `run`/`spawn` unless recursive decomposition materially reduces the parent context burden.
+The profile selected by `agents.recurse` must resolve to `runner: pi`; Veda and Claude remain one-shot workers. Recursive Pi children force extensions on and add `fabric_exec` to their configured tool set because recursion requires Lean Code Mode in the child. Recursion is bounded by `agents.maxDepth`, the execution agent-call ceiling, child timeouts/token limits, and the shared `agents.budgetUsd` cost ledger when configured. Prefer ordinary `run`/`spawn` unless recursive decomposition materially reduces the parent context burden.
 
 The intended routing pattern is semantic: cheap profiles such as `research`/`explore` gather evidence, while `deep`/`review` handle difficult reasoning or independent verification. The main agent should choose the profile, not the provider/model identifier.
