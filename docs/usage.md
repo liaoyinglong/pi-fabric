@@ -171,15 +171,25 @@ return { source, matches, files, test: result.output };
 
 ## 4. Captured Pi extension tools
 
-Pi extensions can remain installed normally. Lean V2 captures their registered tools and exposes hidden tools inside Code Mode under `extensions.*` while preserving Pi's normal registered-tool lifecycle.
+Pi extensions can remain installed normally. Lean V2 captures their registered tools and exposes hidden additive tools inside Code Mode under `extensions.*` while preserving Pi's normal registered-tool lifecycle.
 
-For example, with FFF installed:
+With FFF in `tools-and-ui` or `tools-only` mode, its additive tools can be called through `extensions.*`:
 
 ```ts
-const files = await extensions.fffind({ query: "auth session" });
-const hits = await extensions.ffgrep({ query: "refreshToken" });
+const files = await extensions.fffind({ pattern: "auth session", path: "src" });
+const hits = await extensions.ffgrep({ pattern: "refreshToken", path: "src", context: 2 });
 return { files, hits };
 ```
+
+With FFF in `override` mode, it replaces Pi's core `find` and `grep` registrations. Keep using the normal Code Mode core surface:
+
+```ts
+const files = await pi.find({ pattern: "auth session", path: "src" });
+const hits = await pi.grep({ pattern: "refreshToken", path: "src", context: 2 });
+return { files, hits };
+```
+
+Lean V2 detects captured core overrides and routes `pi.find` / `pi.grep` through the registered extension implementation while preserving Code Mode argument normalization and lifecycle handling.
 
 Exact argument shapes come from the extension itself. If you do not know a captured tool's schema, discover it first:
 
@@ -208,7 +218,7 @@ If a specific extension tool must remain directly visible to the main model, add
 
 ### Captured-tool risk
 
-Unknown captured tools default to `capture.defaultRisk`, which is `execute` by default. Assign known read-only tools explicitly:
+Unknown captured tools default to `capture.defaultRisk`, which is `execute` by default. Assign known read-only additive tools explicitly:
 
 ```json
 {
@@ -220,6 +230,8 @@ Unknown captured tools default to `capture.defaultRisk`, which is `execute` by d
   }
 }
 ```
+
+Core overrides use their core tool identity, so an overridden `find` or `grep` follows the core read-risk path.
 
 Valid risk classes are `read`, `write`, `execute`, `network`, and `agent`.
 
