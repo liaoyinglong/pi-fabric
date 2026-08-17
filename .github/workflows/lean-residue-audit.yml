@@ -1,0 +1,21 @@
+name: Lean Residue Audit
+
+on:
+  push:
+    branches: ["agent/code-mode-runtime-v2"]
+    paths:
+      - ".github/workflows/lean-residue-audit.yml"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Legacy terminology and compatibility scan
+        shell: bash
+        run: |
+          set +e
+          echo '=== strong legacy terms in src/tests ==='
+          rg -n -i 'actorId|actorName|byActor|ownerHostId|ownerIdentityId|meshRoot|sessionSeed|thinkingTransfer|handoffCompact|deferHandoff|actorRunArchive|\bRLM\b|\bPrewalk\b|\bCouncil\b|\bActor\b|\bMesh\b|\bParticipant\b|resident host|resident-host' src tests || true
+          echo '=== legacy source paths ==='
+          find src tests -type f | sort | grep -Ei 'actor|mesh|handoff|rlm|prewalk|council|resident|thinking-transfer' || true
