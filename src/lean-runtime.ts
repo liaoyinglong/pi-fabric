@@ -92,17 +92,22 @@ export class LeanCodeModeRuntime {
     registry.register(capturedProvider);
 
     const projectRoot = process.env.PI_FABRIC_PROJECT_ROOT ?? context.cwd;
-    const mcp = new McpProvider(context.cwd, config.mcp, {
-      ...(config.mcp.cache.enabled
-        ? {
-            cache: new McpDescriptorCacheStore(
-              path.join(projectRoot, ".pi", "fabric", "mcp-descriptors.json"),
-            ),
-          }
-        : {}),
-    });
-    registry.register(mcp);
-    mcp.warmup();
+    let mcp: McpProvider | undefined;
+    if (config.mcp.enabled) {
+      mcp = new McpProvider(context.cwd, config.mcp, {
+        ...(config.mcp.cache.enabled
+          ? {
+              cache: new McpDescriptorCacheStore(
+                path.join(projectRoot, ".pi", "fabric", "mcp-descriptors.json"),
+              ),
+            }
+          : {}),
+      });
+      registry.register(mcp);
+      mcp.warmup();
+    } else {
+      registry.markUnavailable("mcp", "MCP support is disabled in Fabric configuration");
+    }
 
     const workerPath = fileURLToPath(new URL("./worker.js", import.meta.url));
     const agents = new AgentManager(context.cwd, config.agents, {
