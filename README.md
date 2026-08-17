@@ -2,13 +2,15 @@
 
 A focused Programmatic Tool Calling runtime for Pi.
 
-This fork keeps three product surfaces:
+Lean V2 keeps three product surfaces:
 
 1. **Code Mode (`fabric_exec`)**: one type-checked TypeScript program can call many tools, branch, loop, fan out, aggregate intermediate values, and return one bounded result to the model.
-2. **Named one-shot subagents**: semantic roles such as `research`, `explore`, `deep`, and `review` can bind to different runners, models, thinking levels, tools, personas, and instructions.
-3. **Workflow orchestration**: `agent`, `parallel`, `pipeline`, and workflow phase helpers compose the same one-shot subagent runtime.
+2. **Profile-based one-shot subagents**: semantic profiles such as `research`, `explore`, `deep`, and `review` bind runner/model/thinking/tool policy in configuration instead of call sites.
+3. **Thin workflow composition**: ordinary TypeScript plus `agent`, `parallel`, `pipeline`, and phase helpers orchestrate the same one-shot substrate. If plain TypeScript is clearer, use plain TypeScript.
 
-Lean V2 removes the persistent Fabric product systems that are outside this scope: Actor, Mesh, State, Schema runtime, Memory, RLM skills, Prewalk, resident hosts, the Component supervisor, trajectory handoff, the Fabric dashboard, and main-session Fabric compaction. The shared Code Mode and agent runtime no longer carries the old Actor/Mesh/trajectory plumbing or dormant QuickJS globals for those systems.
+A small `agents.recurse({ profile, task })` primitive is retained for bounded recursive Pi delegation. It is not a separate RLM provider or workflow system.
+
+Lean V2 physically removes the persistent Fabric product systems outside this scope: Actor, Mesh, State, Schema runtime, Memory, RLM skills/providers, Prewalk, resident hosts, Component supervision, trajectory handoff, the Fabric dashboard, and main-session Fabric compaction.
 
 ## Runtime shape
 
@@ -20,8 +22,8 @@ fabric_exec
   |-- pi.*          Pi core tools
   |-- extensions.*  captured Pi extension tools
   |-- mcp.*         MCP tools when enabled
-  |-- agents.*      named one-shot subagents when enabled
-  `-- workflow      agent / parallel / pipeline / phases
+  |-- agents.*      profile-based one-shot workers when enabled
+  `-- workflow      thin TypeScript orchestration helpers
   |
   v
 bounded result
@@ -51,23 +53,9 @@ Requires Node.js 24+ and Pi 0.80.6+.
 
 ## Start here
 
-For day-to-day setup and examples, read **[Lean V2 Usage Guide](docs/usage.md)**. It covers:
-
-- global and project `fabric.json`
-- `fabric_exec` and `pi.*`
-- captured extension tools such as FFF
-- MCP
-- named subagent role files
-- Pi / Claude / Veda runners
-- Veda + AGY routing
-- Herdr and other transports
-- workflow examples
-- migration from full Fabric
-- troubleshooting
-
-For every Lean V2 configuration field and its default, read **[Configuration Reference](docs/configuration.md)**.
-
-For implementation boundaries and removed public systems, read **[Lean Code Mode V2 Architecture](docs/lean-code-mode.md)**.
+- **[Usage Guide](docs/usage.md)** — installation, Code Mode, FFF/captured tools, MCP, profiles, Veda/AGY, workflow, recursion, troubleshooting.
+- **[Configuration Reference](docs/configuration.md)** — every Lean V2 configuration field and default.
+- **[Architecture](docs/lean-code-mode.md)** — implementation boundaries and removed systems.
 
 ## Code Mode
 
@@ -85,33 +73,54 @@ return {
 };
 ```
 
-Use sequential `await` when a result determines the next operation. Use `parallel(...)`, `Promise.all(...)`, or `all({...})` for independent work.
+Use sequential `await` when a result determines the next operation. Use `Promise.all(...)`, `parallel(...)`, or `all({...})` only for independent work.
 
-### Captured Pi extension tools
+### TUI observability
 
-The capture layer is retained because it is one of the important parts of the original Fabric implementation.
+Lean keeps the useful original Code Mode visibility without restoring the old dashboard stack:
 
-It observes Pi's internal registered-tool catalog, stores the executable registered tool and its owning `ExtensionRunner`, then replays Pi's normal tool lifecycle when Code Mode invokes it. Existing extension tools such as FFF can therefore remain ordinary Pi extensions while Code Mode calls them through `extensions.*`.
+- generated TypeScript is always visible in the `fabric_exec` call card;
+- collapsed cards show the first 8 lines; `Ctrl+O` expands the complete program;
+- running nested calls show concise tool headlines such as `pi.find`, `pi.bash`, and captured/MCP refs;
+- `write` and `edit` calls show a bounded diff preview;
+- a successful program with no returned value shows only the completion/activity summary instead of a synthetic `(no output)` result.
 
-Captured tools remain registered in Pi so permission, audit, and lifecycle extensions can still observe them. Full Code Mode hides captured tools from the model's active tool set unless they are listed in `capture.keepVisible`.
+## Captured Pi extension tools
 
-Known read-only captured tools can be assigned `read` risk. Unknown captured tools default to `execute` risk unless configured explicitly.
+The original Fabric capture layer is retained because it solves a core Code Mode problem: invoking executable Pi extension tools while preserving Pi's registered-tool lifecycle.
 
-## Named subagent roles
+Additive extension tools remain callable through `extensions.*`:
 
-Global roles live at:
+```ts
+const files = await extensions.fffind({ pattern: "auth", path: "src" });
+return files;
+```
+
+Core overrides remain on the core surface. With FFF override mode, use:
+
+```ts
+const files = await pi.find({ pattern: "auth", path: "src" });
+const hits = await pi.grep({ pattern: "refreshToken", path: "src" });
+return { files, hits };
+```
+
+Captured tools remain registered in Pi so permission, audit, and lifecycle extensions can still observe them. Full Code Mode hides captured tools from the main model unless listed in `capture.keepVisible`.
+
+## Semantic subagent profiles
+
+Profile definitions remain under `roles:` in configuration files for compatibility, but runtime selection uses the explicit `profile` field.
+
+Global profiles:
 
 ```text
 ~/.pi/agent/fabric/subagents.yaml
 ```
 
-Trusted project roles live at:
+Trusted project profiles:
 
 ```text
 .pi/fabric/subagents.yaml
 ```
-
-Trusted project fields override global fields. `PI_FABRIC_SUBAGENTS_FILE` can add one explicit host-supplied role file.
 
 Example:
 
@@ -119,8 +128,6 @@ Example:
 roles:
   research:
     description: Cheap bounded research
-    instructions: |
-      Gather concrete evidence and return only material needed by the caller.
     runner: veda
     thinking: low
     tools: [read, grep, find, ls]
@@ -146,36 +153,53 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-Veda roles may omit `model` and `persona` to inherit the installed backend defaults. Add those values only when the current Veda backend identifiers are known.
-
-The public role selector is `name`. When `name` matches a configured role, its profile is applied; a non-role `name` remains a display name.
+Discover and use profiles without exposing model routing in ordinary calls:
 
 ```ts
+const catalog = await agents.profiles({});
+
 const evidence = await agents.run({
-  name: "explore",
+  profile: "explore",
   task: "Find the files and call chain involved in this bug.",
 });
 
 const decision = await agents.run({
-  name: "deep",
+  profile: "deep",
   task: `Analyze this evidence and propose the safest fix:\n${evidence.text}`,
 });
 
-return decision.text;
+return { catalog, decision: decision.text };
 ```
 
-Main can discover the current catalog with `agents.roles({})`. Normal conversation guidance tells Main to prefer semantic roles over raw model ids, so the user does not need to specify Luna, Sol, or another provider model on each delegated task.
+`name` is now only an optional display name. Older code that used a matching `name` as the selector is accepted as a compatibility fallback, but new code should use `profile`.
 
-## Workflow
+The public run/spawn surface intentionally does **not** expose raw `runner`, `model`, `persona`, `thinking`, `tools`, or `recursive` routing fields. Change the profile when routing policy changes.
 
-Workflow is orchestration over the same one-shot subagent substrate. It does not have a separate agent runtime or model router.
+## Minimal recursive delegation
+
+Use recursion only when one isolated child context is insufficient:
+
+```ts
+return agents.recurse({
+  profile: "deep",
+  task: "Decompose this cross-module problem, delegate bounded evidence gathering as needed, and return the verified conclusion.",
+});
+```
+
+The resolved profile must use the Pi runner. The child gets Lean Code Mode and may delegate again, subject to `agents.maxDepth`, per-execution agent-call limits, child timeout/token limits, and the shared cost ledger when `agents.budgetUsd` is configured. The result is compacted to the fields the parent needs rather than returning the complete internal run record.
+
+This is intentionally a primitive, not a revived RLM subsystem.
+
+## Thin workflow
+
+Workflow code chooses profiles, not models:
 
 ```ts
 const findings = await parallel(
   ["auth", "routing", "cache"].map((topic) => () =>
     agent(`Inspect ${topic} and return bounded evidence.`, {
+      profile: "explore",
       label: `inspect ${topic}`,
-      name: "explore",
     })
   ),
   { concurrency: 3 },
@@ -183,19 +207,29 @@ const findings = await parallel(
 
 return agent(
   `Verify these findings and remove unsupported claims:\n${JSON.stringify(findings)}`,
-  { label: "verify", name: "review" },
+  { profile: "review", label: "verify" },
 );
 ```
 
-Role names keep model ids out of workflow code. Explicit supported worker options can still override a role for one exceptional call.
+For a few independent workers, plain TypeScript is preferred:
+
+```ts
+const [docs, code] = await Promise.all([
+  agents.run({ profile: "research", task: "Check upstream behavior." }),
+  agents.run({ profile: "explore", task: "Locate the implementation." }),
+]);
+return { docs, code };
+```
+
+Workflow helpers exist only when they make orchestration clearer.
 
 ## Veda
 
-Veda is a one-shot runner option, separate from the process transport. Configure the default Veda binary/backend/persona in `fabric.json`, then bind a semantic role to `runner: veda`.
+Veda remains a one-shot runner. Configure its binary/backend defaults in `fabric.json`, then bind a semantic profile to `runner: veda`.
 
-Fabric invokes Veda headlessly with the configured backend, persona, model, reasoning level, portable tool allowlist, and an isolated session id. The model value is passed to Veda's `-m` argument; a leading `veda/` routing prefix is stripped. If a role does not specify `model` or `persona`, Veda uses the configured backend defaults.
+If a Veda profile omits `model` and `persona`, the configured backend defaults are used. Fabric forwards explicit values to Veda rather than maintaining a model/persona catalog.
 
-Supported portable tool mapping:
+Portable tool mapping:
 
 ```text
 read  -> read
@@ -209,7 +243,7 @@ write -> write
 
 ## Verification
 
-`pnpm check` is the local release gate. It runs type checking, the distributable build and artifact assertions, the full Vitest suite, and dead-code analysis. GitHub Actions runs the same repository checks on both Ubuntu and Windows so platform-specific worker and type-checker regressions remain covered.
+`pnpm check` is the local release gate: typecheck, distributable build/artifact assertions, full Vitest suite, and dead-code analysis. GitHub Actions runs the repository checks on Ubuntu and Windows.
 
 ## Package surface
 
@@ -229,5 +263,3 @@ docs/usage.md
 docs/configuration.md
 docs/lean-code-mode.md
 ```
-
-The public protocol export remains available for the Lean Code Mode provider/action contract. Persistent Full Fabric providers are not registered by the Lean entrypoint.
