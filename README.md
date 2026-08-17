@@ -19,8 +19,8 @@ Pi Main
 fabric_exec
   |-- pi.*          Pi core tools
   |-- extensions.*  captured Pi extension tools
-  |-- mcp.*         MCP tools
-  |-- agents.*      named one-shot subagents
+  |-- mcp.*         MCP tools when enabled
+  |-- agents.*      named one-shot subagents when enabled
   `-- workflow      agent / parallel / pipeline / phases
   |
   v
@@ -105,7 +105,7 @@ Global roles live at:
 ~/.pi/agent/fabric/subagents.yaml
 ```
 
-Project roles live at:
+Trusted project roles live at:
 
 ```text
 .pi/fabric/subagents.yaml
@@ -122,8 +122,6 @@ roles:
     instructions: |
       Gather concrete evidence and return only material needed by the caller.
     runner: veda
-    model: agy/gemini-3.1-pro-high
-    persona: navigator-chat
     thinking: low
     tools: [read, grep, find, ls]
 
@@ -147,6 +145,8 @@ roles:
     thinking: high
     tools: [read, grep, find, ls]
 ```
+
+Veda roles may omit `model` and `persona` to inherit the installed backend defaults. Add those values only when the current Veda backend identifiers are known.
 
 The public role selector is `name`. When `name` matches a configured role, its profile is applied; a non-role `name` remains a display name.
 
@@ -193,7 +193,7 @@ Role names keep model ids out of workflow code. Explicit supported worker option
 
 Veda is a one-shot runner option, separate from the process transport. Configure the default Veda binary/backend/persona in `fabric.json`, then bind a semantic role to `runner: veda`.
 
-Fabric invokes Veda headlessly with the configured backend, persona, model, reasoning level, portable tool allowlist, and an isolated session id. The model value is passed to Veda's `-m` argument; a leading `veda/` routing prefix is stripped.
+Fabric invokes Veda headlessly with the configured backend, persona, model, reasoning level, portable tool allowlist, and an isolated session id. The model value is passed to Veda's `-m` argument; a leading `veda/` routing prefix is stripped. If a role does not specify `model` or `persona`, Veda uses the configured backend defaults.
 
 Supported portable tool mapping:
 
