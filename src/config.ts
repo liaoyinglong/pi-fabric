@@ -159,7 +159,11 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
     maxPerExecution: 100,
     maxDepth: 2,
     timeoutMs: DEFAULT_AGENT_TIMEOUT_MS,
-    extensions: false,
+    // Keep extension discovery enabled so provider extensions (for example a
+    // dynamically registered cliproxyapi provider) exist in ordinary Pi
+    // children. Lean itself no-ops in non-recursive Fabric children; the
+    // --tools allowlist remains the model-facing capability boundary.
+    extensions: true,
     defaultTools: ["read", "grep", "find", "ls"],
     retainRuns: false,
     notifyOnComplete: true,
