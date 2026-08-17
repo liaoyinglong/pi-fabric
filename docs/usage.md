@@ -8,7 +8,7 @@ Lean V2 intentionally has three product surfaces:
 2. Named one-shot subagents for bounded delegated work.
 3. Workflow helpers for orchestration over the same subagent runtime.
 
-Persistent Actor, Mesh, State, Schema runtime, Memory, RLM, Prewalk, resident-host, and trajectory-handoff APIs are not part of Lean V2.
+Persistent Actor, Mesh, State, Schema runtime, Memory, RLM, Prewalk, resident-host, and trajectory-handoff APIs are not part of the Lean V2 public capability surface.
 
 ## 1. Install
 
@@ -73,7 +73,7 @@ Lean V2 reads only these configuration groups:
 - `capture`
 - `retention`
 
-Old persistent-runtime fields can remain in an existing config file; Lean V2 ignores them. Full Code Mode is always enabled and the old Schema runtime is always off.
+Removed Full Fabric provider groups do not activate those providers in Lean V2. A few internal compatibility fields are still accepted while the implementation is being physically reduced; see [Configuration Reference](configuration.md) for the exact active fields.
 
 A practical starting config is:
 
@@ -110,8 +110,6 @@ A practical starting config is:
     }
   },
   "capture": {
-    "enabled": true,
-    "hideFromModel": true,
     "keepVisible": ["fabric_exec"],
     "defaultRisk": "execute",
     "risks": {
@@ -122,7 +120,7 @@ A practical starting config is:
 }
 ```
 
-Only add fields you want to override; omitted fields use Lean V2 defaults.
+Only add fields you want to override; omitted fields use Lean V2 defaults. Full Code Mode forces capture on and hides captured extension tools from the main model except names listed in `capture.keepVisible`.
 
 ## 3. Code Mode basics
 
@@ -201,14 +199,13 @@ return tools.describe({ ref: matches[0].ref });
 
 ### `capture.keepVisible`
 
-`capture.hideFromModel: true` hides captured tools from the model-facing Pi tool list but does not disable them inside `fabric_exec`.
+Full Code Mode hides captured tools from the model-facing Pi tool list but does not disable them inside `fabric_exec`.
 
 `capture.keepVisible` is the exception list. For the normal Lean V2 setup, keep only:
 
 ```json
 {
   "capture": {
-    "hideFromModel": true,
     "keepVisible": ["fabric_exec"]
   }
 }
@@ -237,7 +234,7 @@ Valid risk classes are `read`, `write`, `execute`, `network`, and `agent`.
 
 ## 5. MCP
 
-MCP is available inside Code Mode as `mcp.*`.
+MCP is available inside Code Mode as `mcp.*` when `mcp.enabled` is true.
 
 Known server/tool names can be called directly:
 
@@ -276,6 +273,10 @@ Useful MCP configuration:
 
 Set `mcp.configPath` when mcporter should load one explicit config path.
 
+For a trusted project, mcporter discovery uses the project as its root. For an untrusted project, Lean V2 uses the user Agent directory as the MCP discovery root and keeps its descriptor cache outside the repository, so project-local MCP/import configuration is not loaded through Fabric.
+
+With `mcp.enabled: false`, the MCP provider is not registered or warmed and the `mcp` guest global is omitted from the active capability surface.
+
 ## 6. Named subagent roles
 
 Subagent roles move model and runner selection out of prompts and workflows.
@@ -288,7 +289,7 @@ Global role files are searched in:
 ~/.pi/agent/fabric/subagents.json
 ```
 
-Project role files are searched in:
+Trusted project role files are searched in:
 
 ```text
 .pi/fabric/subagents.yaml
@@ -296,7 +297,7 @@ Project role files are searched in:
 .pi/fabric/subagents.json
 ```
 
-One explicit file can be added with:
+One explicit host-supplied file can be added with:
 
 ```bash
 PI_FABRIC_SUBAGENTS_FILE=/absolute/path/to/subagents.yaml pi
@@ -305,10 +306,10 @@ PI_FABRIC_SUBAGENTS_FILE=/absolute/path/to/subagents.yaml pi
 Role precedence is:
 
 ```text
-global < project < PI_FABRIC_SUBAGENTS_FILE < explicit call arguments
+global < trusted project < PI_FABRIC_SUBAGENTS_FILE < supported call overrides
 ```
 
-Role files are merged field-by-field.
+Role profiles are merged field-by-field. Project role files are skipped when Pi marks the project untrusted.
 
 ### Recommended role catalog
 
@@ -320,8 +321,6 @@ roles:
       Gather concrete evidence and return only material needed by the caller.
       Avoid editing files.
     runner: veda
-    model: agy/gemini-3.1-pro-high
-    persona: navigator-chat
     thinking: low
     tools: [read, grep, find, ls]
 
@@ -345,6 +344,8 @@ roles:
     thinking: high
     tools: [read, grep, find, ls]
 ```
+
+For Veda roles, omitting `model` and `persona` uses the configured backend defaults. Add either value only after confirming the identifier accepted by the installed Veda backend. Fabric forwards those selections to Veda and does not maintain its own Veda model/persona catalog.
 
 A role can define:
 
@@ -385,11 +386,11 @@ const result = await agents.run({
 return result;
 ```
 
-When `name` exactly matches a configured role, that role profile is selected. A non-role `name` is only the worker display name.
+When `name` exactly matches a configured role, that role profile is selected. A non-role `name` is only the worker display name. `name` is the public Code Mode role selector.
 
 ### Override a role for one call
 
-Explicit call arguments win over role defaults:
+Explicit supported call arguments win over role defaults:
 
 ```ts
 return agents.run({
@@ -413,6 +414,8 @@ const review = await agents.wait({ id: handle.id });
 return { localEvidence, review };
 ```
 
+A detached `agents.spawn` can deliver a bounded completion follow-up to Main when `agents.notifyOnComplete` is enabled. Calling `agents.wait` makes that run foreground work for the current program.
+
 Other retained one-shot actions are:
 
 - `agents.status({ id })`
@@ -428,6 +431,8 @@ Other retained one-shot actions are:
 - `agents.compact({ id, instructions? })`
 
 `agents.compact` applies only to a running Pi child. Lean V2 has no Fabric main-session compaction feature.
+
+With `agents.enabled: false`, Lean V2 does not register the agents provider and normal system guidance does not advertise semantic delegation.
 
 ## 7. Veda / AGY routing
 
@@ -581,9 +586,9 @@ Use:
 
 If you already have a full Fabric configuration, you do not need to delete it before trying Lean V2.
 
-Lean V2 ignores configuration for removed systems. In practice:
+Removed provider groups do not become active Lean V2 providers. In practice:
 
-1. Keep your existing `~/.pi/agent/fabric.json`.
+1. Keep your existing `~/.pi/agent/fabric.json` while migrating.
 2. Add or adjust `capture` and `agents` if needed.
 3. Create `subagents.yaml` for semantic model routing.
 4. Stop using Actor, Mesh, State, Schema, Memory, RLM, Prewalk, Council, Swarm, persistent participant, and trajectory-handoff APIs.
@@ -609,11 +614,11 @@ Check that the Pi extension is loaded, then discover it:
 return tools.search({ query: "tool name" });
 ```
 
-If `capture.enabled` is false, captured extension tools are not mounted into Code Mode.
+Lean V2 Full Code Mode forces capture on. If a registered extension tool is still missing, inspect the active extension registration and discoverable `extensions.*` actions.
 
 ### A tool is hidden from the main model
 
-That is expected when `capture.hideFromModel` is true. Hidden captured tools remain callable through `extensions.*` inside `fabric_exec`.
+That is expected in Full Code Mode. Hidden captured tools remain callable through `extensions.*` inside `fabric_exec`.
 
 Add a tool to `capture.keepVisible` only when it needs direct model visibility.
 
@@ -625,7 +630,7 @@ Inspect the loaded role catalog:
 return agents.roles({});
 ```
 
-The result includes the role names and source files that were loaded. `name` must exactly match the configured role name unless using the lower-level explicit `role` field.
+The result includes role names and source files. `name` must exactly match the configured role name. Project role files will not appear for an untrusted project.
 
 ### Veda fails before starting
 
@@ -635,7 +640,7 @@ Verify the binary and backend independently:
 veda --help
 ```
 
-Then check the configured `agents.veda.binary`, `agents.veda.backend`, persona, model string, and tool list. Fabric rejects unsupported Veda tool ids before launch.
+Then check the configured `agents.veda.binary`, `agents.veda.backend`, current backend persona/model selections, and tool list. Fabric rejects unsupported Veda tool ids before launch.
 
 ### A child times out
 
@@ -670,6 +675,8 @@ Main Pi
   `-- independent check    -> review
 ```
 
+Main receives lightweight system guidance to discover configured semantic roles and prefer them over raw model ids when delegation is useful. The user does not need to name a child model in ordinary conversation.
+
 The important rule is that workflows choose roles, and role configuration chooses runner/model/thinking. This keeps prompts stable when providers or model ids change.
 
-For implementation details and the enforced runtime boundary, see [Lean Code Mode V2 Architecture](lean-code-mode.md).
+For the complete field list, see [Configuration Reference](configuration.md). For implementation details and the current physical-cleanup boundary, see [Lean Code Mode V2 Architecture](lean-code-mode.md).
