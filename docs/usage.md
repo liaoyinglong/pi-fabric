@@ -615,7 +615,7 @@ If `capture.enabled` is false, captured extension tools are not mounted into Cod
 
 That is expected when `capture.hideFromModel` is true. Hidden captured tools remain callable through `extensions.*` inside `fabric_exec`.
 
-Add a tool to `capture.keepVisible` only when it truly needs direct model visibility.
+Add a tool to `capture.keepVisible` only when it needs direct model visibility.
 
 ### A role is not selected
 
@@ -639,7 +639,7 @@ Then check the configured `agents.veda.binary`, `agents.veda.backend`, persona, 
 
 ### A child times out
 
-The default agent timeout is one hour. Increase `agents.timeoutMs` or a role/call `timeoutMs` when a genuinely long task needs more time.
+The default agent timeout is one hour. Increase `agents.timeoutMs` or a role/call `timeoutMs` when a long task needs more time.
 
 ### Too many children start at once
 
