@@ -5,7 +5,8 @@ import type { FabricRisk } from "./protocol.js";
 import { DEFAULT_FABRIC_THINKING, isFabricThinking, type FabricThinking } from "./thinking.js";
 
 export type FabricAgentTransport = "auto" | "process" | "tmux" | "screen" | "localterm" | "herdr";
-export type FabricAgentRunner = "pi" | "claude" | "veda";
+export type FabricAgentRunner = "pi" | "claude" | "cli";
+export type FabricCliAdapter = "agy" | "droid";
 export type FabricResultFormat = "auto" | "yaml" | "json" | "text";
 export type FabricExecutorRuntime = "quickjs" | "node-process";
 export type FabricConfigScope = "global" | "project";
@@ -51,7 +52,11 @@ export interface FabricAgentConfig {
   transport: FabricAgentTransport;
   model?: string;
   claude: { binary: string; model?: string };
-  veda: { binary: string; backend: string; model?: string; persona: string };
+  cli: {
+    adapter: FabricCliAdapter;
+    agy: { binary: string; model?: string };
+    droid: { binary: string; model?: string };
+  };
   thinking: FabricThinking;
   maxConcurrent: number;
   maxPerExecution: number;
@@ -153,7 +158,11 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
     runner: "pi",
     transport: "process",
     claude: { binary: "claude" },
-    veda: { binary: "veda", backend: "agy", persona: "navigator-chat" },
+    cli: {
+      adapter: "agy",
+      agy: { binary: "agy" },
+      droid: { binary: "droid" },
+    },
     thinking: DEFAULT_FABRIC_THINKING,
     maxConcurrent: 4,
     maxPerExecution: 100,
@@ -237,7 +246,9 @@ const stringList = (value: unknown, fallback: string[]): string[] =>
 const approvalMode = (value: unknown, fallback: FabricApprovalMode): FabricApprovalMode =>
   value === "allow" || value === "ask" || value === "auto" || value === "deny" ? value : fallback;
 const runnerValue = (value: unknown, fallback: FabricAgentRunner): FabricAgentRunner =>
-  value === "pi" || value === "claude" || value === "veda" ? value : fallback;
+  value === "pi" || value === "claude" || value === "cli" ? value : fallback;
+const cliAdapterValue = (value: unknown, fallback: FabricCliAdapter): FabricCliAdapter =>
+  value === "agy" || value === "droid" ? value : fallback;
 const transportValue = (value: unknown, fallback: FabricAgentTransport): FabricAgentTransport =>
   value === "auto" || value === "process" || value === "tmux" || value === "screen" ||
   value === "localterm" || value === "herdr" ? value : fallback;
@@ -253,7 +264,9 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
   const mcpCache = isObject(mcp.cache) ? mcp.cache : {};
   const agents = isObject(raw.agents) ? raw.agents : {};
   const claude = isObject(agents.claude) ? agents.claude : {};
-  const veda = isObject(agents.veda) ? agents.veda : {};
+  const cli = isObject(agents.cli) ? agents.cli : {};
+  const agy = isObject(cli.agy) ? cli.agy : {};
+  const droid = isObject(cli.droid) ? cli.droid : {};
   const capture = isObject(raw.capture) ? raw.capture : {};
   const rawRisks = isObject(capture.risks) ? capture.risks : {};
   const retention = isObject(raw.retention) ? raw.retention : {};
@@ -319,11 +332,16 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
         binary: stringValue(claude.binary, DEFAULT_FABRIC_CONFIG.agents.claude.binary),
         ...(optionalString(claude.model) ? { model: optionalString(claude.model)! } : {}),
       },
-      veda: {
-        binary: stringValue(veda.binary, DEFAULT_FABRIC_CONFIG.agents.veda.binary),
-        backend: stringValue(veda.backend, DEFAULT_FABRIC_CONFIG.agents.veda.backend),
-        persona: stringValue(veda.persona, DEFAULT_FABRIC_CONFIG.agents.veda.persona),
-        ...(optionalString(veda.model) ? { model: optionalString(veda.model)! } : {}),
+      cli: {
+        adapter: cliAdapterValue(cli.adapter, DEFAULT_FABRIC_CONFIG.agents.cli.adapter),
+        agy: {
+          binary: stringValue(agy.binary, DEFAULT_FABRIC_CONFIG.agents.cli.agy.binary),
+          ...(optionalString(agy.model) ? { model: optionalString(agy.model)! } : {}),
+        },
+        droid: {
+          binary: stringValue(droid.binary, DEFAULT_FABRIC_CONFIG.agents.cli.droid.binary),
+          ...(optionalString(droid.model) ? { model: optionalString(droid.model)! } : {}),
+        },
       },
       thinking,
       maxConcurrent: Math.floor(numberValue(agents.maxConcurrent, DEFAULT_FABRIC_CONFIG.agents.maxConcurrent, 1, 32)),
