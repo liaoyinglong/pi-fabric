@@ -155,16 +155,11 @@ export const loadEditableSubagentCatalog = (
   }
   const profiles: Record<string, EditableSubagentProfile> = {};
   const sources: string[] = [];
-  const mergeFile = (filePath: string | undefined): void => {
-    if (!filePath || !fs.existsSync(filePath)) return;
-    const loaded = parseProfileFile(filePath);
-    for (const [name, profile] of Object.entries(loaded)) {
-      profiles[name] = { ...(profiles[name] ?? {}), ...profile };
-    }
+  const filePath = existingProfileFile(profileBase(scope, options));
+  if (filePath) {
+    Object.assign(profiles, parseProfileFile(filePath));
     sources.push(filePath);
-  };
-  mergeFile(existingProfileFile(profileBase("global", options)));
-  if (scope === "project") mergeFile(existingProfileFile(profileBase("project", options)));
+  }
   const explicit = process.env.PI_FABRIC_SUBAGENTS_FILE?.trim();
   const explicitPath = explicit ? path.resolve(explicit) : undefined;
   return { profiles, sources, explicitOverride: explicitPath };
