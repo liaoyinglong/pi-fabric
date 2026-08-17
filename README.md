@@ -53,7 +53,7 @@ Requires Node.js 24+ and Pi 0.80.6+.
 
 ## Start here
 
-- **[Usage Guide](docs/usage.md)**: installation, Code Mode, FFF/captured tools, MCP, profiles, Veda/AGY, workflow, recursion, troubleshooting.
+- **[Usage Guide](docs/usage.md)**: installation, Code Mode, FFF/captured tools, MCP, profiles, direct AGY/Droid CLI adapters, workflow, recursion, troubleshooting.
 - **[Subagents & Workflows Guide](docs/subagents-and-workflows.md)**: chat triggering, automatic model delegation, workflow fan-out, and execution lifecycle.
 - **[Configuration Reference](docs/configuration.md)**: every Lean V2 configuration field and default.
 - **[Architecture](docs/lean-code-mode.md)**: implementation boundaries and removed systems.
@@ -129,7 +129,8 @@ Example:
 roles:
   research:
     description: Cheap bounded research
-    runner: veda
+    runner: cli
+    cli: agy
     thinking: low
     tools: [read, grep, find, ls]
 
@@ -148,8 +149,8 @@ roles:
 
   review:
     description: Strong independent verification
-    runner: pi
-    model: azure-openai-responses/gpt-5.6-sol
+    runner: cli
+    cli: droid
     thinking: high
     tools: [read, grep, find, ls]
 ```
@@ -174,7 +175,7 @@ return { catalog, decision: decision.text };
 
 `name` is now only an optional display name. Older code that used a matching `name` as the selector is accepted as a compatibility fallback. New code should use `profile`.
 
-The public run/spawn surface intentionally excludes raw `runner`, `model`, `persona`, `thinking`, `tools`, or `recursive` routing fields. Change the profile when routing policy changes.
+The public run/spawn surface intentionally excludes raw `runner`, `cli`, `model`, `thinking`, `tools`, or `recursive` routing fields. Change the profile when routing policy changes.
 
 ## Minimal recursive delegation
 
@@ -224,23 +225,29 @@ return { docs, code };
 
 Workflow helpers exist only when they make orchestration clearer.
 
-## Veda
+## Direct CLI adapters
 
-Veda remains a one-shot runner. Configure its binary/backend defaults in `fabric.json`, then bind a semantic profile to `runner: veda`.
+The generic `cli` runner invokes supported headless CLIs directly. The first adapters are `agy` (Antigravity) and `droid` (Factory Droid), so using either no longer requires installing Veda as an intermediary.
 
-If a Veda profile omits `model` and `persona`, the configured backend defaults are used. Fabric forwards explicit values to Veda and does not maintain a model/persona catalog.
+Configure defaults in `fabric.json`:
 
-Portable tool mapping:
-
-```text
-read  -> read
-grep  -> grep
-find  -> glob
-ls    -> glob
-bash  -> bash
-edit  -> edit
-write -> write
+```json
+{
+  "agents": {
+    "cli": {
+      "adapter": "agy",
+      "agy": { "binary": "agy" },
+      "droid": { "binary": "droid" }
+    }
+  }
+}
 ```
+
+Select the adapter in a semantic profile with `runner: cli` and `cli: agy` or `cli: droid`. The adapter contract owns invocation arguments, portable tool mapping, model normalization, and final-result parsing; transport remains independent and can still be `process`, `tmux`, `screen`, `localterm`, or `herdr`.
+
+Droid uses its native per-run tool restriction. Antigravity does not currently provide an equivalent headless per-run allowlist, so Fabric passes the requested tool boundary as an explicit prompt policy and leaves Antigravity's permission configuration authoritative. Fabric never turns on Antigravity's dangerous permission bypass automatically.
+
+CLI adapters are one-shot in V1: no recursive Fabric, steer/follow-up, or Fabric-triggered compaction. Adding another CLI should be an adapter addition rather than another AgentManager runner branch.
 
 ## Verification
 
