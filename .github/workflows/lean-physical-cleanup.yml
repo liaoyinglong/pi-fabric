@@ -4,8 +4,7 @@ on:
   push:
     branches: ["agent/code-mode-runtime-v2"]
     paths:
-      - "scripts/lean-agent-substrate-cleanup.mjs"
-      - "scripts/fix-lean-agent-cleanup.mjs"
+      - "scripts/finalize-lean-docs.mjs"
       - ".github/workflows/lean-physical-cleanup.yml"
 
 permissions:
@@ -26,22 +25,22 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Install ripgrep
-        run: sudo apt-get install -y ripgrep
-      - name: Apply physical cleanup
+      - name: Synchronize docs and remove temporary cleanup scaffolding
         run: |
-          node scripts/fix-lean-agent-cleanup.mjs
-          node scripts/lean-agent-substrate-cleanup.mjs
+          node scripts/finalize-lean-docs.mjs
+          rm -f \
+            scripts/lean-physical-cleanup.mjs \
+            scripts/lean-test-contract-cleanup.mjs \
+            scripts/lean-agent-substrate-cleanup.mjs \
+            scripts/fix-lean-agent-cleanup.mjs \
+            scripts/finalize-lean-docs.mjs \
+            .github/workflows/lean-physical-cleanup.yml
       - name: Validate
         run: pnpm check
-      - name: Commit cleanup
+      - name: Commit final cleanup
         run: |
-          if git diff --quiet; then
-            echo "No cleanup changes"
-            exit 0
-          fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add src tests docs package.json scripts
-          git commit -m "refactor: remove actor mesh and trajectory compatibility"
+          git add -A
+          git commit -m "docs: finalize physical Lean V2 boundary"
           git push origin HEAD:agent/code-mode-runtime-v2
