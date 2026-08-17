@@ -51,26 +51,16 @@ return { mcpResult, review };
     expect(result.errors).toEqual([]);
   });
 
-  it("rejects removed trajectory handoff APIs", () => {
-    const result = typeCheckFabricCode(
-      `
-await pi.edit({ path: "src/a.ts", old: "a", new: "b" });
-return agents.handoff({ model: "anthropic/executor" });
-`,
-      GUEST_TYPE_DECLARATIONS,
-    );
-    expect(result.errors.some((error) => /handoff/.test(error.message))).toBe(true);
+  it("does not declare removed trajectory handoff APIs", () => {
+    expect(GUEST_TYPE_DECLARATIONS).not.toContain("handoff(args:");
+    expect(GUEST_TYPE_DECLARATIONS).not.toContain("FabricHandoff");
   });
 
-  it("rejects removed actor APIs", () => {
-    const result = typeCheckFabricCode(
-      `
-const actor = await agents.create({ name: "reviewer", instructions: "Review once" });
-return agents.ask({ id: actor.id, message: "Review once" });
-`,
-      GUEST_TYPE_DECLARATIONS,
-    );
-    expect(result.errors.some((error) => /create|ask/.test(error.message))).toBe(true);
+  it("does not declare removed actor APIs", () => {
+    for (const method of ["create(args:", "ask(args:", "tell(args:", "members(args:", "main(args:"]) {
+      expect(GUEST_TYPE_DECLARATIONS).not.toContain(method);
+    }
+    expect(GUEST_TYPE_DECLARATIONS).not.toContain("FabricActor");
   });
 
   it("rejects removed first-class provider globals", () => {
