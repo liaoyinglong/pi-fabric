@@ -15,7 +15,7 @@ function extractMarkdownProgram(markdown: string, file: string): string {
   return match[1]!;
 }
 
-async function runWorkflow(context: Context): Promise<Record<string, unknown>> {
+async function runWorkflow(context: Context): Promise<unknown> {
   const file = "skills/fabric-workflow/SKILL.md";
   const program = extractMarkdownProgram(fs.readFileSync(file, "utf8"), file);
   const javascript = transpileModule(program, {
@@ -23,14 +23,9 @@ async function runWorkflow(context: Context): Promise<Record<string, unknown>> {
   }).outputText;
   const keys = Object.keys(context);
   const fn = new AsyncFunction(...keys, javascript);
-  return await fn(...keys.map((key) => context[key])) as Record<string, unknown>;
+  return await fn(...keys.map((key) => context[key]));
 }
 
-const workflow = {
-  configure: async () => undefined,
-  event: async () => undefined,
-};
-const phase = async () => undefined;
 const parallel = async (thunks: Array<() => Promise<unknown>>) => Promise.all(
   thunks.map((thunk) => thunk()),
 );
@@ -41,59 +36,38 @@ describe("lean workflow skill behavior", () => {
       .toBe("return 42;");
   });
 
-  it("preserves successful items, role names, and verification", async () => {
-    const calls: Array<{ label: string; name?: string; prompt: string }> = [];
+  it("fans out with explore and verifies with review profiles", async () => {
+    const calls: Array<{ profile?: string; label?: string; prompt: string }> = [];
     const result = await runWorkflow({
-      π: { task: "audit authentication" },
-      workflow,
-      phase,
       parallel,
-      agent: async (prompt: string, options: { label: string; name?: string }) => {
-        calls.push({
-          label: options.label,
-          ...(options.name ? { name: options.name } : {}),
-          prompt,
-        });
-        if (options.label === "inventory") return { items: ["a", "b", "c"] };
-        if (options.label === "analyze b") throw new Error("worker failed");
-        if (options.label === "verify synthesis") return "verified result";
-        return `${options.label} finding`;
+      agent: async (prompt: string, options: { profile?: string; label?: string }) => {
+        calls.push({ prompt, ...options });
+        if (options.profile === "review") return "verified result";
+        return `${options.label} evidence`;
       },
     });
 
-    expect(result).toMatchObject({
-      status: "partial",
-      coverage: { requested: 3, completed: 2 },
-      result: "verified result",
-    });
-    expect(result).not.toHaveProperty("fallback");
-    expect(calls.every((call) => call.prompt.includes("audit authentication"))).toBe(true);
-    expect(calls.find((call) => call.label === "inventory")?.name).toBe("explore");
-    expect(calls.find((call) => call.label === "analyze a")?.name).toBe("explore");
-    expect(calls.find((call) => call.label === "verify synthesis")?.name).toBe("review");
+    expect(result).toBe("verified result");
+    expect(calls.filter((call) => call.profile === "explore")).toHaveLength(3);
+    expect(calls.at(-1)?.profile).toBe("review");
+    expect(calls.at(-1)?.prompt).toContain("Independently verify these findings");
   });
 
-  it("returns compact completed findings only when verification fails", async () => {
-    const result = await runWorkflow({
-      π: { task: "audit one module" },
-      workflow,
-      phase,
+  it("keeps labels distinct while routing policy stays in profiles", async () => {
+    const labels: string[] = [];
+    await runWorkflow({
       parallel,
-      agent: async (_prompt: string, options: { label: string }) => {
-        if (options.label === "inventory") return { items: ["one"] };
-        if (options.label === "verify synthesis") throw new Error("verifier unavailable");
-        return "bounded finding";
+      agent: async (_prompt: string, options: { profile?: string; label?: string }) => {
+        if (options.label) labels.push(options.label);
+        return options.profile === "review" ? "ok" : "evidence";
       },
     });
 
-    expect(result).toMatchObject({
-      status: "partial",
-      coverage: { requested: 1, completed: 1 },
-      result: null,
-      verificationError: "verifier unavailable",
-    });
-    expect(result.fallback).toEqual([
-      { item: "one", status: "completed", finding: "bounded finding" },
+    expect(labels).toEqual([
+      "explore auth",
+      "explore routing",
+      "explore caching",
+      "verify findings",
     ]);
   });
 });
