@@ -5,7 +5,7 @@ import type {
   FabricProviderListRequest,
 } from "./protocol.js";
 import { AgentManager, effectiveAgentTimeoutMs } from "./agents/manager.js";
-import type { AgentRunRequest, FabricSteeringMode } from "./agents/types.js";
+import type { AgentRunRequest, AgentRunResult, FabricSteeringMode } from "./agents/types.js";
 import { isFabricThinking } from "./thinking.js";
 import { describeSubagentRoles, resolveSubagentRole } from "./subagents/profiles.js";
 
@@ -18,16 +18,9 @@ const idSchema = {
 };
 const runProperties = {
   task: { type: "string", description: "Self-contained task for the child worker" },
-  name: { type: "string", description: "Display name; a configured role name also selects that role" },
-  runner: { type: "string", enum: ["pi", "claude", "veda"] },
-  transport: { type: "string", enum: ["auto", "process", "tmux", "screen", "localterm", "herdr"] },
-  model: { type: "string" },
-  persona: { type: "string", description: "Veda persona" },
-  thinking: { type: "string", enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max"] },
-  tools: { type: "array", items: { type: "string" } },
+  profile: { type: "string", description: "Configured semantic subagent profile, such as research, explore, deep, or review" },
+  name: { type: "string", description: "Optional display name; does not select the model/profile" },
   timeoutMs: { type: "number" },
-  extensions: { type: "boolean" },
-  recursive: { type: "boolean" },
   worktree: { type: "boolean" },
   schema: { type: "object", additionalProperties: true },
 };
@@ -35,6 +28,12 @@ const runSchema = {
   type: "object",
   properties: runProperties,
   required: ["task"],
+  additionalProperties: false,
+};
+const recurseSchema = {
+  type: "object",
+  properties: runProperties,
+  required: ["task", "profile"],
   additionalProperties: false,
 };
 const messageSchema = {
@@ -56,20 +55,16 @@ const modeSchema = {
 export const LEAN_AGENT_ACTIONS: FabricActionDescriptor[] = [
   { name: "run", description: "Run one configured child worker and wait for its result", inputSchema: runSchema, risk: "agent" },
   { name: "spawn", description: "Start one configured child worker and return a handle", inputSchema: runSchema, risk: "agent" },
+  {
+    name: "recurse",
+    description: "Run one recursive Pi child under the configured depth, call, and cost budgets and return a compact result",
+    inputSchema: recurseSchema,
+    risk: "agent",
+  },
   { name: "wait", description: "Wait for a spawned child worker", inputSchema: idSchema, risk: "read" },
   { name: "status", description: "Read the latest status of a local child worker", inputSchema: idSchema, risk: "read" },
   { name: "list", description: "List child workers created by this Pi host", inputSchema: emptySchema, risk: "read" },
-  { name: "roles", description: "List configured named subagent roles", inputSchema: emptySchema, risk: "read" },
-  {
-    name: "models",
-    description: "List models visible to the selected worker runner when runtime discovery is available",
-    inputSchema: {
-      type: "object",
-      properties: { runner: { type: "string", enum: ["pi", "claude", "veda"] }, refresh: { type: "boolean" } },
-      additionalProperties: false,
-    },
-    risk: "read",
-  },
+  { name: "profiles", description: "List configured semantic subagent profiles", inputSchema: emptySchema, risk: "read" },
   { name: "stop", description: "Stop a local child worker", inputSchema: idSchema, risk: "agent" },
   {
     name: "cleanup",
@@ -150,9 +145,21 @@ const runRequest = (
   };
 };
 
+const compactRecursiveResult = (result: AgentRunResult): Record<string, unknown> => ({
+  id: result.id,
+  name: result.name,
+  status: result.status,
+  text: result.text,
+  ...(result.value !== undefined ? { value: result.value } : {}),
+  ...(result.error ? { error: result.error } : {}),
+  turns: result.turns,
+  toolCalls: result.toolCalls,
+  usage: result.usage,
+});
+
 export class LeanAgentsProvider implements FabricProvider {
   readonly name = "agents";
-  readonly description = "Named one-shot subagents backed by Pi, Claude, or Veda";
+  readonly description = "Profile-based one-shot subagents backed by Pi, Claude, or Veda";
 
   constructor(readonly manager: AgentManager) {}
 
@@ -177,16 +184,28 @@ export class LeanAgentsProvider implements FabricProvider {
         return this.manager.run(runRequest(args, context, this.manager), context.signal);
       case "spawn":
         return this.manager.spawn(runRequest(args, context, this.manager), context.signal);
+      case "recurse": {
+        const request = runRequest(args, context, this.manager);
+        if (request.runner !== "pi") {
+          throw new Error("Recursive subagent profiles must use runner: pi");
+        }
+        return compactRecursiveResult(
+          await this.manager.run({ ...request, recursive: true }, context.signal),
+        );
+      }
       case "wait":
         return this.manager.wait(String(args.id));
       case "status":
         return this.manager.status(String(args.id));
       case "list":
         return this.manager.list();
+      case "profiles":
       case "roles":
         return describeSubagentRoles(this.manager.cwd, {
           projectTrusted: projectTrusted(context),
         });
+      // Kept as an unlisted compatibility action for existing scripts. Model
+      // routing now belongs in semantic profiles, not in ordinary call sites.
       case "models": {
         const runner = args.runner === "claude" || args.runner === "veda" || args.runner === "pi"
           ? args.runner
