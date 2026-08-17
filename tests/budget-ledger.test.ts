@@ -71,7 +71,7 @@ describe("budget ledger", () => {
     expect(summary.tokens).toBe(100);
   });
 
-  it("attributes entries by runner and actor for token telemetry", () => {
+  it("attributes entries by runner for token telemetry", () => {
     const state = initBudgetLedger(1);
     temporaryFiles.push(state.file);
     appendBudgetLedger(state.file, {
@@ -89,8 +89,6 @@ describe("budget ledger", () => {
       tokens: 20,
       ts: 2,
       runner: "claude",
-      actorId: "actor-1",
-      actorName: "reviewer",
     });
     appendBudgetLedger(state.file, {
       id: "c",
@@ -99,8 +97,6 @@ describe("budget ledger", () => {
       tokens: 10,
       ts: 3,
       runner: "pi",
-      actorId: "actor-1",
-      actorName: "reviewer",
     });
     const detail = readBudgetLedgerDetailed(state.file);
     expect(detail.cost).toBeCloseTo(0.1);
@@ -108,7 +104,6 @@ describe("budget ledger", () => {
     expect(detail.entries).toHaveLength(3);
     expect(detail.byRunner.pi).toEqual({ cost: expect.closeTo(0.07), tokens: 40 });
     expect(detail.byRunner.claude).toEqual({ cost: expect.closeTo(0.03), tokens: 20 });
-    expect(detail.byActor["actor-1"]).toEqual({ cost: expect.closeTo(0.05), tokens: 30 });
   });
 
   it("keeps readBudgetLedger backward-compatible with per-run totals", () => {
@@ -121,7 +116,6 @@ describe("budget ledger", () => {
       tokens: 30,
       ts: 1,
       runner: "pi",
-      actorId: "actor-1",
     });
     const summary = readBudgetLedger(state.file);
     expect(summary.cost).toBeCloseTo(0.05);
