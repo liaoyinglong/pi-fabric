@@ -103,8 +103,8 @@ const mapDroidTools = (tools: readonly string[]): string[] => {
   const mapped: string[] = [];
   for (const tool of tools) {
     const ids = DROID_TOOL_MAP[tool];
-    if (!ids) unsupportedTool("droid", tool);
-    mapped.push(...ids);
+    if (ids === undefined) unsupportedTool("droid", tool);
+    mapped.push(...(ids as readonly string[]));
   }
   return [...new Set(mapped)];
 };
