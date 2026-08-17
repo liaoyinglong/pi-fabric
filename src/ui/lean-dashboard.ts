@@ -89,11 +89,12 @@ const colorStatus = (theme: Theme, status: AgentRunRecord["status"], text: strin
 
 const dashboardRows = (tui: TUI): number => {
   const terminalRows = Math.max(1, tui.terminal?.rows ?? process.stdout.rows ?? 28);
-  return Math.max(10, Math.min(Math.floor((terminalRows * DASHBOARD_HEIGHT_PERCENT) / 100), terminalRows - 2));
+  const available = Math.max(1, terminalRows - 2);
+  const preferred = Math.max(10, Math.floor((terminalRows * DASHBOARD_HEIGHT_PERCENT) / 100));
+  return Math.min(preferred, available);
 };
 
 const agentSummary = (value: AgentRunRecord | AgentHandleInfo, width: number): string => {
-  const indent = value === undefined ? "" : "";
   const details: string[] = [runnerLabel(value)];
   if (isRunRecord(value)) {
     if (value.currentTool) details.push(`tool:${value.currentTool}`);
@@ -101,8 +102,7 @@ const agentSummary = (value: AgentRunRecord | AgentHandleInfo, width: number): s
     const tokens = totalTokens(value);
     if (tokens > 0) details.push(`${tokens} tok`);
   }
-  const suffix = details.length > 0 ? ` · ${details.join(" · ")}` : "";
-  return compact(`${indent}${value.name}${suffix}`, width);
+  return compact(`${value.name} · ${details.join(" · ")}`, width);
 };
 
 const countStatuses = (rows: LeanDashboardAgentRow[]): string => {
@@ -159,6 +159,8 @@ export class LeanFabricDashboard implements Component, Focusable {
     this.#timer = setInterval(() => this.tui.requestRender(), DASHBOARD_REFRESH_MS);
     this.#timer.unref();
   }
+
+  invalidate(): void {}
 
   dispose(): void {
     if (this.#closed) return;
@@ -296,8 +298,7 @@ export class LeanFabricDashboard implements Component, Focusable {
   #outputLines(row: LeanDashboardAgentRow | undefined, height: number, width: number): string[] {
     if (height <= 0) return [];
     if (!row) return [fit(this.theme.fg("muted", "Nothing to inspect yet."), width)];
-    const logBudget = Math.max(1, height - 1);
-    const log = logLinesFor(this.manager, row, logBudget);
+    const log = logLinesFor(this.manager, row, Math.max(1, height));
     const formatted = log.events
       .map(formatLeanFabricLogLine)
       .filter(Boolean)
@@ -312,7 +313,7 @@ export class LeanFabricDashboard implements Component, Focusable {
     return formatted.slice(-height).map((line) => fit(line, width));
   }
 
-  #renderTwoPane(width: number, rows: LeanDashboardAgentRow[], bodyRows: number): string[] {
+  #renderTwoPane(width: number, rows: LeanDashboardAgentRow[], contentRows: number): string[] {
     const inner = width - 2;
     const leftWidth = Math.max(
       MIN_AGENT_PANE_WIDTH,
@@ -320,7 +321,7 @@ export class LeanFabricDashboard implements Component, Focusable {
     );
     const rightWidth = inner - leftWidth - 1;
     const selected = rows[this.#selection];
-    const visibleRows = Math.max(1, bodyRows - 1);
+    const visibleRows = Math.max(1, contentRows - 2);
     if (this.#selection < this.#listOffset) this.#listOffset = this.#selection;
     if (this.#selection >= this.#listOffset + visibleRows) {
       this.#listOffset = this.#selection - visibleRows + 1;
@@ -345,10 +346,11 @@ export class LeanFabricDashboard implements Component, Focusable {
     return lines;
   }
 
-  #renderStacked(width: number, rows: LeanDashboardAgentRow[], bodyRows: number): string[] {
+  #renderStacked(width: number, rows: LeanDashboardAgentRow[], contentRows: number): string[] {
     const inner = width - 2;
-    const listRows = Math.max(3, Math.floor(bodyRows * 0.45));
-    const outputRows = Math.max(1, bodyRows - listRows - 2);
+    const available = Math.max(2, contentRows - 4);
+    const listRows = Math.max(1, Math.floor(available * 0.45));
+    const outputRows = Math.max(1, available - listRows);
     if (this.#selection < this.#listOffset) this.#listOffset = this.#selection;
     if (this.#selection >= this.#listOffset + listRows) this.#listOffset = this.#selection - listRows + 1;
     const maxOffset = Math.max(0, rows.length - listRows);
@@ -364,8 +366,8 @@ export class LeanFabricDashboard implements Component, Focusable {
     lines.push(`├${"─".repeat(inner)}┤`);
     lines.push(`│${this.#selectedHeader(selected, inner)}│`);
     for (const line of this.#outputLines(selected, outputRows, inner)) lines.push(`│${line}│`);
-    while (lines.length < bodyRows + 3) lines.push(`│${fit("", inner)}│`);
-    return lines;
+    while (lines.length < contentRows) lines.push(`│${fit("", inner)}│`);
+    return lines.slice(0, contentRows);
   }
 
   render(width: number): string[] {
@@ -374,14 +376,14 @@ export class LeanFabricDashboard implements Component, Focusable {
     this.#syncSelection(rows);
     const totalRows = dashboardRows(this.tui);
     const inner = width - 2;
-    const bodyRows = Math.max(4, totalRows - 5);
+    const contentRows = Math.max(1, totalRows - 4);
     const counts = countStatuses(rows);
     const title = ` Fabric · ${rows.length} agent${rows.length === 1 ? "" : "s"}${counts ? ` · ${counts}` : ""} `;
     const titleText = compact(title, Math.max(1, inner - 2));
     const topRight = Math.max(0, inner - visibleWidth(titleText));
     const lines = [`┌${titleText}${"─".repeat(topRight)}┐`];
-    if (width >= MIN_TWO_PANE_WIDTH) lines.push(...this.#renderTwoPane(width, rows, bodyRows));
-    else lines.push(...this.#renderStacked(width, rows, bodyRows));
+    if (width >= MIN_TWO_PANE_WIDTH) lines.push(...this.#renderTwoPane(width, rows, contentRows));
+    else lines.push(...this.#renderStacked(width, rows, contentRows));
     const footer = this.#feedback
       ? this.theme.fg(this.#feedback.startsWith("Press x again") ? "warning" : "muted", this.#feedback)
       : this.theme.fg("muted", "↑↓/jk select · g/G first/last · x stop · r refresh · Esc close");
