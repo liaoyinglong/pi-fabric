@@ -91,8 +91,8 @@ With `mcp.enabled: false`, Lean does not register/warm the MCP provider and omit
 | `maxPerExecution` | `100` | Maximum `run`/`spawn`/`recurse` starts in one `fabric_exec` |
 | `maxDepth` | `2` | Maximum recursive Pi child depth |
 | `timeoutMs` | `3600000` | Default child deadline |
-| `extensions` | `true` | Enables runner extensions for children |
-| `defaultTools` | Pi core tool set | Fallback portable child tool allowlist |
+| `extensions` | `false` | Ordinary one-shot children do not auto-load Pi extensions |
+| `defaultTools` | `read, grep, find, ls` | Read-only fallback child tool allowlist |
 | `retainRuns` | `false` | Keeps completed local run state when enabled |
 | `notifyOnComplete` | `true` | Delivers detached `spawn` completion back to Main |
 | `budgetUsd` | `0` | Shared child cost budget; `0` disables it |
@@ -101,6 +101,8 @@ With `mcp.enabled: false`, Lean does not register/warm the MCP provider and omit
 | `sessionExportDir` | empty | Optional explicit export directory |
 
 These values are defaults and safety ceilings. Ordinary Code Mode calls should select a semantic `profile`; model/runner/tool policy belongs in the profile file and stays out of the `agents.run` call.
+
+If a one-shot profile omits `tools`, it inherits the read-only `read`, `grep`, `find`, and `ls` allowlist. Shell execution and writes (`bash`, `edit`, `write`) are opt-in through profile or host configuration. If a one-shot profile omits `extensions`, Pi extensions stay disabled so an installed Fabric extension cannot capture the child's core tools again. Recursive Pi children are different: `agents.recurse` forces Fabric extensions on and adds `fabric_exec` to the child tool set.
 
 `agents.run` and `agents.wait` are foreground work. `agents.spawn` is detached until waited; when detached work settles and `notifyOnComplete` is enabled, Lean sends a bounded follow-up to Main.
 
@@ -165,9 +167,9 @@ Profile fields:
 | `model` | Runner-specific model identifier |
 | `persona` | Veda persona |
 | `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` |
-| `tools` | Portable child tool allowlist |
+| `tools` | Portable child tool allowlist; omitted profiles inherit `read, grep, find, ls` |
 | `timeoutMs` | Profile child timeout |
-| `extensions` | Whether child extensions are enabled |
+| `extensions` | Whether ordinary child extensions are enabled; omitted means `false` |
 | `worktree` | Create an isolated Git worktree |
 
 Public `agents.run` / `agents.spawn` calls expose only `task`, `profile`, optional display `name`, `timeoutMs`, `worktree`, and `schema`. Raw runner/model/thinking/tool fields are intentionally not part of the model-facing call schema.
@@ -183,6 +185,8 @@ Relevant guards:
 - `agents.timeoutMs` / profile timeout bound each child;
 - `agents.maxTokensPerChild` bounds cumulative child tokens when non-zero;
 - `agents.budgetUsd` provides a shared cost ledger across recursive Pi descendants when non-zero.
+
+Recursive Pi children force extensions on and add `fabric_exec` even when the selected profile omits them, because recursive delegation requires Lean Code Mode in the child.
 
 There is no separate RLM provider or persistent recursive scheduler.
 
