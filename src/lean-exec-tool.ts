@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { stringify as stringifyYaml } from "yaml";
 import { prepareFabricExecArguments } from "./fabric-exec-arguments.js";
 import type { LeanCodeModeRuntime } from "./lean-runtime.js";
+import { renderLeanExecCall, renderLeanExecResult } from "./ui/lean-exec-render.js";
 
 const RESULT_FORMATS = ["auto", "yaml", "json", "text"] as const;
 
@@ -63,6 +64,12 @@ export const createLeanFabricExecTool = (
   }),
   prepareArguments(args) {
     return prepareFabricExecArguments(args) as any;
+  },
+  renderCall(params, theme, context) {
+    return renderLeanExecCall(params as Record<string, unknown>, theme, context.expanded);
+  },
+  renderResult(result, { expanded, isPartial }, theme) {
+    return renderLeanExecResult(result, theme, expanded, isPartial);
   },
   async execute(toolCallId, params, signal, _onUpdate, context) {
     const code = Array.isArray(params.code) ? params.code.join("\n") : String(params.code ?? "");
