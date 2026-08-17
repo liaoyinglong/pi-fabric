@@ -167,7 +167,6 @@ export const loadEditableSubagentCatalog = (
   if (scope === "project") mergeFile(existingProfileFile(profileBase("project", options)));
   const explicit = process.env.PI_FABRIC_SUBAGENTS_FILE?.trim();
   const explicitPath = explicit ? path.resolve(explicit) : undefined;
-  mergeFile(explicitPath);
   return { profiles, sources, explicitOverride: explicitPath };
 };
 
@@ -199,7 +198,8 @@ export const saveEditableSubagentProfile = (
   if (target.endsWith(".json")) {
     writeJsonAtomic(target, root, { space: 2, newline: true });
   } else {
-    writeFileAtomic(target, stringifyYaml(root, { lineWidth: 100 }) + (stringifyYaml(root).endsWith("\n") ? "" : "\n"));
+    const serialized = stringifyYaml(root, { lineWidth: 100 });
+    writeFileAtomic(target, serialized.endsWith("\n") ? serialized : `${serialized}\n`);
   }
   return target;
 };
