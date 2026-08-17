@@ -10,7 +10,7 @@ lean-index
         -> pi.*
         -> extensions.*
         -> mcp.* when enabled
-        -> agents.*
+        -> agents.* when enabled
      -> FabricExecutionService
         -> QuickJS / node-process executor
         -> workflow helpers
@@ -22,7 +22,7 @@ Only the value returned by the TypeScript program is intended to return to the m
 
 ### Code Mode
 
-`fabric_exec` is the model-facing execution gateway. It provides typed TypeScript orchestration over Pi core tools, captured Pi extension tools, optional MCP, and one-shot agents.
+`fabric_exec` is the model-facing execution gateway. It provides typed TypeScript orchestration over Pi core tools, captured Pi extension tools, optional MCP, and optional one-shot agents.
 
 ### Tool capture
 
@@ -36,9 +36,11 @@ When `mcp.enabled` is true, `McpProvider` is an ActionRegistry provider. Known t
 
 When MCP is disabled, Lean V2 does not register or warm the provider and omits the `mcp` guest global from the active capability surface.
 
+For trusted projects, MCP discovery uses the project as its root. For untrusted projects, Lean V2 uses the user Agent directory as the mcporter discovery root and keeps the descriptor cache outside the repository, preventing project-local MCP/import configuration from being loaded through Fabric.
+
 ### Named one-shot subagents
 
-`LeanAgentsProvider` wraps the one-shot portion of `AgentManager`; the old persistent AgentsProvider is not part of the Lean public surface.
+`LeanAgentsProvider` wraps the one-shot portion of `AgentManager`; the old persistent AgentsProvider is not part of the Lean public surface. When `agents.enabled` is false, Lean V2 does not create or register the agents provider and system guidance does not advertise semantic delegation.
 
 Role files:
 
@@ -55,7 +57,6 @@ Typical roles:
 roles:
   research:
     runner: veda
-    model: agy/gemini-flash
     thinking: low
     tools: [read, grep, find, ls]
 
@@ -76,6 +77,8 @@ roles:
     thinking: high
     tools: [read, grep, find, ls]
 ```
+
+A Veda role can omit `model` and `persona` to inherit the installed backend defaults. Fabric forwards explicit selections to Veda and does not maintain its own Veda model/persona catalog.
 
 Normal system guidance tells Main to discover `agents.roles({})` and prefer semantic roles over raw model ids when delegation is useful.
 
@@ -133,7 +136,7 @@ The public Lean surface is smaller than the remaining internal implementation gr
 - `AgentManager`, worker options, and worker environment propagation still carry some old actor/mesh/residency/capability ownership fields inherited from Full Fabric.
 - `agents/handoff.ts` and thinking-transfer/session-seed compatibility remain reachable through the shared one-shot manager implementation.
 - retention still carries `actorRunArchiveMs` and actor-aware cleanup logic.
-- the QuickJS setup still contains dormant legacy Council/RLM helper code even though the Lean guest type surface and ActionRegistry do not expose those products. This code should be removed from the guest setup in the physical-cleanup pass.
+- the QuickJS setup still creates dormant legacy globals/helpers for removed surfaces including Memory, State, Schema, Components, global Compact, Mesh convenience, Council, and RLM. Lean guest types and ActionRegistry hide those surfaces from normal V2 programs, but the setup code and legacy runtime tests still need physical deletion.
 - `schema.mode` and `fullCodeMode` remain broad TypeScript fields for low-level ExecutionService coverage, while the V2 loader normalizes live runtime configuration to Full Code Mode with Schema off.
 
 This distinction is deliberate in the documentation: the removed systems are absent from the Lean V2 public capability surface today; some shared internal compatibility paths still need deletion before the fork can claim that every old implementation fragment has been physically removed.
