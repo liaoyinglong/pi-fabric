@@ -49,7 +49,6 @@ const completedRun = (): AgentRunResult => ({
     cacheRead: 0,
     cacheWrite: 0,
     cost: 0.01,
-    contextTokens: 30,
   },
 });
 
@@ -126,7 +125,7 @@ describe("LeanAgentsProvider profile contract", () => {
   it("keeps raw model-routing fields out of the model-facing run schema", async () => {
     const cwd = makeProject();
     const provider = new LeanAgentsProvider(fakeManager(cwd));
-    const descriptor = await provider.describe("run", contextFor(cwd));
+    const descriptor = await provider.describe("run");
     const schema = descriptor?.inputSchema as { properties?: Record<string, unknown> } | undefined;
     const keys = Object.keys(schema?.properties ?? {});
 
