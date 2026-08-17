@@ -28,6 +28,17 @@ export interface LeanExecutionRequest {
   }) => void;
 }
 
+const REMOVED_LEAN_PROVIDERS = [
+  "mesh",
+  "memory",
+  "state",
+  "schema",
+  "components",
+  "compact",
+  "council",
+  "rlm",
+] as const;
+
 const leanConfig = (context: ExtensionContext): FabricConfig => {
   const config = loadFabricConfig({
     cwd: context.cwd,
@@ -102,6 +113,10 @@ export class LeanCodeModeRuntime {
       retention: config.retention,
     });
     registry.register(new LeanAgentsProvider(agents));
+
+    for (const provider of REMOVED_LEAN_PROVIDERS) {
+      registry.markUnavailable(provider, `${provider} is not part of the Lean V2 runtime`);
+    }
 
     this.#config = config;
     this.#registry = registry;
