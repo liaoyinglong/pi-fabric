@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import type { AgentHandleInfo, AgentRunRecord, FabricLogLine } from "../agents/types.js";
 import type { AgentManager } from "../agents/manager.js";
@@ -150,14 +150,47 @@ const agentCompletions = (manager: AgentManager, prefix: string): AutocompleteIt
   return filtered.length > 0 ? filtered : null;
 };
 
+const openLeanFabricDashboard = async (
+  manager: AgentManager,
+  context: ExtensionContext,
+): Promise<void> => {
+  if (context.mode !== "tui") {
+    context.ui.notify(formatLeanFabricAgentList(manager.listForUi()), "info");
+    return;
+  }
+  const { LeanFabricDashboard } = await import("../ui/lean-dashboard.js");
+  let dispose: (() => void) | undefined;
+  try {
+    await context.ui.custom<void>(
+      (tui, theme, _keybindings, done) => {
+        const dashboard = new LeanFabricDashboard(tui, theme, manager, () => done(undefined));
+        dispose = () => dashboard.dispose();
+        return dashboard;
+      },
+      {
+        overlay: true,
+        overlayOptions: {
+          width: "94%",
+          minWidth: 36,
+          maxHeight: "90%",
+          anchor: "center",
+          margin: 1,
+        },
+      },
+    );
+  } finally {
+    dispose?.();
+  }
+};
+
 export function registerLeanFabricCommand(
   pi: ExtensionAPI,
   runtime: LeanCodeModeRuntime,
 ): void {
   pi.registerCommand("fabric", {
-    description: "Inspect running Fabric subagents and live workflow output",
+    description: "Open the Lean Fabric dashboard or inspect subagent output",
     getArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
-      const subcommands = ["agents", "status", "log", "stop"];
+      const subcommands = ["dashboard", "agents", "status", "log", "stop"];
       const firstSpace = argumentPrefix.indexOf(" ");
       if (firstSpace < 0) {
         const matches = subcommands.filter((name) => name.startsWith(argumentPrefix));
@@ -178,15 +211,16 @@ export function registerLeanFabricCommand(
       }
 
       const args = argumentsText.trim().split(/\s+/).filter(Boolean);
-      const command = args[0] ?? "agents";
+      const command = args[0] ?? "dashboard";
 
       try {
-        if (command === "agents" || command === "dashboard" || command === "ui") {
-          const body = formatLeanFabricAgentList(manager.listForUi());
-          context.ui.notify(
-            `${body}\n\nLive output: /fabric log <id> · Details: /fabric status <id>`,
-            "info",
-          );
+        if (command === "dashboard" || command === "ui") {
+          await openLeanFabricDashboard(manager, context);
+          return;
+        }
+
+        if (command === "agents") {
+          context.ui.notify(formatLeanFabricAgentList(manager.listForUi()), "info");
           return;
         }
 
@@ -231,7 +265,7 @@ export function registerLeanFabricCommand(
         }
 
         context.ui.notify(
-          "Usage: /fabric [agents] | /fabric status <id> | /fabric log <id> [--lines N] | /fabric stop <id>",
+          "Usage: /fabric [dashboard] | /fabric agents | /fabric status <id> | /fabric log <id> [--lines N] | /fabric stop <id>",
           "warning",
         );
       } catch (error) {
