@@ -23,7 +23,6 @@ const spawnCli = (
   : crossSpawn(command, [...args], options);
 
 type ClaudeCliModule = typeof import("./agents/claude-cli.js");
-type VedaCliModule = typeof import("./agents/veda-cli.js");
 type CompactControlModule = typeof import("./agents/compact-control.js");
 type WorkerOptionsModule = typeof import("./worker/options.js");
 type WorkerRunRecordModule = typeof import("./worker/run-record.js");
@@ -57,12 +56,6 @@ const loadClaudeCli = async (): Promise<ClaudeCliModule> => {
   if (!import.meta.url.endsWith(".ts")) return import("./agents/claude-cli.js");
   const sourceModulePath = "./agents/claude-cli.ts";
   return import(sourceModulePath) as Promise<ClaudeCliModule>;
-};
-
-const loadVedaCli = async (): Promise<VedaCliModule> => {
-  if (!import.meta.url.endsWith(".ts")) return import("./agents/veda-cli.js");
-  const sourceModulePath = "./agents/veda-cli.ts";
-  return import(sourceModulePath) as Promise<VedaCliModule>;
 };
 
 const MAX_STDERR_CHARS = 20_000;
@@ -145,7 +138,7 @@ const assistantError = (message: Record<string, unknown>): string => {
 };
 
 const runnerLabel = (runner: string): string =>
-  runner === "claude" ? "Claude" : runner === "veda" ? "Veda" : "Pi";
+  runner === "claude" ? "Claude" : "Pi";
 
 const terminateChild = (child: ChildProcess, signal: NodeJS.Signals): void => {
   if (!child.pid) return;
@@ -242,6 +235,10 @@ const main = async (): Promise<void> => {
     writeRunRecord,
   } = loadedRunRecordHelpers;
   const options = optionHelpers.parseWorkerOptions();
+  const runner = options.runner;
+  if (runner === "cli") {
+    throw new Error("CLI runs must be routed through worker-cli");
+  }
   const sessionExporter = options.sessionExportFile
     ? new sessionExportHelpers.SessionExporter({
         file: options.sessionExportFile,
@@ -293,7 +290,7 @@ const main = async (): Promise<void> => {
     }
   };
   const sessionStream =
-    options.runner === "claude" && options.sessionFile
+    runner === "claude" && options.sessionFile
       ? fs.createWriteStream(options.sessionFile, { flags: "a", mode: 0o600 })
       : undefined;
   sessionStream?.on("error", () => {});
@@ -317,22 +314,9 @@ const main = async (): Promise<void> => {
       `Your final response must contain only JSON matching this schema, without Markdown fences:\n${schema}`,
     );
   }
-  const claudeCli = options.runner === "claude" ? await loadClaudeCli() : undefined;
-  const vedaCli = options.runner === "veda" ? await loadVedaCli() : undefined;
-  const vedaPrompt =
-    options.runner === "veda"
-      ? [
-          ...(options.systemPrompt
-            ? [`<system_instructions>\n${options.systemPrompt}\n</system_instructions>`]
-            : []),
-          ...(schema
-            ? [`Your final response must contain only JSON matching this schema, without Markdown fences:\n${schema}`]
-            : []),
-          task,
-        ].join("\n\n")
-      : undefined;
+  const claudeCli = runner === "claude" ? await loadClaudeCli() : undefined;
   const childArguments =
-    options.runner === "claude"
+    runner === "claude"
       ? claudeCli!.buildClaudeArguments({
           tools: options.tools,
           extensions: options.extensions,
@@ -344,25 +328,8 @@ const main = async (): Promise<void> => {
           ...(options.runnerSessionId ? { runnerSessionId: options.runnerSessionId } : {}),
           name: options.name,
         })
-      : options.runner === "veda"
-        ? vedaCli!.buildVedaArguments({
-            prompt: vedaPrompt!,
-            backend: options.vedaBackend,
-            persona: options.vedaPersona,
-            ...(options.model ? { model: options.model } : {}),
-            ...(thinking ? { thinking } : {}),
-            tools: options.tools,
-            // Isolate selection and conversation state per child run so
-            // parallel Fabric agents never share Veda session state.
-            session: `fabric-${options.id}`,
-          })
-        : piArguments;
-  const childBinary =
-    options.runner === "claude"
-      ? options.claudeBinary
-      : options.runner === "veda"
-        ? options.vedaBinary
-        : options.piBinary;
+      : piArguments;
+  const childBinary = runner === "claude" ? options.claudeBinary : options.piBinary;
 
   const child = spawnCli(childBinary, childArguments, {
     cwd: options.cwd,
@@ -382,11 +349,6 @@ const main = async (): Promise<void> => {
   });
   let stderr = "";
   let outputBuffer = "";
-  // Veda emits a single JSON document on stdout (progress goes to stderr, and
-  // with --json progress is suppressed entirely). Buffer it raw and parse it
-  // once the child closes instead of treating stdout as NDJSON lines.
-  let vedaOutput = "";
-  let vedaParsed: Record<string, unknown> | undefined;
   const outputDecoder = new StringDecoder("utf8");
   const stderrDecoder = new StringDecoder("utf8");
   let terminalStatus: AgentRunStatus | undefined;
@@ -424,7 +386,7 @@ const main = async (): Promise<void> => {
     emitLifecycle("tokens.usage", {
       runId: options.id,
       name: options.name,
-      runner: options.runner,
+      runner,
       depth: options.depth,
       cumulativeTokens:
         snapshot.input + snapshot.output + snapshot.cacheRead + snapshot.cacheWrite,
@@ -782,7 +744,7 @@ const main = async (): Promise<void> => {
     } catch {
       return;
     }
-    if (options.runner === "claude") {
+    if (runner === "claude") {
       processClaudeEvent(event);
       return;
     }
@@ -912,12 +874,8 @@ const main = async (): Promise<void> => {
   };
 
   child.stdin?.on("error", () => {});
-  if (options.runner === "claude") {
+  if (runner === "claude") {
     writeClaudeInput("initial", task, images);
-  } else if (options.runner === "veda") {
-    // Veda receives its one-shot prompt positionally in childArguments.
-    // Close unused stdin so the child cannot wait on an input stream.
-    child.stdin?.end();
   } else {
     child.stdin?.write(
       `${JSON.stringify({
@@ -996,7 +954,7 @@ const main = async (): Promise<void> => {
           continue;
         }
         try {
-          if (options.runner === "claude") {
+          if (runner === "claude") {
             if (claudeCloseTimer) clearTimeout(claudeCloseTimer);
             claudeCloseTimer = undefined;
             if (command.type === "steer" && typeof command.message === "string") {
@@ -1019,10 +977,6 @@ const main = async (): Promise<void> => {
               if (claudeCanFollowUp && claudeSentInputs.length === 0) flushClaudeFollowUps();
             }
             updateClaudeQueue();
-          } else if (options.runner === "veda") {
-            // Steering is unsupported for the veda runner: Veda executes one
-            // headless prompt per invocation. The command is dropped, never
-            // forwarded to pi-style stdin frames.
           } else if (command.type === "steer" && typeof command.message === "string") {
             child.stdin?.write(JSON.stringify({ type: "steer", message: command.message }) + "\n");
           } else if (command.type === "follow_up" && typeof command.message === "string") {
@@ -1046,12 +1000,7 @@ const main = async (): Promise<void> => {
   steerTimer?.unref?.();
 
   child.stdout?.on("data", (chunk: Buffer) => {
-    const decoded = outputDecoder.write(chunk);
-    if (options.runner === "veda") {
-      vedaOutput += decoded;
-      return;
-    }
-    outputBuffer += decoded;
+    outputBuffer += outputDecoder.write(chunk);
     while (true) {
       const newline = outputBuffer.indexOf("\n");
       if (newline < 0) {
@@ -1118,66 +1067,9 @@ const main = async (): Promise<void> => {
   if (claudeCloseTimer) clearTimeout(claudeCloseTimer);
   clearTimeout(timeout);
   if (process.env.PI_FABRIC_INJECT_CRASH === "close") throw new Error("simulated close crash");
-  if (options.runner === "veda") {
-    vedaOutput += outputDecoder.end();
-  } else {
-    outputBuffer += outputDecoder.end();
-  }
+  outputBuffer += outputDecoder.end();
   recordStderr(stderrDecoder.end());
-  if (options.runner === "veda") {
-    const trimmed = vedaOutput.trim();
-    if (trimmed) {
-      try {
-        const parsed = parseStructuredValue(trimmed);
-        if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-          vedaParsed = parsed as Record<string, unknown>;
-          const text = stringField(vedaParsed.text) ?? "";
-          if (text) {
-            record.text = latestRunText(text);
-            process.stdout.write(`\n${text}\n`);
-          }
-          const sessionId = stringField(vedaParsed.sessionId);
-          if (sessionId) record.runnerSessionId = sessionId;
-          const usage = vedaParsed.usage;
-          if (typeof usage === "object" && usage !== null && !Array.isArray(usage)) {
-            const values = usage as Record<string, unknown>;
-            const input = numberField(values.inputTokens);
-            const output = numberField(values.outputTokens);
-            const cacheRead = numberField(values.cachedTokens);
-            const cost = typeof values.costUsd === "number" ? values.costUsd : 0;
-            record.usage = { input, output, cacheRead, cacheWrite: 0, cost };
-            emitTokenUsage({ input, output, cacheRead, cacheWrite: 0, cost }, { model: stringField(vedaParsed.model) });
-          }
-          const envelopeErrors: string[] = [];
-          const error = stringField(vedaParsed.error);
-          if (error) envelopeErrors.push(error);
-          // navigator-plan gates the response on a <program> design block and
-          // the worker persona on a <worker_report>; both exit non-zero and
-          // report failure only via design/worker fields, not envelope.error.
-          for (const key of ["design", "worker"] as const) {
-            const gate = vedaParsed[key];
-            if (typeof gate !== "object" || gate === null || Array.isArray(gate)) continue;
-            const status = gate as Record<string, unknown>;
-            if (status.ok !== false) continue;
-            const details = Array.isArray(status.errors)
-              ? status.errors.filter((entry): entry is string => typeof entry === "string").join("; ")
-              : [stringField(status.reason), stringField(status.detail)]
-                  .filter((entry): entry is string => entry !== undefined)
-                  .join(": ");
-            envelopeErrors.push(`Veda ${key} failed${details ? `: ${details}` : ""}`);
-          }
-          if (envelopeErrors.length > 0) {
-            sawAgentError = true;
-            terminalError = envelopeErrors.join("\n");
-          }
-          record.turns += 1;
-          update();
-        }
-      } catch {
-        // Unparseable stdout; the generic failed-record path reports stderr.
-      }
-    }
-  } else if (outputBuffer.trim()) {
+  if (outputBuffer.trim()) {
     processEvent(outputBuffer);
   }
   record.exitCode = exitCode;
@@ -1204,21 +1096,20 @@ const main = async (): Promise<void> => {
   const childCompleted =
     exitCode === 0 &&
     !sawAgentError &&
-    (options.runner === "pi" ||
-      (options.runner === "claude" &&
+    (runner === "pi" ||
+      (runner === "claude" &&
         claudeResultSeen &&
         claudeSentInputs.length === 0 &&
         claudeSteering.length === 0 &&
-        claudeFollowUps.length === 0) ||
-      (options.runner === "veda" && vedaParsed !== undefined));
+        claudeFollowUps.length === 0));
   record.status = terminalStatus ?? (childCompleted ? "completed" : "failed");
   if (terminalError) record.error = terminalError;
   if (record.status === "failed" && !record.error) {
     record.error =
       stderr.trim() ||
       (exitCode === 0
-        ? `${runnerLabel(options.runner)} agent reported an error before exiting`
-        : `${runnerLabel(options.runner)} exited with code ${exitCode ?? "unknown"}`);
+        ? `${runnerLabel(runner)} agent reported an error before exiting`
+        : `${runnerLabel(runner)} exited with code ${exitCode ?? "unknown"}`);
   }
   if (record.status === "completed" && options.schemaFile) {
     try {
