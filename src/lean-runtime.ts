@@ -41,11 +41,29 @@ const REMOVED_LEAN_PROVIDERS = [
   "rlm",
 ] as const;
 
-const leanConfig = (context: ExtensionContext): FabricConfig => {
+export const leanMcpDiscoveryRoot = (
+  cwd: string,
+  agentDir: string,
+  projectTrusted: boolean,
+): string => projectTrusted ? cwd : agentDir;
+
+export const leanMcpCachePath = (
+  projectRoot: string,
+  agentDir: string,
+  projectTrusted: boolean,
+): string => projectTrusted
+  ? path.join(projectRoot, ".pi", "fabric", "mcp-descriptors.json")
+  : path.join(agentDir, "fabric", "mcp-descriptors.json");
+
+const leanConfig = (
+  context: ExtensionContext,
+  agentDir: string,
+  projectTrusted: boolean,
+): FabricConfig => {
   const config = loadFabricConfig({
     cwd: context.cwd,
-    agentDir: getAgentDir(),
-    projectTrusted: context.isProjectTrusted(),
+    agentDir,
+    projectTrusted,
   });
   config.fullCodeMode = true;
   config.schema.mode = "off";
@@ -87,7 +105,9 @@ export class LeanCodeModeRuntime {
     if (this.#cwd === context.cwd && this.#execution) return;
     await this.close();
 
-    const config = leanConfig(context);
+    const agentDir = getAgentDir();
+    const projectTrusted = context.isProjectTrusted();
+    const config = leanConfig(context, agentDir, projectTrusted);
     const registry = new ActionRegistry();
     const capturedProvider = new CapturedToolsProvider(this.capturedTools);
     registry.register(new PiToolsProvider(context.cwd, this.capturedTools, capturedProvider));
@@ -96,11 +116,12 @@ export class LeanCodeModeRuntime {
     const projectRoot = process.env.PI_FABRIC_PROJECT_ROOT ?? context.cwd;
     let mcp: McpProvider | undefined;
     if (config.mcp.enabled) {
-      mcp = new McpProvider(context.cwd, config.mcp, {
+      const mcpRoot = leanMcpDiscoveryRoot(context.cwd, agentDir, projectTrusted);
+      mcp = new McpProvider(mcpRoot, config.mcp, {
         ...(config.mcp.cache.enabled
           ? {
               cache: new McpDescriptorCacheStore(
-                path.join(projectRoot, ".pi", "fabric", "mcp-descriptors.json"),
+                leanMcpCachePath(projectRoot, agentDir, projectTrusted),
               ),
             }
           : {}),
