@@ -100,7 +100,7 @@ With `mcp.enabled: false`, Lean does not register/warm the MCP provider and omit
 | `sessionExport` | `true` | Exports Pi-format usage records for child attribution |
 | `sessionExportDir` | empty | Optional explicit export directory |
 
-These values are defaults and safety ceilings. Ordinary Code Mode calls should select a semantic `profile`; model/runner/tool policy belongs in the profile file rather than the `agents.run` call.
+These values are defaults and safety ceilings. Ordinary Code Mode calls should select a semantic `profile`; model/runner/tool policy belongs in the profile file and stays out of the `agents.run` call.
 
 `agents.run` and `agents.wait` are foreground work. `agents.spawn` is detached until waited; when detached work settles and `notifyOnComplete` is enabled, Lean sends a bounded follow-up to Main.
 
@@ -168,7 +168,6 @@ Profile fields:
 | `tools` | Portable child tool allowlist |
 | `timeoutMs` | Profile child timeout |
 | `extensions` | Whether child extensions are enabled |
-| `recursive` | Allow recursive Pi Code Mode when this profile is run internally |
 | `worktree` | Create an isolated Git worktree |
 
 Public `agents.run` / `agents.spawn` calls expose only `task`, `profile`, optional display `name`, `timeoutMs`, `worktree`, and `schema`. Raw runner/model/thinking/tool fields are intentionally not part of the model-facing call schema.

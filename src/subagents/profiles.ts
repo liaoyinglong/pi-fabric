@@ -18,7 +18,6 @@ interface SubagentRoleProfile {
   tools?: string[];
   timeoutMs?: number;
   extensions?: boolean;
-  recursive?: boolean;
   worktree?: boolean;
 }
 
@@ -105,7 +104,6 @@ const roleProfile = (value: unknown): SubagentRoleProfile | undefined => {
     ...(tools !== undefined ? { tools } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     ...(typeof input.extensions === "boolean" ? { extensions: input.extensions } : {}),
-    ...(typeof input.recursive === "boolean" ? { recursive: input.recursive } : {}),
     ...(typeof input.worktree === "boolean" ? { worktree: input.worktree } : {}),
   };
 };
@@ -183,7 +181,6 @@ const profileArgs = (profile: SubagentRoleProfile): Record<string, unknown> => (
   ...(profile.tools !== undefined ? { tools: profile.tools } : {}),
   ...(profile.timeoutMs !== undefined ? { timeoutMs: profile.timeoutMs } : {}),
   ...(profile.extensions !== undefined ? { extensions: profile.extensions } : {}),
-  ...(profile.recursive !== undefined ? { recursive: profile.recursive } : {}),
   ...(profile.worktree !== undefined ? { worktree: profile.worktree } : {}),
 });
 

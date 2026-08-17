@@ -99,8 +99,8 @@ describe("lean Fabric skill surface", () => {
     const skill = fs.readFileSync("skills/fabric-exec/SKILL.md", "utf8");
     expect(skill).toContain("Pi Code Mode");
     expect(skill).toContain("Captured extension tools");
-    expect(skill).toContain("Named subagents");
-    expect(skill).toContain("Workflow composition");
+    expect(skill).toContain("Profile-based subagents");
+    expect(skill).toContain("Thin workflow composition");
     expect(skill).not.toContain("memory.recall");
     expect(skill).not.toContain("state.transition");
     expect(skill).not.toContain("schema.hypothesize");

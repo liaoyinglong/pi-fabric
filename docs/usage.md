@@ -240,7 +240,7 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-Profiles can define `description`, `instructions`, `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, `recursive`, and `worktree`.
+Profiles can define `description`, `instructions`, `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, and `worktree`.
 
 Project profiles are skipped for untrusted projects. Profiles merge field-by-field in this order:
 
@@ -310,7 +310,7 @@ return agents.recurse({
 });
 ```
 
-The profile must resolve to `runner: pi`. The recursive child gets Lean Code Mode and can delegate again. The parent receives a compact result rather than the full internal run record.
+The profile must resolve to `runner: pi`. The recursive child gets Lean Code Mode and can delegate again. The parent receives a compact result that omits the full internal run record.
 
 Current recursion bounds are intentionally simple:
 

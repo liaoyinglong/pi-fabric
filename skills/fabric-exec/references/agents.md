@@ -93,7 +93,7 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-A profile can define `description`, `instructions`, `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, `recursive`, and `worktree`. Project definitions merge over global definitions field-by-field only when Pi trusts the project. `PI_FABRIC_SUBAGENTS_FILE` is host supplied and loads last.
+A profile can define `description`, `instructions`, `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, and `worktree`. Project definitions merge over global definitions field-by-field only when Pi trusts the project. `PI_FABRIC_SUBAGENTS_FILE` is host supplied and loads last.
 
 Profile `instructions` are prepended to the child task.
 
@@ -169,7 +169,7 @@ return agents.recurse({
 });
 ```
 
-The resolved profile must use `runner: pi`. Lean starts that child with recursive Code Mode enabled and returns a compact result containing status, text/value, error, turns, tool-call count, and usage rather than the full internal run record.
+The resolved profile must use `runner: pi`. Lean starts that child with recursive Code Mode enabled and returns a compact result containing status, text/value, error, turns, tool-call count, and usage and omits the full internal run record.
 
 Existing guards apply:
 
@@ -186,7 +186,7 @@ Use ordinary `run`/`spawn` for normal delegation. `agents.recurse` is a primitiv
 
 Pi is the default runner. If a Pi profile does not specify `model`, Lean uses `agents.model` when configured, otherwise the child may inherit the host model.
 
-A profile may opt into `recursive: true`, but prefer the explicit `agents.recurse(...)` call when recursion is part of the task semantics.
+Recursion is enabled only by the explicit `agents.recurse(...)` call. Ordinary `run` and `spawn` remain one-shot.
 
 ### Claude
 

@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Fabric Subagent Profiles
 
-Route by semantic profile instead of choosing raw models in ordinary calls. Profiles are configured as `roles:` globally in `~/.pi/agent/fabric/subagents.yaml` or per trusted project in `.pi/fabric/subagents.yaml`. Project entries override global entries field-by-field.
+Route ordinary calls by semantic profile and keep raw model choices in configuration. Profiles are configured as `roles:` globally in `~/.pi/agent/fabric/subagents.yaml` or per trusted project in `.pi/fabric/subagents.yaml`. Project entries override global entries field-by-field.
 
 Discover the active catalog:
 
@@ -71,15 +71,15 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-Profile configuration owns `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, `recursive`, and `worktree`. The public `agents.run`/`spawn` call surface intentionally does not expose raw model-routing fields; change the profile when routing policy changes. Profile `instructions` are prepended to the child task.
+Profile configuration owns `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, and `worktree`. The public `agents.run`/`spawn` call surface intentionally does not expose raw model-routing fields; change the profile when routing policy changes. Profile `instructions` are prepended to the child task.
 
 Project profile files are skipped when Pi marks the project untrusted. Global profiles and an explicit host-supplied `PI_FABRIC_SUBAGENTS_FILE` remain available.
 
-For Veda, omit `model` and `persona` to use the current backend defaults. Add either value only after confirming the identifier accepted by the installed Veda backend. Fabric forwards those selections to Veda rather than maintaining its own Veda model or persona catalog.
+For Veda, omit `model` and `persona` to use the current backend defaults. Add either value only after confirming the identifier accepted by the installed Veda backend. Fabric forwards those selections to Veda and maintains no Veda model or persona catalog.
 
 ## Minimal recursive delegation
 
-Use recursion only when one isolated child context is not enough. `agents.recurse` is deliberately small: it starts a recursive **Pi** profile, allows that child to use Lean Code Mode and delegate again, and returns only a compact result instead of the full run record.
+Use recursion only when one isolated child context is not enough. `agents.recurse` is deliberately small: it starts a recursive **Pi** profile, allows that child to use Lean Code Mode and delegate again, and returns only a compact result that omits the full run record.
 
 ```ts
 return await agents.recurse({
@@ -88,6 +88,6 @@ return await agents.recurse({
 });
 ```
 
-A recursive profile must resolve to `runner: pi`; Veda and Claude remain one-shot workers. Recursion is bounded by `agents.maxDepth`, the execution agent-call ceiling, child timeouts/token limits, and the shared `agents.budgetUsd` cost ledger when configured. Prefer ordinary `run`/`spawn` unless recursive decomposition materially reduces the parent context burden.
+The profile selected by `agents.recurse` must resolve to `runner: pi`; Veda and Claude remain one-shot workers. Recursion is bounded by `agents.maxDepth`, the execution agent-call ceiling, child timeouts/token limits, and the shared `agents.budgetUsd` cost ledger when configured. Prefer ordinary `run`/`spawn` unless recursive decomposition materially reduces the parent context burden.
 
 The intended routing pattern is semantic: cheap profiles such as `research`/`explore` gather evidence, while `deep`/`review` handle difficult reasoning or independent verification. The main agent should choose the profile, not the provider/model identifier.

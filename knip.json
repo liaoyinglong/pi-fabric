@@ -6,7 +6,13 @@
     "src/worker.ts",
     "tests/**/*.test.ts"
   ],
-  "project": ["src/**/*.ts"],
-  "include": ["files", "dependencies", "unlisted", "unresolved"],
-  "ignoreDependencies": ["diff", "shiki"]
+  "project": [
+    "src/**/*.ts"
+  ],
+  "include": [
+    "files",
+    "dependencies",
+    "unlisted",
+    "unresolved"
+  ]
 }

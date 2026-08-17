@@ -51,7 +51,7 @@ Configuration definitions remain under the historical `roles:` key:
 .pi/fabric/subagents.yaml
 ```
 
-Project definitions are loaded only for trusted projects. A profile binds semantic purpose to runner, transport, model, persona, thinking, tools, instructions, timeout, extension policy, recursion capability, and worktree policy.
+Project definitions are loaded only for trusted projects. A profile binds semantic purpose to runner, transport, model, persona, thinking, tools, instructions, timeout, extension policy and worktree policy.
 
 Typical catalog:
 
@@ -88,7 +88,7 @@ agents.run({ profile: "explore", task: "..." })
 
 `name` is display-only in the public schema. Matching old `name` values remain an internal compatibility fallback. Raw runner/model/thinking/tool policy is intentionally absent from the model-facing run/spawn schema.
 
-Main guidance discovers `agents.profiles({})` and selects semantic profiles rather than provider/model ids.
+Main guidance discovers `agents.profiles({})` and selects semantic profiles and leaves provider/model ids in configuration.
 
 ### Thin workflow
 
@@ -115,7 +115,7 @@ Lean retains one explicit recursive primitive:
 agents.recurse({ profile: "deep", task: "..." })
 ```
 
-This is not the removed RLM provider. It resolves the same semantic profile, requires the Pi runner, enables recursive Lean Code Mode for that child, and returns a compact result instead of the full internal run record.
+This is not the removed RLM provider. It resolves the same semantic profile, requires the Pi runner, enables recursive Lean Code Mode for that child, and returns a compact result that omits the full internal run record.
 
 Existing guards provide bounded execution:
 
