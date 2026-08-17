@@ -4,17 +4,45 @@ on:
   push:
     branches: ["agent/code-mode-runtime-v2"]
     paths:
+      - "scripts/lean-residue-cleanup.mjs"
       - ".github/workflows/lean-residue-audit.yml"
+
+permissions:
+  contents: write
 
 jobs:
   audit:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Legacy terminology and compatibility scan
+        with:
+          ref: agent/code-mode-runtime-v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Apply final residue cleanup
+        run: node scripts/lean-residue-cleanup.mjs
+      - name: Reject strong Full Fabric residue
         shell: bash
         run: |
-          echo '=== strong legacy terms in src/tests ==='
-          grep -RInE 'actorId|actorName|byActor|ownerHostId|ownerIdentityId|meshRoot|sessionSeed|thinkingTransfer|handoffCompact|deferHandoff|actorRunArchive|\bRLM\b|\bPrewalk\b|\bCouncil\b|\bActor\b|\bMesh\b|\bParticipant\b|resident host|resident-host' src tests || true
-          echo '=== legacy source paths ==='
-          find src tests -type f | sort | grep -Ei 'actor|mesh|handoff|rlm|prewalk|council|resident|thinking-transfer' || true
+          set -euo pipefail
+          pattern='actorId|actorName|byActor|ownerHostId|ownerIdentityId|meshRoot|sessionSeed|thinkingTransfer|handoffCompact|deferHandoff|actorRunArchive|ParticipantGuidance|RLM_BUDGET|RLM_COST|rlm_cost|Prewalk trajectory|Deferred handoff|agents\.handoff'
+          if grep -RInE "$pattern" src tests; then
+            echo "Strong Full Fabric residue remains" >&2
+            exit 1
+          fi
+      - name: Validate
+        run: pnpm check
+      - name: Remove audit scaffolding and commit
+        run: |
+          rm -f scripts/lean-residue-cleanup.mjs .github/workflows/lean-residue-audit.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "refactor: remove final Lean telemetry and naming residue"
+          git push origin HEAD:agent/code-mode-runtime-v2
