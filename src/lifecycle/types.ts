@@ -14,11 +14,9 @@ export type FabricLifecycleEventType = (typeof FABRIC_LIFECYCLE_EVENTS)[number];
 export interface FabricLifecycleSource {
   id: string;
   name: string;
-  kind: "agent" | "actor";
+  kind: "agent";
   rootId: string;
   runner: FabricAgentRunner;
-  ownerHostId?: string;
-  ownerIdentityId?: string;
 }
 
 export interface FabricLifecyclePublishRequest {
@@ -35,8 +33,6 @@ export interface FabricTokenUsagePayload {
   name: string;
   runner: FabricAgentRunner;
   depth: number;
-  actorId?: string;
-  actorName?: string;
   cumulativeTokens: number;
   input: number;
   output: number;
