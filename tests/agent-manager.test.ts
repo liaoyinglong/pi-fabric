@@ -45,6 +45,41 @@ describe("lean AgentManager", () => {
     expect(manager.list()).toHaveLength(1);
   });
 
+  it("defaults ordinary Pi children to read-only tools with extensions disabled", async () => {
+    const manager = createManager();
+    const result = await manager.run({
+      task: "Inspect defaults",
+      transport: "process",
+    });
+    const observed = result as typeof result & {
+      tools?: string[];
+      extensions?: string;
+      fullCodeMode?: string;
+    };
+
+    expect(observed.tools).toEqual(["read", "grep", "find", "ls"]);
+    expect(observed.extensions).toBe("false");
+    expect(observed.fullCodeMode).toBe("false");
+  });
+
+  it("keeps recursive Pi children on Fabric with fabric_exec available", async () => {
+    const manager = createManager();
+    const result = await manager.run({
+      task: "Recursive inspection",
+      transport: "process",
+      recursive: true,
+    });
+    const observed = result as typeof result & {
+      tools?: string[];
+      extensions?: string;
+      fullCodeMode?: string;
+    };
+
+    expect(observed.tools).toEqual(["read", "grep", "find", "ls", "fabric_exec"]);
+    expect(observed.extensions).toBe("true");
+    expect(observed.fullCodeMode).toBe("true");
+  });
+
   it("spawns and waits for a one-shot worker", async () => {
     const manager = createManager();
     const handle = await manager.spawn({
