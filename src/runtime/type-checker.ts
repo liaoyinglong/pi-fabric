@@ -88,52 +88,22 @@ const unknownPiCoreActionErrors = (sourceFile: ts.SourceFile): FabricTypeError[]
   return errors;
 };
 
-/**
- * The Lean public contract renamed role discovery to agents.profiles(), while
- * the current sandbox bootstrap still exposes the old agents.roles() runtime
- * slot. Lower only real call expressions (never strings/comments), and pad the
- * shorter identifier so source-map line/column offsets stay stable. Remove this
- * compatibility lowering once the bootstrap surface itself is regenerated from
- * the provider contract.
- */
-const lowerGuestRuntimeAliases = (code: string): string => {
-  const sourceFile = ts.createSourceFile(
-    "__pi_fabric_alias_scan.ts",
-    code,
-    ts.ScriptTarget.ES2022,
-    true,
-  );
-  const replacements: Array<{ start: number; end: number }> = [];
-  const visit = (node: ts.Node): void => {
-    if (
-      ts.isCallExpression(node) &&
-      ts.isPropertyAccessExpression(node.expression) &&
-      ts.isIdentifier(node.expression.expression) &&
-      node.expression.expression.text === "agents" &&
-      node.expression.name.text === "profiles"
-    ) {
-      replacements.push({
-        start: node.expression.name.getStart(sourceFile),
-        end: node.expression.name.end,
-      });
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
-  if (replacements.length === 0) return code;
-  let lowered = code;
-  for (const replacement of replacements.reverse()) {
-    const width = replacement.end - replacement.start;
-    const alias = "roles".padEnd(width, " ");
-    lowered = `${lowered.slice(0, replacement.start)}${alias}${lowered.slice(replacement.end)}`;
-  }
-  return lowered;
-};
-
 let nextCheckerId = 0;
 
 export const normalizeTypeScriptPath = (fileName: string): string =>
   fileName.replaceAll("\\", "/");
+
+// GUEST_SETUP historically exposed agents.roles but not the newer profiles /
+// recurse members. Patch that host object once per guest execution through the
+// generic dispatcher. Keeping this prelude on wrapped line 1 preserves the
+// long-standing invariant that user code starts on wrapped line 2, while the
+// model-facing API remains canonical: agents.profiles() and agents.recurse().
+const AGENT_RUNTIME_PRELUDE =
+  "const __fabricGlobals=globalThis as any;const __fabricAgentsBase=__fabricGlobals.agents;" +
+  "__fabricGlobals.agents=new Proxy(__fabricAgentsBase,{get(target,property,receiver){" +
+  "if(property===\"profiles\"||property===\"roles\")return(args={})=>__fabricGlobals.tools.call({ref:\"agents.profiles\",args});" +
+  "if(property===\"recurse\")return(args:any)=>__fabricGlobals.tools.call({ref:\"agents.recurse\",args});" +
+  "return Reflect.get(target,property,receiver);}});";
 
 /**
  * Guest programs execute inside this wrapper; user code starts on wrapped line 2.
@@ -141,7 +111,7 @@ export const normalizeTypeScriptPath = (fileName: string): string =>
  * diagnostic coordinates for user statements remain stable.
  */
 export const wrapFabricGuestCode = (code: string): string =>
-  `async function __piFabricMain() {\n${withBetterAllGuestEpilogue(code)}\n}\n`;
+  `${AGENT_RUNTIME_PRELUDE}async function __piFabricMain() {\n${withBetterAllGuestEpilogue(code)}\n}\n`;
 
 class FabricTypeChecker {
   readonly #guestFile: string;
@@ -207,8 +177,7 @@ class FabricTypeChecker {
   }
 
   check(code: string): FabricTypeCheckResult {
-    const loweredCode = lowerGuestRuntimeAliases(code);
-    this.#sourceText = wrapFabricGuestCode(loweredCode);
+    this.#sourceText = wrapFabricGuestCode(code);
     this.#sourceFile = ts.createSourceFile(
       this.#guestFile,
       this.#sourceText,
@@ -283,7 +252,7 @@ export interface FabricTranspileResult {
 }
 
 export const transpileFabricCodeWithSourceMap = (code: string): FabricTranspileResult => {
-  const result = ts.transpileModule(wrapFabricGuestCode(lowerGuestRuntimeAliases(code)), {
+  const result = ts.transpileModule(wrapFabricGuestCode(code), {
     compilerOptions: {
       target: ts.ScriptTarget.ES2022,
       module: ts.ModuleKind.ESNext,
