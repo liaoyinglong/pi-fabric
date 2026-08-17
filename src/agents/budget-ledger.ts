@@ -4,20 +4,19 @@ import os from "node:os";
 import path from "node:path";
 
 /**
- * Cross-process cost budget ledger for a Fabric recursion tree.
+ * Cross-process cost budget ledger for a recursive Fabric agent tree.
  *
- * A recursion tree spans one Pi process per node. Each node's AgentManager
+ * A recursive tree spans one Pi process per node. Each node's AgentManager
  * records the cost of the children it spawns into a single append-only JSONL
  * file, and checks the accumulated spend before spawning another child. The
  * ledger path and budget travel to descendants through PI_FABRIC_BUDGET*
  * environment variables, which the worker forwards to child Pi processes via
  * `{ ...process.env }`.
  *
- * This mirrors ypi's RLM_BUDGET / RLM_COST_FILE model: the check is best-effort
- * (concurrent children can each pass the check before any cost lands, so a tree
- * may slightly overshoot), while the race-free ceiling remains the per-execution
- * call count (agents.maxPerExecution). Cost is recorded only after a child
- * finishes, matching ypi's append-after-completion semantics.
+ * The check is best-effort: concurrent children can each pass the check before
+ * any cost lands, so a tree may slightly overshoot. The race-free ceiling
+ * remains the per-execution call count (`agents.maxPerExecution`). Cost is
+ * recorded after a child finishes.
  */
 
 export interface BudgetLedgerEntry {
@@ -27,8 +26,6 @@ export interface BudgetLedgerEntry {
   tokens: number;
   ts: number;
   runner?: string;
-  actorId?: string;
-  actorName?: string;
   input?: number;
   output?: number;
   cacheRead?: number;
@@ -44,7 +41,6 @@ export interface BudgetLedgerDetail {
   cost: number;
   tokens: number;
   byRunner: Record<string, { cost: number; tokens: number }>;
-  byActor: Record<string, { cost: number; tokens: number }>;
   entries: BudgetLedgerEntry[];
 }
 
@@ -64,10 +60,7 @@ const parseFloatFinite = (value: string | undefined): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-/**
- * Read the active budget state inherited from the recursion-tree root.
- * Returns undefined when no budget is active for this process.
- */
+/** Read the active budget state inherited from the recursive tree root. */
 export function activeBudgetState(): BudgetLedgerState | undefined {
   const file = process.env[ENV_BUDGET_FILE];
   const budget = parseFloatFinite(process.env[ENV_BUDGET]);
@@ -75,11 +68,7 @@ export function activeBudgetState(): BudgetLedgerState | undefined {
   return { budget, file, id: process.env[ENV_BUDGET_ID] ?? "" };
 }
 
-/**
- * Initialize a shared ledger for a recursion tree and seed the environment
- * variables that descendants inherit. Only call at the tree root (depth 0)
- * when no budget has been inherited and a positive budget is configured.
- */
+/** Initialize a shared ledger at the recursive tree root. */
 export function initBudgetLedger(budget: number): BudgetLedgerState {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-budget-"));
   const file = path.join(directory, "cost.jsonl");
@@ -91,27 +80,21 @@ export function initBudgetLedger(budget: number): BudgetLedgerState {
   return { budget, file, id };
 }
 
-/**
- * Clear the budget environment variables seeded by initBudgetLedger. Called by
- * the owning (depth-0) manager on close so a long-lived host process does not
- * leak an active budget into a later, unrelated session.
- */
+/** Re-apply an inherited budget ledger to the current process. */
 export function useBudgetLedger(state: BudgetLedgerState): void {
   process.env[ENV_BUDGET] = String(state.budget);
   process.env[ENV_BUDGET_FILE] = state.file;
   process.env[ENV_BUDGET_ID] = state.id;
 }
 
+/** Clear budget variables owned by a depth-zero manager. */
 export function clearOwnedBudgetEnv(): void {
   delete process.env[ENV_BUDGET];
   delete process.env[ENV_BUDGET_FILE];
   delete process.env[ENV_BUDGET_ID];
 }
 
-/**
- * Sum the append-only ledger. Malformed lines are tolerated, matching ypi's
- * rlm_cost parser: a single bad entry must not abort the whole read.
- */
+/** Sum the append-only ledger while tolerating malformed lines. */
 export function readBudgetLedger(file: string): BudgetLedgerSummary {
   let cost = 0;
   let tokens = 0;
@@ -134,11 +117,7 @@ export function readBudgetLedger(file: string): BudgetLedgerSummary {
   return { cost, tokens };
 }
 
-/**
- * Append a child's incurred cost to the shared ledger. O_APPEND makes small
- * single-line writes atomic across concurrent writers on POSIX, which is
- * sufficient because each manager appends one entry after a child settles.
- */
+/** Append one child's incurred cost to the shared ledger. */
 export function appendBudgetLedger(file: string, entry: BudgetLedgerEntry): void {
   try {
     fs.appendFileSync(file, `${JSON.stringify(entry)}\n`);
@@ -148,10 +127,7 @@ export function appendBudgetLedger(file: string, entry: BudgetLedgerEntry): void
   }
 }
 
-/**
- * Parse a ledger entry, accepting legacy flat rows ({id,depth,cost,tokens,ts})
- * while validating the optional attribution fields added for token telemetry.
- */
+/** Parse one attributed ledger entry while accepting older minimal rows. */
 const parseBudgetLedgerEntry = (value: unknown): BudgetLedgerEntry | undefined => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const candidate = value as Record<string, unknown>;
@@ -166,17 +142,12 @@ const parseBudgetLedgerEntry = (value: unknown): BudgetLedgerEntry | undefined =
   return candidate as unknown as BudgetLedgerEntry;
 };
 
-/**
- * Sum the append-only ledger with full per-attribution breakdown. Reuses the
- * tolerant line-parsing semantics of readBudgetLedger while exposing runner/
- * actor/token-kind rollups for orchestrator decisions.
- */
+/** Sum the ledger with per-runner attribution for orchestration decisions. */
 export function readBudgetLedgerDetailed(file: string): BudgetLedgerDetail {
   const detail: BudgetLedgerDetail = {
     cost: 0,
     tokens: 0,
     byRunner: {},
-    byActor: {},
     entries: [],
   };
   let raw: string;
@@ -197,11 +168,6 @@ export function readBudgetLedgerDetailed(file: string): BudgetLedgerDetail {
       const runnerRollup = (detail.byRunner[runnerKey] ??= { cost: 0, tokens: 0 });
       runnerRollup.cost += entry.cost;
       runnerRollup.tokens += entry.tokens;
-      if (entry.actorId) {
-        const actorRollup = (detail.byActor[entry.actorId] ??= { cost: 0, tokens: 0 });
-        actorRollup.cost += entry.cost;
-        actorRollup.tokens += entry.tokens;
-      }
     } catch {
       // Ignore malformed cost lines; the ledger is best-effort.
     }
