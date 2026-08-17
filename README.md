@@ -8,7 +8,7 @@ This fork keeps three product surfaces:
 2. **Named one-shot subagents**: semantic roles such as `research`, `explore`, `deep`, and `review` can bind to different runners, models, thinking levels, tools, personas, and instructions.
 3. **Workflow orchestration**: `agent`, `parallel`, `pipeline`, and workflow phase helpers compose the same one-shot subagent runtime.
 
-Lean V2 does not expose the persistent Fabric product systems that are outside this scope: Actor, Mesh, State, Schema runtime, Memory, RLM skills, Prewalk, resident hosts, the Component supervisor, trajectory handoff, the Fabric dashboard, and main-session Fabric compaction. Some low-level compatibility code is still being removed from the fork internals; it is not part of the Lean V2 public capability surface.
+Lean V2 removes the persistent Fabric product systems that are outside this scope: Actor, Mesh, State, Schema runtime, Memory, RLM skills, Prewalk, resident hosts, the Component supervisor, trajectory handoff, the Fabric dashboard, and main-session Fabric compaction. The shared Code Mode and agent runtime no longer carries the old Actor/Mesh/trajectory plumbing or dormant QuickJS globals for those systems.
 
 ## Runtime shape
 

@@ -99,7 +99,7 @@ workflow
 
 The workflow helper forwards its supported worker options, including `name`, to `agents.run`, so role selection follows the same resolver as a direct one-shot call.
 
-## Removed public systems
+## Physically removed product systems
 
 Lean V2 does not expose these as user-facing providers, globals, skills, commands, or dashboard surfaces:
 
@@ -127,19 +127,18 @@ fabric-workflow
 
 Pi's normal external/user skill catalog is still restored in Full Code Mode, with the progressive loading instruction adapted to use `pi.read` inside `fabric_exec`.
 
-## Remaining internal compatibility code
+## Physical cleanup status
 
-The public Lean surface is smaller than the remaining internal implementation graph. These internals are still scheduled for physical cleanup and must not be treated as retained product features:
+The Full Fabric product paths listed above are no longer merely hidden from the Lean public API:
 
-- `FabricExecutionService` still contains low-level handoff bookkeeping and a legacy `schema.commit` guard branch used by old unit-test seams.
-- `FabricInvocationContext.deferHandoff?` remains as an internal compatibility/test hook until the ExecutionService handoff branch is deleted.
-- `AgentManager`, worker options, and worker environment propagation still carry some old actor/mesh/residency/capability ownership fields inherited from Full Fabric.
-- `agents/handoff.ts` and thinking-transfer/session-seed compatibility remain reachable through the shared one-shot manager implementation.
-- retention still carries `actorRunArchiveMs` and actor-aware cleanup logic.
-- the QuickJS setup still creates dormant legacy globals/helpers for removed surfaces including Memory, State, Schema, Components, global Compact, Mesh convenience, Council, and RLM. Lean guest types and ActionRegistry hide those surfaces from normal V2 programs, but the setup code and legacy runtime tests still need physical deletion.
-- `schema.mode` and `fullCodeMode` remain broad TypeScript fields for low-level ExecutionService coverage, while the V2 loader normalizes live runtime configuration to Full Code Mode with Schema off.
+- QuickJS no longer creates Memory, State, Schema, Components, Mesh, Council, RLM, Actor, participant, or trajectory-handoff globals/helpers.
+- `FabricExecutionService` and `FabricInvocationContext` no longer carry deferred handoff state or hooks.
+- `AgentManager`, worker arguments, worker environment propagation, lifecycle records, and retention no longer carry Actor/Mesh identity, capability-digest ownership, durable residency, session-seed, or thinking-transfer fields.
+- trajectory handoff/session-seed source files and Actor archive retention have been removed.
 
-This distinction is deliberate in the documentation: the removed systems are absent from the Lean V2 public capability surface today; some shared internal compatibility paths still need deletion before the fork can claim that every old implementation fragment has been physically removed.
+Lean intentionally retains one-shot child features that are useful independently of those systems: runner sessions for steering/follow-up, child compaction for running Pi workers, session export, worktrees, budgets, transports, and bounded recursive Pi children.
+
+`schema.mode` and `fullCodeMode` remain broad TypeScript fields only for low-level ExecutionService test coverage; the live Lean loader normalizes them to Full Code Mode with Schema off. They do not reconnect the removed Schema product runtime.
 
 ## Configuration boundary
 
@@ -173,4 +172,4 @@ src/worker.ts
 
 Both esbuild and declaration generation follow those roots. The build assertion rejects direct reachability of several heavyweight Full Fabric modules, including Actor manager, Mesh store, Schema controller, State store, Memory provider, resident host, and Prewalk modules.
 
-That assertion is a guard against accidentally reconnecting the removed product runtimes. It is not yet a proof that all compatibility symbols inside shared AgentManager, worker, ExecutionService, and QuickJS modules have been deleted. The remaining compatibility list above is the physical-cleanup backlog.
+That assertion guards against accidentally reconnecting removed product runtimes. The shared QuickJS, ExecutionService, AgentManager, worker, and retention paths are also covered by Lean-specific tests and source-level contracts so the removed Actor/Mesh/trajectory surfaces do not silently return.

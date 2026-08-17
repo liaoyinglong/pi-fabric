@@ -8,7 +8,7 @@ Lean V2 intentionally has three product surfaces:
 2. Named one-shot subagents for bounded delegated work.
 3. Workflow helpers for orchestration over the same subagent runtime.
 
-Persistent Actor, Mesh, State, Schema runtime, Memory, RLM, Prewalk, resident-host, and trajectory-handoff APIs are not part of the Lean V2 public capability surface.
+Persistent Actor, Mesh, State, Schema runtime, Memory, RLM, Prewalk, resident-host, and trajectory-handoff systems are removed from Lean V2; they are not model-facing APIs or shared agent-runtime compatibility paths.
 
 ## 1. Install
 
@@ -73,7 +73,7 @@ Lean V2 reads only these configuration groups:
 - `capture`
 - `retention`
 
-Removed Full Fabric provider groups do not activate those providers in Lean V2. A few internal compatibility fields are still accepted while the implementation is being physically reduced; see [Configuration Reference](configuration.md) for the exact active fields.
+Removed Full Fabric provider groups do not activate those providers in Lean V2. See [Configuration Reference](configuration.md) for the exact active fields and defaults.
 
 A practical starting config is:
 

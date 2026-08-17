@@ -170,9 +170,7 @@ The old capture advisory mechanism is disabled in Lean V2.
 | --- | --- | --- |
 | `orphanedTempRunMs` | `21600000` | Retention period for orphaned temporary run roots |
 | `oneShotRunMs` | `86400000` | Retention period for completed one-shot runs |
-| `actorRunArchiveMs` | `604800000` | Legacy compatibility field left from the removed Actor runtime |
 
-`actorRunArchiveMs` is not part of the Lean V2 product surface and should not be used for new configuration. Its remaining compatibility code is scheduled for removal from the lean branch.
 
 ## Fields fixed by Lean V2
 
