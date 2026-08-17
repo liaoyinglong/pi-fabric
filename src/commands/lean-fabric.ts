@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import type { AgentHandleInfo, AgentRunRecord, FabricLogLine } from "../agents/types.js";
 import type { AgentManager } from "../agents/manager.js";
@@ -153,17 +153,17 @@ const agentCompletions = (manager: AgentManager, prefix: string): AutocompleteIt
 const openLeanFabricDashboard = async (
   manager: AgentManager,
   context: ExtensionContext,
-): Promise<void> => {
+): Promise<"settings" | undefined> => {
   if (context.mode !== "tui") {
     context.ui.notify(formatLeanFabricAgentList(manager.listForUi()), "info");
-    return;
+    return undefined;
   }
   const { LeanFabricDashboard } = await import("../ui/lean-dashboard.js");
   let dispose: (() => void) | undefined;
   try {
-    await context.ui.custom<void>(
+    return await context.ui.custom<"settings" | undefined>(
       (tui, theme, _keybindings, done) => {
-        const dashboard = new LeanFabricDashboard(tui, theme, manager, () => done(undefined));
+        const dashboard = new LeanFabricDashboard(tui, theme, manager, (action) => done(action));
         dispose = () => dashboard.dispose();
         return dashboard;
       },
@@ -183,14 +183,43 @@ const openLeanFabricDashboard = async (
   }
 };
 
+const openLeanFabricSettings = async (context: ExtensionContext): Promise<void> => {
+  if (context.mode !== "tui") {
+    context.ui.notify("/fabric settings is available in TUI mode.", "warning");
+    return;
+  }
+  const { LeanFabricSettings } = await import("../ui/lean-settings.js");
+  await context.ui.custom<void>(
+    (_tui, theme, _keybindings, done) => new LeanFabricSettings(
+      theme,
+      {
+        cwd: context.cwd,
+        agentDir: getAgentDir(),
+        projectTrusted: context.isProjectTrusted(),
+      },
+      () => done(undefined),
+    ),
+    {
+      overlay: true,
+      overlayOptions: {
+        width: "88%",
+        minWidth: 44,
+        maxHeight: "90%",
+        anchor: "center",
+        margin: 1,
+      },
+    },
+  );
+};
+
 export function registerLeanFabricCommand(
   pi: ExtensionAPI,
   runtime: LeanCodeModeRuntime,
 ): void {
   pi.registerCommand("fabric", {
-    description: "Open the Lean Fabric dashboard or inspect subagent output",
+    description: "Open the Lean Fabric dashboard/settings or inspect subagent output",
     getArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
-      const subcommands = ["dashboard", "agents", "status", "log", "stop"];
+      const subcommands = ["dashboard", "settings", "agents", "status", "log", "stop"];
       const firstSpace = argumentPrefix.indexOf(" ");
       if (firstSpace < 0) {
         const matches = subcommands.filter((name) => name.startsWith(argumentPrefix));
@@ -204,18 +233,24 @@ export function registerLeanFabricCommand(
     },
     async handler(argumentsText, context) {
       await runtime.initialize(context);
-      const manager = runtime.agentManager;
-      if (!manager) {
-        context.ui.notify("Fabric subagents are disabled by configuration.", "warning");
-        return;
-      }
-
       const args = argumentsText.trim().split(/\s+/).filter(Boolean);
       const command = args[0] ?? "dashboard";
 
       try {
+        if (command === "settings") {
+          await openLeanFabricSettings(context);
+          return;
+        }
+
+        const manager = runtime.agentManager;
+        if (!manager) {
+          context.ui.notify("Fabric subagents are disabled by configuration. Use /fabric settings to configure them.", "warning");
+          return;
+        }
+
         if (command === "dashboard" || command === "ui") {
-          await openLeanFabricDashboard(manager, context);
+          const action = await openLeanFabricDashboard(manager, context);
+          if (action === "settings") await openLeanFabricSettings(context);
           return;
         }
 
@@ -265,7 +300,7 @@ export function registerLeanFabricCommand(
         }
 
         context.ui.notify(
-          "Usage: /fabric [dashboard] | /fabric agents | /fabric status <id> | /fabric log <id> [--lines N] | /fabric stop <id>",
+          "Usage: /fabric [dashboard] | /fabric settings | /fabric agents | /fabric status <id> | /fabric log <id> [--lines N] | /fabric stop <id>",
           "warning",
         );
       } catch (error) {

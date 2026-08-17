@@ -19,6 +19,8 @@ const MIN_TWO_PANE_WIDTH = 76;
 const MIN_AGENT_PANE_WIDTH = 28;
 const MAX_AGENT_PANE_WIDTH = 46;
 
+export type LeanDashboardAction = "settings";
+
 export interface LeanDashboardAgentRow {
   run: AgentRunRecord | AgentHandleInfo;
   depth: number;
@@ -153,7 +155,7 @@ export class LeanFabricDashboard implements Component, Focusable {
     readonly tui: TUI,
     readonly theme: Theme,
     readonly manager: AgentManager,
-    readonly done: () => void,
+    readonly done: (action?: LeanDashboardAction) => void,
   ) {
     this.#unsubscribe = manager.subscribeUi(() => this.tui.requestRender());
     this.#timer = setInterval(() => this.tui.requestRender(), DASHBOARD_REFRESH_MS);
@@ -171,9 +173,9 @@ export class LeanFabricDashboard implements Component, Focusable {
     this.#timer = undefined;
   }
 
-  #close(): void {
+  #close(action?: LeanDashboardAction): void {
     this.dispose();
-    this.done();
+    this.done(action);
   }
 
   #rows(): LeanDashboardAgentRow[] {
@@ -238,6 +240,10 @@ export class LeanFabricDashboard implements Component, Focusable {
   handleInput(data: string): void {
     if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
       this.#close();
+      return;
+    }
+    if (data === "s") {
+      this.#close("settings");
       return;
     }
     if (matchesKey(data, Key.up) || data === "k") {
@@ -386,7 +392,7 @@ export class LeanFabricDashboard implements Component, Focusable {
     else lines.push(...this.#renderStacked(width, rows, contentRows));
     const footer = this.#feedback
       ? this.theme.fg(this.#feedback.startsWith("Press x again") ? "warning" : "muted", this.#feedback)
-      : this.theme.fg("muted", "↑↓/jk select · g/G first/last · x stop · r refresh · Esc close");
+      : this.theme.fg("muted", "↑↓/jk select · x stop · s settings · r refresh · Esc close");
     lines.push(`├${"─".repeat(inner)}┤`);
     lines.push(`│${fit(footer, inner)}│`);
     lines.push(`└${"─".repeat(inner)}┘`);
