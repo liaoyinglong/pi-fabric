@@ -22,27 +22,37 @@ describe("Fabric guest type checker", () => {
     expect(result.javascript).not.toContain("path: string");
   });
 
-  it("accepts a Veda persona and backend model on agents.run", () => {
-    const result = typeCheckFabricCode(
+  it("accepts semantic profiles on agents.run and rejects raw routing fields", () => {
+    const valid = typeCheckFabricCode(
       `
 const run = await agents.run({
-  runner: "veda",
-  persona: "frontend",
-  model: "claude-opus-4-6-thinking",
+  profile: "research",
   task: "Polish the landing page",
 });
 return run.status;
 `,
       GUEST_TYPE_DECLARATIONS,
     );
-    expect(result.errors).toEqual([]);
+    expect(valid.errors).toEqual([]);
+
+    const rawRouting = typeCheckFabricCode(
+      `
+return await agents.run({
+  runner: "veda",
+  model: "backend/model",
+  task: "Polish the landing page",
+});
+`,
+      GUEST_TYPE_DECLARATIONS,
+    );
+    expect(rawRouting.errors.some((error) => error.message.includes("'runner' does not exist"))).toBe(true);
   });
 
-  it("accepts dynamic MCP namespaces and supported orchestration helpers", () => {
+  it("accepts dynamic MCP namespaces and profile-based orchestration", () => {
     const result = typeCheckFabricCode(
       `
 const mcpResult = await mcp.context7.resolve_library_id({ libraryName: "react" });
-const review = await agents.run({ task: "Review it", transport: "localterm" });
+const review = await agents.run({ profile: "review", task: "Review it" });
 console.log(review.status);
 return { mcpResult, review };
 `,
@@ -88,7 +98,7 @@ return { recalled, current, status, pending };
     expect(declarations).toContain("declare const workflow: FabricWorkflowApi");
 
     const result = typeCheckFabricCode(
-      'const run = await agents.run({ task: "x" }); return run.status;',
+      'const run = await agents.run({ profile: "explore", task: "x" }); return run.status;',
       declarations,
     );
     expect(result.errors).toEqual([]);
@@ -106,24 +116,24 @@ return { recalled, current, status, pending };
     expect(excluded.errors.some((error) => /Cannot find name 'mcp'/.test(error.message))).toBe(true);
 
     const untouched = typeCheckFabricCode(
-      'return (await agents.run({ task: "x" })).status;',
+      'return (await agents.run({ profile: "explore", task: "x" })).status;',
       declarations,
     );
     expect(untouched.errors).toEqual([]);
   });
 
-  it("accepts workflow and one-shot agent primitives", () => {
+  it("accepts workflow, profile workers, and bounded recursive delegation", () => {
     const result = typeCheckFabricCode(
       `
 const captured = await extensions.project_status({ verbose: true });
 console.log(captured.text);
-const handle = await agents.spawn({ name: "review", task: "Review the result" });
+const handle = await agents.spawn({ profile: "review", name: "review pass", task: "Review the result" });
 await agents.followUp({ id: handle.id, message: "focus on correctness" });
 await phase("Review");
 const findings = await parallel([
   () => agent<{ issues: string[] }>("Find issues", {
     label: "issue scan",
-    name: "review",
+    profile: "review",
     schema: {
       type: "object",
       properties: { issues: { type: "array", items: { type: "string" } } },
@@ -131,8 +141,9 @@ const findings = await parallel([
     },
   }),
 ]);
+const recursive = await agents.recurse({ profile: "deep", task: "Resolve the cross-module ambiguity" });
 const review = await agents.wait({ id: handle.id });
-return { findings, review };
+return { findings, recursive, review };
 `,
       GUEST_TYPE_DECLARATIONS,
     );
@@ -151,7 +162,7 @@ return { findings, review };
     const result = typeCheckFabricCode(
       `
 const items = [{ q: "a", n: 3 }, { q: "b", n: 2 }];
-const out = await parallel(items, ({ q, n }) => agent(q + ":" + n, { label: q }), 2);
+const out = await parallel(items, ({ q, n }) => agent(q + ":" + n, { label: q, profile: "explore" }), 2);
 return out;
 `,
       GUEST_TYPE_DECLARATIONS,
@@ -160,8 +171,6 @@ return out;
   });
 
   it("reports user-facing line numbers for functional errors", () => {
-    // Wrong arg type (path: 42) is deferred to runtime (functional-errors-only);
-    // an undefined name is a genuine breakage still caught at type-check.
     const result = typeCheckFabricCode(
       'await pi.read({ path: missingFile });\nreturn "never";',
       GUEST_TYPE_DECLARATIONS,
