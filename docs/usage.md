@@ -366,9 +366,9 @@ roles:
 
 Runner and transport remain independent. Either profile can use `transport: process`, `tmux`, `screen`, `localterm`, or `herdr`; the transport hosts Fabric's worker process while the selected adapter invokes its CLI.
 
-Droid has a native per-run tool restriction, so Fabric maps portable tool names onto Droid tool IDs and uses that restriction at launch. Antigravity does not expose an equivalent per-run allowlist in headless mode, so Fabric adds the requested tool boundary to the prompt but leaves Antigravity's own permission policy authoritative. Fabric does not enable Antigravity's dangerous permission bypass automatically.
+Droid has a native per-run tool restriction. Fabric maps portable tool names onto Droid tool IDs and applies that restriction at launch. Antigravity's headless mode lacks an equivalent per-run allowlist. Fabric adds the requested tool boundary to the prompt, while Antigravity's own permission policy remains authoritative. Fabric does not enable Antigravity's dangerous permission bypass automatically.
 
-Both adapters are deliberately one-shot in V1. Start a new `agents.run`/`spawn` for another prompt instead of steering an existing CLI run.
+Both adapters are deliberately one-shot in V1. For another prompt, start a new `agents.run`/`spawn`.
 
 ## 10. Thin workflow
 
