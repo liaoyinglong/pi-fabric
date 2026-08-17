@@ -40,6 +40,17 @@ const TYPE_CORRECTNESS_CODES = new Set<number>([
   7006, 7008, 7019, 7031, 7032, 7033, 7034,
 ]);
 
+const shouldKeepSemanticDiagnostic = (diagnostic: ts.Diagnostic): boolean => {
+  if (!TYPE_CORRECTNESS_CODES.has(diagnostic.code)) return true;
+  if (diagnostic.code !== 2339 && diagnostic.code !== 2551) return false;
+  const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+  // Dynamic MCP namespaces and intentionally-wide agent unions still rely on
+  // property-miss tolerance. Plain string results do not: pi.read/grep/find/ls
+  // are stable string contracts, so object-style access such as .content or
+  // .matches should fail before the guest reaches QuickJS.
+  return /does not exist on type 'string'/.test(message);
+};
+
 const PI_CORE_ACTIONS = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 const PI_CORE_ACTION_LIST = [...PI_CORE_ACTIONS].map((action) => `pi.${action}`).join(", ");
 
@@ -75,6 +86,48 @@ const unknownPiCoreActionErrors = (sourceFile: ts.SourceFile): FabricTypeError[]
   };
   visit(sourceFile);
   return errors;
+};
+
+/**
+ * The Lean public contract renamed role discovery to agents.profiles(), while
+ * the current sandbox bootstrap still exposes the old agents.roles() runtime
+ * slot. Lower only real call expressions (never strings/comments), and pad the
+ * shorter identifier so source-map line/column offsets stay stable. Remove this
+ * compatibility lowering once the bootstrap surface itself is regenerated from
+ * the provider contract.
+ */
+const lowerGuestRuntimeAliases = (code: string): string => {
+  const sourceFile = ts.createSourceFile(
+    "__pi_fabric_alias_scan.ts",
+    code,
+    ts.ScriptTarget.ES2022,
+    true,
+  );
+  const replacements: Array<{ start: number; end: number }> = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === "agents" &&
+      node.expression.name.text === "profiles"
+    ) {
+      replacements.push({
+        start: node.expression.name.getStart(sourceFile),
+        end: node.expression.name.end,
+      });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  if (replacements.length === 0) return code;
+  let lowered = code;
+  for (const replacement of replacements.reverse()) {
+    const width = replacement.end - replacement.start;
+    const alias = "roles".padEnd(width, " ");
+    lowered = `${lowered.slice(0, replacement.start)}${alias}${lowered.slice(replacement.end)}`;
+  }
+  return lowered;
 };
 
 let nextCheckerId = 0;
@@ -172,7 +225,7 @@ class FabricTypeChecker {
       ...program.getSyntacticDiagnostics(this.#sourceFile),
       ...program
         .getSemanticDiagnostics(this.#sourceFile)
-        .filter((diagnostic) => !TYPE_CORRECTNESS_CODES.has(diagnostic.code)),
+        .filter(shouldKeepSemanticDiagnostic),
     ];
     const errors = diagnostics.map((diagnostic) => {
       const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
@@ -229,7 +282,7 @@ export interface FabricTranspileResult {
 }
 
 export const transpileFabricCodeWithSourceMap = (code: string): FabricTranspileResult => {
-  const result = ts.transpileModule(wrapFabricGuestCode(code), {
+  const result = ts.transpileModule(wrapFabricGuestCode(lowerGuestRuntimeAliases(code)), {
     compilerOptions: {
       target: ts.ScriptTarget.ES2022,
       module: ts.ModuleKind.ESNext,
