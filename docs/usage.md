@@ -591,7 +591,7 @@ old Mesh coordination    -> keep coordination inside one workflow or your extern
 
 ### A captured extension tool is missing
 
-Check that the Pi extension is actually loaded, then discover it:
+Check that the Pi extension is loaded, then discover it:
 
 ```ts
 return tools.search({ query: "tool name" });
