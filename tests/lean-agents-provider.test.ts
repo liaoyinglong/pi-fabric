@@ -17,7 +17,7 @@ const makeProject = (): string => {
   fs.mkdirSync(path.join(root, ".pi", "fabric"), { recursive: true });
   fs.writeFileSync(
     path.join(root, ".pi", "fabric", "subagents.yaml"),
-    `roles:\n  deep:\n    runner: pi\n    model: provider/strong\n    thinking: high\n    recursive: true\n  research:\n    runner: veda\n    thinking: low\n`,
+    `roles:\n  deep:\n    runner: pi\n    model: provider/strong\n    thinking: high\n    recursive: true\n  research:\n    runner: cli\n    cli: agy\n    thinking: low\n`,
   );
   process.env.PI_FABRIC_PROJECT_ROOT = root;
   return root;

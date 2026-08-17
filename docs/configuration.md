@@ -113,14 +113,34 @@ If a one-shot profile omits `tools`, it inherits the read-only `read`, `grep`, `
 | `agents.claude.binary` | `claude` | Claude CLI executable |
 | `agents.claude.model` | unset | Claude runner model default |
 
-### Veda runner
+### CLI runner
+
+The `cli` runner calls a supported headless CLI directly through a small adapter. Fabric no longer needs a Veda intermediary.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `agents.veda.binary` | `veda` | Veda executable |
-| `agents.veda.backend` | `agy` | Veda backend |
-| `agents.veda.persona` | `navigator-chat` | Default Veda persona |
-| `agents.veda.model` | unset | Veda model default |
+| `agents.cli.adapter` | `agy` | Default CLI adapter: `agy` or `droid` |
+| `agents.cli.agy.binary` | `agy` | Antigravity CLI executable |
+| `agents.cli.agy.model` | unset | Antigravity model default |
+| `agents.cli.droid.binary` | `droid` | Factory Droid CLI executable |
+| `agents.cli.droid.model` | unset | Droid model default |
+
+Example:
+
+```json
+{
+  "agents": {
+    "runner": "cli",
+    "cli": {
+      "adapter": "agy",
+      "agy": { "binary": "agy" },
+      "droid": { "binary": "droid" }
+    }
+  }
+}
+```
+
+CLI adapters are one-shot: they do not support recursive Fabric, steering, follow-ups, or Fabric-triggered compaction. Droid maps Fabric's portable tool names to Droid's native tool IDs and uses Droid's native tool restriction flags. Antigravity does not currently expose an equivalent per-run tool allowlist, so Fabric passes the requested tool list as an explicit prompt boundary and leaves Antigravity's own permission policy authoritative; Fabric never enables Antigravity's dangerous permission bypass automatically.
 
 ## Subagent profile files
 
@@ -162,15 +182,31 @@ Profile fields:
 | --- | --- |
 | `description` | Short semantic purpose shown during profile discovery |
 | `instructions` | Instructions prepended to the child task |
-| `runner` | `pi`, `claude`, or `veda` |
+| `runner` | `pi`, `claude`, or `cli` |
+| `cli` | For `runner: cli`, select `agy` or `droid`; omitted profiles use `agents.cli.adapter` |
 | `transport` | `auto`, `process`, `tmux`, `screen`, `localterm`, or `herdr` |
 | `model` | Runner-specific model identifier |
-| `persona` | Veda persona |
 | `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` |
 | `tools` | Portable child tool allowlist; omitted profiles inherit `read, grep, find, ls` |
 | `timeoutMs` | Profile child timeout |
 | `extensions` | Whether Pi extension discovery is enabled for the child; omitted means `true` |
 | `worktree` | Create an isolated Git worktree |
+
+Example CLI profiles:
+
+```yaml
+roles:
+  research:
+    runner: cli
+    cli: agy
+    model: gemini-3.7-flash
+    tools: [read, grep, find, ls]
+
+  review:
+    runner: cli
+    cli: droid
+    tools: [read, grep, find, ls]
+```
 
 Public `agents.run` / `agents.spawn` calls expose only `task`, `profile`, optional display `name`, `timeoutMs`, `worktree`, and `schema`. Raw runner/model/thinking/tool fields are intentionally not part of the model-facing call schema.
 

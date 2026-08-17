@@ -35,7 +35,7 @@ worktree    optional isolated Git worktree
 schema      optional JSON Schema for structured output
 ```
 
-Do not put `runner`, `model`, `persona`, `thinking`, `tools`, `extensions`, or `recursive` in ordinary run/spawn calls. Those are profile policy.
+Do not put `runner`, `cli`, `model`, `thinking`, `tools`, `extensions`, or `recursive` in ordinary run/spawn calls. Those are profile policy.
 
 For compatibility, an old `name` that exactly matches a configured profile still resolves that profile internally, but new code should use `profile` explicitly.
 
@@ -71,7 +71,8 @@ roles:
     description: Cheap bounded evidence gathering
     instructions: |
       Gather concrete evidence and return only material needed by the caller.
-    runner: veda
+    runner: cli
+    cli: agy
     thinking: low
     tools: [read, grep, find, ls]
 
@@ -87,13 +88,13 @@ roles:
     thinking: high
 
   review:
-    runner: pi
-    model: azure-openai-responses/gpt-5.6-sol
+    runner: cli
+    cli: droid
     thinking: high
     tools: [read, grep, find, ls]
 ```
 
-A profile can define `description`, `instructions`, `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, and `worktree`. Project definitions merge over global definitions field-by-field only when Pi trusts the project. `PI_FABRIC_SUBAGENTS_FILE` is host supplied and loads last.
+A profile can define `description`, `instructions`, `runner`, `cli`, `transport`, `model`, `thinking`, `tools`, `timeoutMs`, `extensions`, and `worktree`. Project definitions merge over global definitions field-by-field only when Pi trusts the project. `PI_FABRIC_SUBAGENTS_FILE` is host supplied and loads last.
 
 Profile `instructions` are prepended to the child task.
 
@@ -152,11 +153,11 @@ agents.setSteeringMode({ id, mode: "all" | "one-at-a-time" })
 agents.setFollowUpMode({ id, mode: "all" | "one-at-a-time" })
 ```
 
-These target local one-shot children only. Veda is one-shot and does not support steering/follow-up.
+These target compatible local one-shot children. Generic CLI adapters execute one headless prompt per invocation and reject steering/follow-up.
 
 ## Child compaction
 
-`agents.compact({ id, instructions? })` requests advisory compaction for a running Pi child. This is child-session control only; Lean V2 has no Fabric main-session compaction runtime.
+`agents.compact({ id, instructions? })` requests advisory compaction for a running Pi child. This is child-session control only; Lean V2 has no Fabric main-session compaction runtime. Claude and CLI adapter runs do not expose this Pi compaction RPC.
 
 ## Minimal recursive delegation
 
@@ -192,36 +193,46 @@ Recursion is enabled only by the explicit `agents.recurse(...)` call. Ordinary `
 
 Claude uses `agents.claude.binary` and the profile/config model defaults. Portable tool names map to Claude Code tools. Unsupported names fail before launch.
 
-### Veda
+### CLI adapters
 
-Veda uses `agents.veda.binary`, backend defaults, and an isolated Veda session per child. A profile can set Veda `model`, `persona`, `thinking`, and portable tools.
-
-Conceptually:
+Use `runner: cli` for a supported headless CLI. The first adapter set is:
 
 ```text
-veda -b <backend> -p <persona> -m <model> -r <thinking> --tools ... --json
+agy    Antigravity CLI
+droid  Factory Droid CLI
 ```
 
-Omit model/persona when the installed backend defaults are preferred.
+Select one in the profile:
 
-Portable mapping:
+```yaml
+roles:
+  research:
+    runner: cli
+    cli: agy
+    thinking: low
+    tools: [read, grep, find, ls]
 
-```text
-read  -> read
-grep  -> grep
-find  -> glob
-ls    -> glob
-bash  -> bash
-edit  -> edit
-write -> write
+  review:
+    runner: cli
+    cli: droid
+    thinking: high
+    tools: [read, grep, find, ls]
 ```
+
+If `cli` is omitted, `agents.cli.adapter` is used. Per-adapter executable/model defaults live under `agents.cli.agy` and `agents.cli.droid`.
+
+The core adapter contract is intentionally small: build invocation arguments, normalize model/tool policy, and parse the final one-shot result. Adding another CLI should extend the adapter registry rather than add another AgentManager runner branch.
+
+Droid maps portable tools onto native Droid tool IDs and uses Droid's native restriction flags. Antigravity currently lacks an equivalent per-invocation headless tool allowlist, so the adapter sends the requested list as an explicit prompt policy while Antigravity's own permission configuration remains authoritative. Fabric never enables Antigravity's dangerous permission bypass automatically.
+
+CLI adapters are one-shot and do not support `agents.recurse`, steering/follow-up, or Fabric-triggered compaction.
 
 ## Transport policy lives in profiles
 
 Runner and transport are independent profile settings:
 
 ```text
-runner:    pi | claude | veda
+runner:    pi | claude | cli
 transport: process | tmux | screen | localterm | herdr | auto
 ```
 
@@ -230,13 +241,14 @@ Example:
 ```yaml
 roles:
   research:
-    runner: veda
+    runner: cli
+    cli: agy
     transport: herdr
     thinking: low
     tools: [read, grep, find, ls]
 ```
 
-Veda executes the worker while Herdr hosts the process.
+The selected CLI adapter executes the child command while Herdr hosts Fabric's worker process.
 
 ## Structured results
 

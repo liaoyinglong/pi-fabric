@@ -2,14 +2,13 @@
 import { build } from "esbuild";
 
 const result = await build({
-  entryPoints: [
-    "src/lean-index.ts",
-    "src/protocol.ts",
-    "src/worker.ts",
-  ],
+  entryPoints: {
+    "lean-index": "src/lean-index.ts",
+    protocol: "src/protocol.ts",
+    worker: "src/worker-dispatch.ts",
+  },
   outdir: "dist",
-  outbase: "src",
-  entryNames: "[dir]/[name]",
+  entryNames: "[name]",
   chunkNames: "chunks/[name]-[hash]",
   bundle: true,
   packages: "external",

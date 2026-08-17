@@ -67,10 +67,10 @@ A practical starting point:
     "enabled": true,
     "maxConcurrent": 4,
     "maxDepth": 2,
-    "veda": {
-      "binary": "veda",
-      "backend": "agy",
-      "persona": "navigator-chat"
+    "cli": {
+      "adapter": "agy",
+      "agy": { "binary": "agy" },
+      "droid": { "binary": "droid" }
     }
   },
   "capture": {
@@ -82,6 +82,8 @@ A practical starting point:
   }
 }
 ```
+
+Pi remains the default runner. The CLI adapter configuration is used only by profiles that select `runner: cli`.
 
 ## 3. Code Mode
 
@@ -215,7 +217,8 @@ roles:
     description: Cheap bounded research and evidence gathering
     instructions: |
       Gather concrete evidence. Avoid editing files.
-    runner: veda
+    runner: cli
+    cli: agy
     thinking: low
     tools: [read, grep, find, ls]
 
@@ -233,14 +236,14 @@ roles:
     thinking: high
 
   review:
-    description: Independent verification
-    runner: pi
-    model: azure-openai-responses/gpt-5.6-sol
+    description: Independent verification through another CLI
+    runner: cli
+    cli: droid
     thinking: high
     tools: [read, grep, find, ls]
 ```
 
-Profiles can define `description`, `instructions`, `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, and `worktree`.
+Profiles can define `description`, `instructions`, `runner`, `cli`, `transport`, `model`, `thinking`, `tools`, `timeoutMs`, `extensions`, and `worktree`.
 
 Project profiles are skipped for untrusted projects. Profiles merge field-by-field in this order:
 
@@ -280,7 +283,7 @@ return { localEvidence, review };
 
 `name` is display-only in the public API. Older code that used a matching role name as `name` remains a compatibility fallback, but new code should use `profile`.
 
-The public run/spawn contract intentionally does not expose raw routing fields such as `runner`, `model`, `persona`, `thinking`, `tools`, `extensions`, or `recursive`. Change the profile definition when routing policy changes.
+The public run/spawn contract intentionally does not expose raw routing fields such as `runner`, `cli`, `model`, `thinking`, `tools`, `extensions`, or `recursive`. Change the profile definition when routing policy changes.
 
 Retained child controls:
 
@@ -297,7 +300,7 @@ agents.setFollowUpMode
 agents.compact
 ```
 
-Pi/Claude workers can be steered between turns; Veda is one-shot.
+Pi/Claude workers can be steered between turns. CLI adapters are one-shot and reject steering, follow-ups, recursive Fabric, and Fabric-triggered compaction.
 
 ## 8. Minimal recursive delegation
 
@@ -321,48 +324,51 @@ Current recursion bounds are intentionally simple:
 
 There is no separate RLM provider, Actor tree, Mesh, persistent scheduler, or recursive workflow engine.
 
-## 9. Veda / AGY
+## 9. Direct CLI adapters: AGY and Droid
 
-Set Veda defaults in `fabric.json`:
+Fabric calls supported CLIs directly. There is no intermediate Veda installation or session layer.
+
+Configure executable paths and optional default models in `fabric.json`:
 
 ```json
 {
   "agents": {
-    "veda": {
-      "binary": "veda",
-      "backend": "agy",
-      "persona": "navigator-chat"
+    "cli": {
+      "adapter": "agy",
+      "agy": {
+        "binary": "agy",
+        "model": "gemini-3.7-flash"
+      },
+      "droid": {
+        "binary": "droid"
+      }
     }
   }
 }
 ```
 
-Then bind a profile to `runner: veda`. Omit profile `model` and `persona` to inherit backend defaults; add them only after confirming identifiers accepted by the installed Veda backend.
-
-Portable tool mapping:
-
-```text
-read  -> read
-grep  -> grep
-find  -> glob
-ls    -> glob
-bash  -> bash
-edit  -> edit
-write -> write
-```
-
-Runner and transport are independent profile settings. For example:
+Then bind profiles to `runner: cli` and select an adapter:
 
 ```yaml
 roles:
   research:
-    runner: veda
-    transport: herdr
+    runner: cli
+    cli: agy
     thinking: low
+    tools: [read, grep, find, ls]
+
+  review:
+    runner: cli
+    cli: droid
+    thinking: high
     tools: [read, grep, find, ls]
 ```
 
-Veda executes the worker while Herdr hosts its process.
+Runner and transport remain independent. Either profile can use `transport: process`, `tmux`, `screen`, `localterm`, or `herdr`; the transport hosts Fabric's worker process while the selected adapter invokes its CLI.
+
+Droid has a native per-run tool restriction. Fabric maps portable tool names onto Droid tool IDs and applies that restriction at launch. Antigravity's headless mode lacks an equivalent per-run allowlist. Fabric adds the requested tool boundary to the prompt, while Antigravity's own permission policy remains authoritative. Fabric does not enable Antigravity's dangerous permission bypass automatically.
+
+Both adapters are deliberately one-shot in V1. For another prompt, start a new `agents.run`/`spawn`.
 
 ## 10. Thin workflow
 
@@ -456,9 +462,9 @@ Then use the exact `profile` name.
 
 Change or add a semantic profile. Ordinary call sites deliberately do not choose raw models.
 
-### A Veda profile fails
+### A CLI profile fails
 
-Test Veda/AGY independently first, then omit `model`/`persona` to verify backend defaults before adding explicit identifiers.
+Run the selected `agy` or `droid` CLI independently first and confirm it is authenticated. Then verify `agents.cli.<adapter>.binary`, the profile's `cli` value, and any explicit model identifier.
 
 ### I need recursive work
 

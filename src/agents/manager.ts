@@ -11,6 +11,7 @@ import {
   type FabricAgentRunner,
   type FabricAgentConfig,
   type FabricAgentTransport,
+  type FabricCliAdapter,
   type FabricRetentionConfig,
 } from "../config.js";
 import {
@@ -19,7 +20,7 @@ import {
   normalizeClaudeModel,
   type ClaudeModelInfo,
 } from "./claude-cli.js";
-import { mapVedaTools, normalizeVedaModel } from "./veda-cli.js";
+import { mapCliTools, normalizeCliModel } from "./cli-adapters.js";
 import { tokenUsagePayloadFromValue } from "../lifecycle/types.js";
 import type { FabricTokenUsagePayload } from "../lifecycle/types.js";
 import { Semaphore } from "./semaphore.js";
@@ -115,6 +116,7 @@ interface ManagedAgent {
   name: string;
   task: string;
   runner: FabricAgentRunner;
+  cli?: FabricCliAdapter;
   recursive: boolean;
   cwd: string;
   statusFile: string;
@@ -184,8 +186,8 @@ const readRecord = (filePath: string): AgentRunRecord | undefined => {
       runner:
         record.runner === "claude"
           ? "claude"
-          : record.runner === "veda"
-            ? "veda"
+          : record.runner === "cli"
+            ? "cli"
             : "pi",
     };
   } catch {
@@ -304,6 +306,7 @@ const failedRecord = (
     task: managed.task,
     status,
     runner: managed.runner,
+    ...(managed.cli ? { cli: managed.cli } : {}),
     transport: managed.transport.kind,
     cwd: managed.cwd,
     startedAt: now,
@@ -335,7 +338,7 @@ export class AgentManager {
   readonly #fabricExtensionPath: string;
   readonly #piBinary: string;
   readonly #claudeBinary: string;
-  readonly #vedaBinary: string;
+  readonly #cliBinaries: Record<FabricCliAdapter, string>;
   readonly #currentDepth: number;
   readonly #fullCodeMode: boolean;
   readonly #mainAgentId: string | undefined;
@@ -367,7 +370,7 @@ export class AgentManager {
       fabricExtensionPath?: string;
       piBinary?: string;
       claudeBinary?: string;
-      vedaBinary?: string;
+      cliBinaries?: Partial<Record<FabricCliAdapter, string>>;
       runRoot?: string;
       fullCodeMode?: boolean;
       mainAgentId?: string;
@@ -391,8 +394,10 @@ export class AgentManager {
     this.#piBinary = options.piBinary ?? process.env.PI_FABRIC_PI_BINARY ?? "pi";
     this.#claudeBinary =
       options.claudeBinary ?? process.env.PI_FABRIC_CLAUDE_BINARY ?? config.claude.binary;
-    this.#vedaBinary =
-      options.vedaBinary ?? process.env.PI_FABRIC_VEDA_BINARY ?? config.veda.binary;
+    this.#cliBinaries = {
+      agy: options.cliBinaries?.agy ?? process.env.PI_FABRIC_AGY_BINARY ?? config.cli.agy.binary,
+      droid: options.cliBinaries?.droid ?? process.env.PI_FABRIC_DROID_BINARY ?? config.cli.droid.binary,
+    };
     this.#onBackgroundComplete = options.onBackgroundComplete;
     this.#onLifecycle = options.onLifecycle;
     this.#preparePiModel = options.preparePiModel;
@@ -464,34 +469,35 @@ export class AgentManager {
     }
     if (!request.task.trim()) throw new Error("Agent task must not be empty");
     const runner = request.runner ?? this.config.runner;
-    if (runner !== "pi" && runner !== "claude" && runner !== "veda") {
+    if (runner !== "pi" && runner !== "claude" && runner !== "cli") {
       throw new Error(`Unsupported Fabric agent runner: ${String(runner)}`);
     }
-    if (request.persona && runner !== "veda") {
-      throw new Error(`The persona option is only supported by the Veda runner, not ${runner}`);
+    if (request.cli && runner !== "cli") {
+      throw new Error(`The cli option is only supported by the CLI runner, not ${runner}`);
     }
+    const cli = runner === "cli" ? request.cli ?? this.config.cli.adapter : undefined;
     if (runner === "claude" && request.recursive) {
       throw new Error(
         "Claude runner does not support recursive Fabric. Use a Pi runner for recursive: true, or omit recursive for Claude Code tools.",
       );
     }
-    if (runner === "veda" && request.recursive) {
+    if (runner === "cli" && request.recursive) {
       throw new Error(
-        "Veda runner does not support recursive Fabric. Use a Pi runner for recursive: true — Veda executes one headless prompt per invocation.",
+        "CLI adapters do not support recursive Fabric. Use a Pi runner for recursive: true — CLI adapters execute one headless prompt per invocation.",
       );
     }
     const tools = this.#childTools(request, runner);
     if (runner === "claude") mapClaudeTools(tools);
-    if (runner === "veda") mapVedaTools(tools);
+    if (cli) mapCliTools(cli, tools);
     const model =
       request.model ??
       (runner === "claude"
         ? this.config.claude.model
-        : runner === "veda"
-          ? this.config.veda.model
+        : cli
+          ? this.config.cli[cli].model
           : this.config.model);
     if (runner === "claude" && model) normalizeClaudeModel(model);
-    if (runner === "veda" && model) normalizeVedaModel(model);
+    if (cli && model) normalizeCliModel(cli, model);
     if (runner === "pi" && model) await this.#prepareModel(model);
     if (this.#budget) {
       const spent = readBudgetLedger(this.#budget.file).cost;
@@ -586,12 +592,7 @@ export class AgentManager {
         this.#piBinary,
         "--claude-binary",
         this.#claudeBinary,
-        "--veda-binary",
-        this.#vedaBinary,
-        "--veda-backend",
-        this.config.veda.backend,
-        "--veda-persona",
-        request.persona?.trim() || this.config.veda.persona,
+        ...(cli ? ["--cli-adapter", cli, "--cli-binary", this.#cliBinaries[cli]] : []),
         "--timeout-ms",
         String(timeoutMs),
         "--depth",
@@ -649,6 +650,7 @@ export class AgentManager {
         name,
         task: request.task,
         runner,
+        ...(cli ? { cli } : {}),
         recursive,
         cwd: agentCwd,
         statusFile,
@@ -850,13 +852,12 @@ export class AgentManager {
     return this.#appendSteer(id, { type: "follow_up", message, data });
   }
 
-  // Veda children run one headless prompt per invocation; there is no stdin
-  // turn channel to steer into. Reject steer/follow-up here so callers learn
-  // at call time instead of the command being silently dropped by the worker.
+  // CLI adapter children run one headless prompt per invocation; there is no
+  // stdin turn channel to steer into. Reject steer/follow-up at call time.
   #requireSteerable(id: string): void {
-    if (this.#requireRun(id).runner === "veda") {
+    if (this.#requireRun(id).runner === "cli") {
       throw new Error(
-        "The Veda runner does not support steering or follow-ups: Veda executes one headless prompt per invocation. Start a new run instead.",
+        "CLI adapters do not support steering or follow-ups: they execute one headless prompt per invocation. Start a new run instead.",
       );
     }
   }
@@ -873,13 +874,12 @@ export class AgentManager {
   // Appended to the same steer.jsonl channel as steer(); the worker queues it
   // until child agent_settled, then correlates Pi's compact response and
   // compaction_end before closing the one-shot RPC channel. Rejected for
-  // Claude-runner children — the official Claude Code CLI exposes no compact
-  // RPC; a fresh run is the only way to reset a Claude child's context.
+  // Claude/CLI-runner children because they expose no compatible compact RPC.
   compact(id: string, instructions?: string): AgentSteerResult {
     const managed = this.#requireRun(id);
-    if (managed.runner === "claude" || managed.runner === "veda") {
+    if (managed.runner === "claude" || managed.runner === "cli") {
       throw new Error(
-        "Fabric agent compaction is only supported for Pi-runner children; Claude Code and Veda sessions cannot be compacted through Fabric.",
+        "Fabric agent compaction is only supported for Pi-runner children; Claude Code and one-shot CLI sessions cannot be compacted through Fabric.",
       );
     }
     return this.#appendSteer(id, {
@@ -1225,7 +1225,7 @@ export class AgentManager {
       id: managed.id,
       depth: this.#currentDepth + 1,
       runner: managed.runner,
-          cost,
+      cost,
       tokens,
       ts: Date.now(),
     });
@@ -1365,11 +1365,12 @@ export class AgentManager {
       name: managed.name,
       status,
       runner: managed.runner,
+      ...(managed.cli ? { cli: managed.cli } : {}),
       transport: managed.transport.kind,
       cwd: managed.cwd,
-        ...(managed.model ? { model: managed.model } : {}),
+      ...(managed.model ? { model: managed.model } : {}),
       ...(managed.thinking ? { thinking: managed.thinking } : {}),
-        ...(managed.recursive ? { recursive: true } : {}),
+      ...(managed.recursive ? { recursive: true } : {}),
       ...(managed.runnerSessionId ? { runnerSessionId: managed.runnerSessionId } : {}),
       ...(managed.transport.sessionId ? { sessionId: managed.transport.sessionId } : {}),
       ...(managed.transport.attachCommand
@@ -1415,12 +1416,13 @@ export class AgentManager {
     return {
       ...safeRecord,
       runner: managed.runner,
-        logFile: path.join(managed.runDirectory, "events.jsonl"),
+      ...(managed.cli ? { cli: managed.cli } : {}),
+      logFile: path.join(managed.runDirectory, "events.jsonl"),
       ...(nestedAgents.length > 0 ? { nestedAgents } : {}),
       ...(budget ? { budget } : {}),
       ...(managed.model ? { model: managed.model } : {}),
       ...(managed.thinking ? { thinking: managed.thinking } : {}),
-        ...(managed.recursive ? { recursive: true } : {}),
+      ...(managed.recursive ? { recursive: true } : {}),
       ...(managed.runnerSessionId ? { runnerSessionId: managed.runnerSessionId } : {}),
       ...(managed.transport.sessionId ? { sessionId: managed.transport.sessionId } : {}),
       ...(managed.transport.attachCommand

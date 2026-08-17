@@ -55,11 +55,11 @@
 
 2. **异构模型路由与成本优化（Cost & Capability Efficiency）**：
    * **痛点**：使用昂贵的高思考模型做简单的文件扫视或日志检索很不划算，而轻量模型又难以处理复杂的架构决策。
-   * **自主行为**：主 Agent 会将简单的机械式检索派发给轻量 profile（如 `runner: veda` 或 `thinking: low` 的 `luna`），遇到复杂逻辑与决策时才调用 `deep` 或 `review`（如 `thinking: high` 的 `sol`）。
+   * **自主行为**：主 Agent 可以把机械式检索派发给 `runner: cli` 的轻量 profile，例如 `cli: agy`，也可以把复杂逻辑交给高 thinking 的 Pi profile；路由策略全部放在 profile 配置中。
 
 3. **独立审查与双盲验证（Independent Verification）**：
    * **痛点**：同一个 LLM 在刚写完一段复杂代码后，进行自我审查时容易产生确认偏误（Confirmation Bias）。
-   * **自主行为**：主 Agent 在完成关键重构或修复后，自动唤起 `review` profile 在独立上下文中对 diff 进行无偏审阅。
+   * **自主行为**：主 Agent 在完成关键重构或修复后，可唤起 `review` profile，例如通过 `cli: droid` 在独立进程中重新审阅 diff。
 
 4. **多模块并发探查（Multi-Domain Parallel Exploration）**：
    * **痛点**：需要同时调研多个不相关的子模块（如 `auth/`、`database/`、`router/`）时，串行处理耗时较长。
@@ -111,10 +111,35 @@ Subagents 的配置位于 `subagents.yaml`（全局位于 `~/.pi/agent/fabric/su
 
 | Profile 角色 | 典型 Runner | 思考等级 (Thinking) | 可用工具 | 适用场景 |
 |---|---|---|---|---|
-| `research` | `veda` / `pi` | `low` | `[read, grep, find, ls]` | 低成本收集证据、查阅外部文档、回答定点问题 |
+| `research` | `cli: agy` / `pi` | `low` | `[read, grep, find, ls]` | 低成本收集证据、查阅资料、回答定点问题 |
 | `explore` | `pi` | `low` | `[read, grep, find, ls]` | 探索项目代码结构、定位实现位置与依赖关系 |
 | `deep` | `pi` | `high` | 全部工具 | 疑难 Bug 分析、架构重构设计、递归解题 |
-| `review` | `pi` | `high` | `[read, grep, find, ls]` | 对 diff 进行独立审阅与代码安全防范检查 |
+| `review` | `cli: droid` / `pi` | `high` | `[read, grep, find, ls]` | 对 diff 进行独立审阅与代码安全检查 |
+
+例如：
+
+```yaml
+roles:
+  research:
+    runner: cli
+    cli: agy
+    thinking: low
+    tools: [read, grep, find, ls]
+
+  review:
+    runner: cli
+    cli: droid
+    thinking: high
+    tools: [read, grep, find, ls]
+
+  deep:
+    runner: pi
+    thinking: high
+```
+
+`runner: cli` 是一个通用适配入口，第一版内置 `agy` 与 `droid` 两个 adapter。Fabric 直接调用对应 CLI，不再要求安装 Veda。后续支持新的 headless CLI 时，应新增 adapter，而不是向 AgentManager/worker 再添加一套 runner 分支。
+
+CLI adapters 当前是 one-shot：不支持 `agents.recurse`、steer/follow-up 或 Fabric 主动 compact。递归 profile 必须使用 `runner: pi`。
 
 在对话中随时查询当前可用的 Profiles：
 
@@ -138,7 +163,7 @@ return catalog.profiles;
    * 并发执行时会清晰呈现每个 worker 的并发进度。
 
 3. **结果精简聚合**：
-   * 子代理执行完成后，自动提炼最终结构化数据或关键摘要并返回给主 Agent；
+   * 子代理执行完成后，最终结果或结构化数据返回给主 Agent；
    * 主 Agent 结合结果直接回答用户，保持主对话的历史记录干净清爽，避免大量零散的 tool step 污染主聊天窗口。
 
 ---

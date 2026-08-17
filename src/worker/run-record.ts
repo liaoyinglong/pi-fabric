@@ -28,6 +28,7 @@ export const createRunningRecord = (
   task,
   status: "running",
   runner: options.runner,
+  ...(options.cliAdapter ? { cli: options.cliAdapter } : {}),
   transport: options.transport,
   cwd: options.cwd,
   ...(options.model ? { model: options.model } : {}),
