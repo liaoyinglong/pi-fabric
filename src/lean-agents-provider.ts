@@ -108,9 +108,10 @@ const runRequest = (
   const { args } = resolveSubagentRole(raw, manager.cwd, {
     projectTrusted: projectTrusted(context),
   });
-  const runner = args.runner === "pi" || args.runner === "claude" || args.runner === "veda"
+  const runner = args.runner === "pi" || args.runner === "claude" || args.runner === "cli"
     ? args.runner
     : manager.config.runner;
+  const cli = args.cli === "agy" || args.cli === "droid" ? args.cli : undefined;
   const inheritedModel =
     runner === "pi" && !manager.config.model && context.extensionContext.model
       ? `${context.extensionContext.model.provider}/${context.extensionContext.model.id}`
@@ -129,10 +130,10 @@ const runRequest = (
   return {
     task: String(args.task ?? ""),
     runner,
+    ...(cli ? { cli } : {}),
     ...(typeof args.name === "string" ? { name: args.name } : {}),
     ...(transport ? { transport } : {}),
     ...(typeof args.model === "string" ? { model: args.model } : inheritedModel ? { model: inheritedModel } : {}),
-    ...(typeof args.persona === "string" && args.persona.trim() ? { persona: args.persona.trim() } : {}),
     ...(thinking ? { thinking } : {}),
     ...(tools ? { tools } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
@@ -159,7 +160,7 @@ const compactRecursiveResult = (result: AgentRunResult): Record<string, unknown>
 
 export class LeanAgentsProvider implements FabricProvider {
   readonly name = "agents";
-  readonly description = "Profile-based one-shot subagents backed by Pi, Claude, or Veda";
+  readonly description = "Profile-based subagents backed by Pi, Claude, or pluggable CLI adapters";
 
   constructor(readonly manager: AgentManager) {}
 
@@ -207,11 +208,11 @@ export class LeanAgentsProvider implements FabricProvider {
       // Kept as an unlisted compatibility action for existing scripts. Model
       // routing now belongs in semantic profiles, not in ordinary call sites.
       case "models": {
-        const runner = args.runner === "claude" || args.runner === "veda" || args.runner === "pi"
+        const runner = args.runner === "claude" || args.runner === "cli" || args.runner === "pi"
           ? args.runner
           : this.manager.config.runner;
         if (runner === "claude") return this.manager.claudeModels(args.refresh === true);
-        if (runner === "veda") return [];
+        if (runner === "cli") return [];
         const model = context.extensionContext.model;
         return model
           ? [{ provider: model.provider, id: model.id, name: model.name, key: `${model.provider}/${model.id}` }]
