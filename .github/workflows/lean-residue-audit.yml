@@ -14,8 +14,7 @@ jobs:
       - name: Legacy terminology and compatibility scan
         shell: bash
         run: |
-          set +e
           echo '=== strong legacy terms in src/tests ==='
-          rg -n -i 'actorId|actorName|byActor|ownerHostId|ownerIdentityId|meshRoot|sessionSeed|thinkingTransfer|handoffCompact|deferHandoff|actorRunArchive|\bRLM\b|\bPrewalk\b|\bCouncil\b|\bActor\b|\bMesh\b|\bParticipant\b|resident host|resident-host' src tests || true
+          grep -RInE 'actorId|actorName|byActor|ownerHostId|ownerIdentityId|meshRoot|sessionSeed|thinkingTransfer|handoffCompact|deferHandoff|actorRunArchive|\bRLM\b|\bPrewalk\b|\bCouncil\b|\bActor\b|\bMesh\b|\bParticipant\b|resident host|resident-host' src tests || true
           echo '=== legacy source paths ==='
           find src tests -type f | sort | grep -Ei 'actor|mesh|handoff|rlm|prewalk|council|resident|thinking-transfer' || true
