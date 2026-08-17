@@ -12,6 +12,8 @@ import { McpDescriptorCacheStore } from "./providers/mcp-descriptor-cache.js";
 import { McpProvider } from "./providers/mcp-provider.js";
 import { PiToolsProvider } from "./providers/pi-tools-provider.js";
 
+const BACKGROUND_COMPLETION_MAX_CHARS = 8_000;
+
 export interface LeanExecutionRequest {
   code: string;
   strings?: Record<string, string>;
@@ -116,6 +118,27 @@ export class LeanCodeModeRuntime {
       fullCodeMode: true,
       projectRoot,
       retention: config.retention,
+      onBackgroundComplete: (result) => {
+        const durationMs = Math.max(0, (result.finishedAt ?? Date.now()) - result.startedAt);
+        const duration =
+          durationMs < 60_000
+            ? `${Math.round(durationMs / 1_000)}s`
+            : `${(durationMs / 60_000).toFixed(1)}m`;
+        const summary = result.text || result.error || "no result";
+        const clippedSummary =
+          summary.length > BACKGROUND_COMPLETION_MAX_CHARS
+            ? `${summary.slice(0, BACKGROUND_COMPLETION_MAX_CHARS)}\n[completion truncated]`
+            : summary;
+        this.pi.sendMessage(
+          {
+            customType: "pi-fabric-agent-complete",
+            content: `Fabric agent ${result.id.slice(0, 8)} ${result.status} after ${duration}: ${clippedSummary}`,
+            display: true,
+            details: result,
+          },
+          { deliverAs: "followUp", triggerTurn: true },
+        );
+      },
     });
     registry.register(new LeanAgentsProvider(agents));
 
