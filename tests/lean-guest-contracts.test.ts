@@ -17,6 +17,7 @@ describe("Lean guest contract alignment", () => {
     const checked = typeCheckFabricCode(source, GUEST_TYPE_DECLARATIONS);
     expect(checked.errors).toEqual([]);
     expect(checked.javascript).toContain("agents.roles");
+    expect(checked.javascript).toBeDefined();
 
     const hostCall = vi.fn(async (ref: string, args: Record<string, unknown>) => {
       expect(ref).toBe("agents.roles");
@@ -32,8 +33,8 @@ describe("Lean guest contract alignment", () => {
       hostCall,
       {
         ...runtimeOptions,
-        transpiledCode: checked.javascript,
-        transpiledSourceMap: checked.sourceMap,
+        transpiledCode: checked.javascript!,
+        ...(checked.sourceMap ? { transpiledSourceMap: checked.sourceMap } : {}),
       },
     );
 
