@@ -18,11 +18,11 @@ export interface LeanSettingsPersistenceOptions extends LoadFabricConfigOptions 
 export interface EditableSubagentProfile {
   description?: string;
   instructions?: string;
-  runner?: "pi" | "claude" | "cli";
-  cli?: "agy" | "droid";
-  transport?: "auto" | "process" | "tmux" | "screen" | "localterm" | "herdr";
+  runner?: "pi" | "claude" | "cli" | undefined;
+  cli?: "agy" | "droid" | undefined;
+  transport?: "auto" | "process" | "tmux" | "screen" | "localterm" | "herdr" | undefined;
   model?: string;
-  thinking?: FabricThinking;
+  thinking?: FabricThinking | undefined;
   tools?: string[];
   timeoutMs?: number;
   extensions?: boolean;
