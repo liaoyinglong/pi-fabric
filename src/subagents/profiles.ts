@@ -33,6 +33,10 @@ interface ResolvedSubagentRole {
   args: Record<string, unknown>;
 }
 
+export interface SubagentRoleLoadOptions {
+  projectTrusted?: boolean;
+}
+
 const ROLE_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 const RUNNERS = new Set<SubagentRoleRunner>(["pi", "claude", "veda"]);
 const TRANSPORTS = new Set<SubagentRoleTransport>([
@@ -139,21 +143,27 @@ const candidateFiles = (base: string): string[] => [
   path.join(base, "subagents.json"),
 ];
 
-const subagentRoleFiles = (cwd: string): string[] => {
+const subagentRoleFiles = (
+  cwd: string,
+  options: SubagentRoleLoadOptions = {},
+): string[] => {
   const globalBase = path.join(os.homedir(), ".pi", "agent", "fabric");
   const projectBase = path.join(projectRoot(cwd), ".pi", "fabric");
   const explicit = process.env.PI_FABRIC_SUBAGENTS_FILE?.trim();
   return [
     ...candidateFiles(globalBase),
-    ...candidateFiles(projectBase),
+    ...(options.projectTrusted === false ? [] : candidateFiles(projectBase)),
     ...(explicit ? [path.resolve(explicit)] : []),
   ];
 };
 
-const loadSubagentRoles = (cwd: string): SubagentRoleCatalog => {
+const loadSubagentRoles = (
+  cwd: string,
+  options: SubagentRoleLoadOptions = {},
+): SubagentRoleCatalog => {
   const roles: Record<string, SubagentRoleProfile> = {};
   const sources: string[] = [];
-  for (const filePath of subagentRoleFiles(cwd)) {
+  for (const filePath of subagentRoleFiles(cwd, options)) {
     if (!fs.existsSync(filePath)) continue;
     const loaded = parseRoleFile(filePath);
     for (const [name, profile] of Object.entries(loaded)) {
@@ -188,8 +198,9 @@ const roleTask = (role: string, instructions: string, task: unknown): string => 
 export const resolveSubagentRole = (
   args: Record<string, unknown>,
   cwd: string,
+  options: SubagentRoleLoadOptions = {},
 ): ResolvedSubagentRole => {
-  const catalog = loadSubagentRoles(cwd);
+  const catalog = loadSubagentRoles(cwd, options);
   const explicitRole = nonEmptyString(args.role);
   const legacyName = nonEmptyString(args.name);
   const role = explicitRole ?? (legacyName && catalog.roles[legacyName] ? legacyName : undefined);
@@ -206,8 +217,11 @@ export const resolveSubagentRole = (
   return { role, profile, args: merged };
 };
 
-export const describeSubagentRoles = (cwd: string): Record<string, unknown> => {
-  const catalog = loadSubagentRoles(cwd);
+export const describeSubagentRoles = (
+  cwd: string,
+  options: SubagentRoleLoadOptions = {},
+): Record<string, unknown> => {
+  const catalog = loadSubagentRoles(cwd, options);
   return {
     roles: Object.entries(catalog.roles).map(([name, profile]) => ({
       name,
