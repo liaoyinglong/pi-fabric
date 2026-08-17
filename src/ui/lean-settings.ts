@@ -7,20 +7,14 @@ import {
   Input,
   Key,
   matchesKey,
-  SelectList,
   SettingsList,
   Spacer,
   Text,
   type Component,
-  type SelectItem,
-  type SelectListTheme,
   type SettingItem,
   type SettingsListTheme,
 } from "@earendil-works/pi-tui";
-import {
-  type FabricConfig,
-  type FabricConfigScope,
-} from "../config.js";
+import type { FabricConfig, FabricConfigScope } from "../config.js";
 import { THINKING_LEVELS } from "../thinking.js";
 import {
   explicitFabricConfigOverride,
@@ -49,14 +43,6 @@ const settingsTheme = (theme: Theme): SettingsListTheme => ({
   description: (text) => theme.fg("dim", text),
   cursor: theme.fg("accent", "→ "),
   hint: (text) => theme.fg("dim", text),
-});
-
-const selectTheme = (theme: Theme): SelectListTheme => ({
-  selectedPrefix: (text) => theme.fg("accent", text),
-  selectedText: (text) => theme.fg("accent", text),
-  description: (text) => theme.fg("muted", text),
-  scrollInfo: (text) => theme.fg("muted", text),
-  noMatch: (text) => theme.fg("muted", text),
 });
 
 type SettingsSubmenu = (currentValue: string, done: (selectedValue?: string) => void) => Component;
@@ -150,37 +136,6 @@ class StringInputSubmenu extends Container {
   }
 }
 
-class SelectSubmenu extends Container {
-  readonly list: SelectList;
-
-  constructor(
-    theme: Theme,
-    title: string,
-    description: string,
-    options: SelectItem[],
-    currentValue: string,
-    done: (value?: string) => void,
-  ) {
-    super();
-    this.addChild(new Text(theme.bold(theme.fg("accent", title)), 0, 0));
-    this.addChild(new Spacer(1));
-    this.addChild(new Text(theme.fg("muted", description), 0, 0));
-    this.addChild(new Spacer(1));
-    this.list = new SelectList(options, Math.min(options.length, 12), selectTheme(theme));
-    const selected = options.findIndex((option) => option.value === currentValue);
-    if (selected >= 0) this.list.setSelectedIndex(selected);
-    this.list.onSelect = (item) => done(item.value);
-    this.list.onCancel = () => done();
-    this.addChild(this.list);
-    this.addChild(new Spacer(1));
-    this.addChild(new Text(theme.fg("dim", "Enter to select · Esc to go back"), 0, 0));
-  }
-
-  handleInput(data: string): void {
-    this.list.handleInput(data);
-  }
-}
-
 class SectionSubmenu extends Container {
   readonly list: SettingsList;
 
@@ -197,9 +152,12 @@ class SectionSubmenu extends Container {
     this.addChild(new Spacer(1));
     this.addChild(new Text(theme.fg("muted", description), 0, 0));
     this.addChild(new Spacer(1));
+    const displayItems = items.length > 0
+      ? items
+      : [setting("empty", "No entries", "—", { description: "Nothing is configured in this scope." })];
     this.list = new SettingsList(
-      items,
-      Math.min(items.length, 15),
+      displayItems,
+      Math.min(displayItems.length, 15),
       settingsTheme(theme),
       onChange,
       done,
@@ -284,14 +242,16 @@ export class LeanFabricSettings extends Container {
     title: string,
     description: string,
     items: SettingItem[],
-  ): SettingsSubmenu => (_current, done) => new SectionSubmenu(
-    this.theme,
-    title,
-    description,
-    items,
-    (id, value) => this.#persist(id, value),
-    () => done(),
-  );
+  ): SettingsSubmenu {
+    return (_current, done) => new SectionSubmenu(
+      this.theme,
+      title,
+      description,
+      items,
+      (id, value) => this.#persist(id, value),
+      () => done(),
+    );
+  }
 
   #valueSetting(
     id: string,
@@ -310,16 +270,6 @@ export class LeanFabricSettings extends Container {
     return (_current, done) => {
       const catalog = loadEditableSubagentCatalog(this.#scope, this.options);
       const entries = Object.entries(catalog.profiles);
-      if (entries.length === 0) {
-        return new SectionSubmenu(
-          this.theme,
-          "Subagent profiles",
-          "No profiles are configured yet. Create subagents.yaml manually, then reopen this page.",
-          [],
-          () => undefined,
-          () => done(),
-        );
-      }
       const rows = entries.map(([name, profile]) => setting(
         `profile.${name}`,
         name,
@@ -333,7 +283,7 @@ export class LeanFabricSettings extends Container {
         this.theme,
         "Subagent profiles",
         catalog.explicitOverride
-          ? `Effective profile catalog. PI_FABRIC_SUBAGENTS_FILE is active: ${catalog.explicitOverride}`
+          ? `Editing saved profiles; PI_FABRIC_SUBAGENTS_FILE has higher precedence: ${catalog.explicitOverride}`
           : "Edit semantic routing profiles without exposing raw routing fields to Main.",
         rows,
         () => undefined,
@@ -349,12 +299,21 @@ export class LeanFabricSettings extends Container {
         const clean = raw.trim();
         const next: EditableSubagentProfile = { ...profile };
         switch (key) {
-          case "description": next.description = clean || undefined; break;
-          case "instructions": next.instructions = clean || undefined; break;
+          case "description":
+            if (clean) next.description = clean;
+            else delete next.description;
+            break;
+          case "instructions":
+            if (clean) next.instructions = clean;
+            else delete next.instructions;
+            break;
           case "runner": next.runner = clean as EditableSubagentProfile["runner"]; break;
           case "cli": next.cli = clean as EditableSubagentProfile["cli"]; break;
           case "transport": next.transport = clean as EditableSubagentProfile["transport"]; break;
-          case "model": next.model = clean || undefined; break;
+          case "model":
+            if (clean) next.model = clean;
+            else delete next.model;
+            break;
           case "thinking": next.thinking = clean as EditableSubagentProfile["thinking"]; break;
           case "tools": next.tools = clean.split(",").map((entry) => entry.trim()).filter(Boolean); break;
           case "timeoutMs": {
