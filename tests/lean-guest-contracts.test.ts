@@ -12,7 +12,12 @@ const runtimeOptions = {
 };
 
 describe("Lean guest contract alignment", () => {
-  it("executes canonical agents.profiles through the legacy runtime alias", async () => {
+  it("executes canonical agents.profiles through the checked production path", async () => {
+    const source = "return agents.profiles({});";
+    const checked = typeCheckFabricCode(source, GUEST_TYPE_DECLARATIONS);
+    expect(checked.errors).toEqual([]);
+    expect(checked.javascript).toContain("agents.roles");
+
     const hostCall = vi.fn(async (ref: string, args: Record<string, unknown>) => {
       expect(ref).toBe("agents.roles");
       expect(args).toEqual({});
@@ -23,9 +28,13 @@ describe("Lean guest contract alignment", () => {
     });
 
     const result = await new QuickJsRuntime().execute(
-      "return agents.profiles({});",
+      source,
       hostCall,
-      runtimeOptions,
+      {
+        ...runtimeOptions,
+        transpiledCode: checked.javascript,
+        transpiledSourceMap: checked.sourceMap,
+      },
     );
 
     expect(result.error).toBeUndefined();
