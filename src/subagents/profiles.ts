@@ -188,8 +188,8 @@ const profileArgs = (profile: SubagentRoleProfile): Record<string, unknown> => (
 });
 
 const roleTask = (role: string, instructions: string, task: unknown): string => [
-  `You are running the configured subagent role "${role}".`,
-  "Role instructions:",
+  `You are running the configured subagent profile "${role}".`,
+  "Profile instructions:",
   instructions.trim(),
   "Task:",
   String(task ?? ""),
@@ -201,17 +201,19 @@ export const resolveSubagentRole = (
   options: SubagentRoleLoadOptions = {},
 ): ResolvedSubagentRole => {
   const catalog = loadSubagentRoles(cwd, options);
-  const explicitRole = nonEmptyString(args.role);
+  const explicitProfile = nonEmptyString(args.profile);
+  const legacyRole = nonEmptyString(args.role);
   const legacyName = nonEmptyString(args.name);
-  const role = explicitRole ?? (legacyName && catalog.roles[legacyName] ? legacyName : undefined);
+  const role = explicitProfile ?? legacyRole ?? (legacyName && catalog.roles[legacyName] ? legacyName : undefined);
   if (!role) return { args };
   const profile = catalog.roles[role];
-  if (!profile) throw new Error(`Unknown subagent role: ${role}`);
+  if (!profile) throw new Error(`Unknown subagent profile: ${role}`);
   const merged: Record<string, unknown> = {
     ...profileArgs(profile),
     ...args,
     name: nonEmptyString(args.name) ?? role,
   };
+  delete merged.profile;
   delete merged.role;
   if (profile.instructions) merged.task = roleTask(role, profile.instructions, args.task);
   return { role, profile, args: merged };
@@ -223,7 +225,7 @@ export const describeSubagentRoles = (
 ): Record<string, unknown> => {
   const catalog = loadSubagentRoles(cwd, options);
   return {
-    roles: Object.entries(catalog.roles).map(([name, profile]) => ({
+    profiles: Object.entries(catalog.roles).map(([name, profile]) => ({
       name,
       ...(profile.description ? { description: profile.description } : {}),
       ...(profile.runner ? { runner: profile.runner } : {}),
