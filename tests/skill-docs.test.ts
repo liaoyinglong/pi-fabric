@@ -73,9 +73,10 @@ describe("lean Fabric skill surface", () => {
     expect(guidance).toContain("mcp.<server>.<tool>");
     expect(guidance).toContain("agents.*");
     expect(guidance).toContain("workflow");
-    expect(guidance).toContain("agents.roles({})");
-    expect(guidance).toContain("semantic subagent roles");
-    expect(guidance).toContain("role name as `name`");
+    expect(guidance).toContain("agents.profiles({})");
+    expect(guidance).toContain("semantic profile");
+    expect(guidance).toContain("`name` is display-only");
+    expect(guidance).toContain("agents.recurse({profile,task})");
     expect(guidance).toContain("caller should not need to name a model");
 
     for (const legacy of ["memory.*", "state.*", "schema.*", "mesh.*", "actors"] as const) {
@@ -89,8 +90,8 @@ describe("lean Fabric skill surface", () => {
       mcpEnabled: false,
     });
     expect(guidance).not.toContain("mcp.<server>.<tool>");
-    expect(guidance).not.toContain("agents.roles({})");
-    expect(guidance).not.toContain("semantic subagent roles");
+    expect(guidance).not.toContain("agents.profiles({})");
+    expect(guidance).not.toContain("semantic profile");
     expect(guidance).toContain("agents and agent-backed workflow delegation are disabled");
   });
 
