@@ -45,7 +45,7 @@ describe("lean AgentManager", () => {
     expect(manager.list()).toHaveLength(1);
   });
 
-  it("defaults ordinary Pi children to read-only tools with extensions disabled", async () => {
+  it("defaults ordinary Pi children to read-only tools while preserving extension discovery", async () => {
     const manager = createManager();
     const result = await manager.run({
       task: "Inspect defaults",
@@ -58,11 +58,11 @@ describe("lean AgentManager", () => {
     };
 
     expect(observed.tools).toEqual(["read", "grep", "find", "ls"]);
-    expect(observed.extensions).toBe("false");
+    expect(observed.extensions).toBe("true");
     expect(observed.fullCodeMode).toBe("false");
   });
 
-  it("keeps recursive Pi children on Fabric with fabric_exec available", async () => {
+  it("launches recursive Pi children with Fabric and the original grant allowlist", async () => {
     const manager = createManager();
     const result = await manager.run({
       task: "Recursive inspection",
@@ -75,6 +75,10 @@ describe("lean AgentManager", () => {
       fullCodeMode?: string;
     };
 
+    // These are Pi startup grants, not the recursive LLM's final visible tool
+    // surface. Lean hides the direct core tools and leaves fabric_exec visible,
+    // while reusing the four core names as the internal Code Mode capability
+    // boundary.
     expect(observed.tools).toEqual(["read", "grep", "find", "ls", "fabric_exec"]);
     expect(observed.extensions).toBe("true");
     expect(observed.fullCodeMode).toBe("true");
