@@ -26,6 +26,12 @@ const legacySkills = [
   "fabric-swarm",
 ] as const;
 
+const shippedDocs = [
+  "docs/usage.md",
+  "docs/configuration.md",
+  "docs/lean-code-mode.md",
+] as const;
+
 describe("lean Fabric skill surface", () => {
   it("registers only exec, subagents, and workflow with Pi", () => {
     const manifest = JSON.parse(fs.readFileSync("package.json", "utf8")) as {
@@ -39,6 +45,9 @@ describe("lean Fabric skill surface", () => {
     expect(manifest.files).not.toContain("skills/");
     for (const name of shippedSkills) {
       expect(manifest.files).toContain(`skills/${name}/`);
+    }
+    for (const file of shippedDocs) {
+      expect(manifest.files).toContain(file);
     }
   });
 
@@ -64,6 +73,10 @@ describe("lean Fabric skill surface", () => {
     expect(guidance).toContain("mcp.<server>.<tool>");
     expect(guidance).toContain("agents.*");
     expect(guidance).toContain("workflow");
+    expect(guidance).toContain("agents.roles({})");
+    expect(guidance).toContain("semantic subagent roles");
+    expect(guidance).toContain("role name as `name`");
+    expect(guidance).toContain("caller should not need to name a model");
 
     for (const legacy of ["memory.*", "state.*", "schema.*", "mesh.*", "actors"] as const) {
       expect(guidance).not.toContain(legacy);
@@ -82,7 +95,7 @@ describe("lean Fabric skill surface", () => {
     expect(skill).not.toContain("Persistent actors");
   });
 
-  it("packs only the three lean Fabric skills", () => {
+  it("packs the lean skills and user documentation", () => {
     const packed = JSON.parse(execFileSync(
       process.platform === "win32" ? process.env.ComSpec ?? "cmd.exe" : "npm",
       process.platform === "win32"
@@ -94,6 +107,9 @@ describe("lean Fabric skill surface", () => {
     const files = new Set(packed[0]!.files.map((entry) => entry.path));
     for (const name of shippedSkills) {
       expect(files).toContain(`skills/${name}/SKILL.md`);
+    }
+    for (const file of shippedDocs) {
+      expect(files).toContain(file);
     }
     for (const name of legacySkills) {
       expect(files).not.toContain(`skills/${name}/SKILL.md`);
