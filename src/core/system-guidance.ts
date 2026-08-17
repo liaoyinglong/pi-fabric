@@ -7,7 +7,7 @@ const dependencyAwareCompositionGuidance =
   " For dependent work inside one `fabric_exec`, use ordinary `await`; use `parallel(...)` or `all({...})` only for independent work. Keep side effects explicitly ordered.";
 
 const semanticSubagentGuidance =
-  " When delegation is useful, prefer configured semantic subagent roles over raw model ids. Discover the current role catalog with `agents.roles({})`, then pass the chosen role name as `name` to `agents.run`, `agents.spawn`, or workflow `agent(...)`. Use bounded cheaper evidence-gathering roles for search and repetitive inspection, and stronger roles only for difficult reasoning, implementation decisions, or independent verification. The caller should not need to name a model in ordinary conversation.";
+  " When delegation is useful, route by semantic profile rather than raw model id. Discover profiles with `agents.profiles({})`, then pass `profile` to `agents.run`, `agents.spawn`, or workflow `agent(...)`; `name` is display-only. Prefer bounded cheaper profiles for search and repetitive inspection, and stronger profiles only for difficult reasoning, implementation decisions, or independent verification. Use `agents.recurse({profile,task})` only when a Pi profile genuinely needs recursive decomposition beyond one child context; ordinary delegation should stay on run/spawn. The caller should not need to name a model in ordinary conversation.";
 
 export interface FabricExecutionGuidanceOptions {
   agentsEnabled?: boolean;
@@ -29,7 +29,7 @@ export const defaultFabricExecutionGuidance = (
     ? " Use `tools.search`/`tools.describe` for discovery and `tools.call({ref,args})` only for computed or dynamic refs."
     : " Use `tools.search`/`tools.describe` for available dynamic actions and `tools.call({ref,args})` only for computed refs.";
   const agents = agentsEnabled
-    ? " Named one-shot workers are available through `agents.*`; workflow helpers such as `agent(...)`, `parallel(...)`, and `pipeline(...)` orchestrate those workers inside the same Code Mode program."
+    ? " Profile-based one-shot workers are available through `agents.*`; workflow helpers such as `agent(...)`, `parallel(...)`, and `pipeline(...)` orchestrate those workers inside the same Code Mode program."
     : " One-shot agents and agent-backed workflow delegation are disabled by configuration.";
   const progressive =
     " Detailed contracts stay progressive in the `fabric-exec`, `fabric-subagents`, and `fabric-workflow` skills rather than in the system prompt.";
