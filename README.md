@@ -247,7 +247,7 @@ Select the adapter in a semantic profile with `runner: cli` and `cli: agy` or `c
 
 Droid uses its native per-run tool restriction. Antigravity does not currently provide an equivalent headless per-run allowlist, so Fabric passes the requested tool boundary as an explicit prompt policy and leaves Antigravity's permission configuration authoritative. Fabric never turns on Antigravity's dangerous permission bypass automatically.
 
-CLI adapters are one-shot in V1: no recursive Fabric, steer/follow-up, or Fabric-triggered compaction. Adding another CLI should be an adapter addition rather than another AgentManager runner branch.
+CLI adapters are one-shot in V1: no recursive Fabric, steer/follow-up, or Fabric-triggered compaction. Adding another CLI should only require an adapter addition; AgentManager remains unchanged.
 
 ## Verification
 
