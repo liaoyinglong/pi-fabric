@@ -6,7 +6,7 @@ Lean V2 is a focused Programmatic Tool Calling runtime for Pi with three surface
 2. Profile-based one-shot subagents for bounded delegated work.
 3. Thin workflow helpers over the same one-shot runtime.
 
-A small `agents.recurse` primitive supports bounded recursive Pi delegation. Persistent Actor, Mesh, State, Memory, standalone RLM/Council/Swarm, Prewalk, resident-host, trajectory-handoff, and dashboard systems are not part of Lean V2.
+A small `agents.recurse` primitive supports bounded recursive Pi delegation. Persistent Actor, Mesh, State, Memory, standalone RLM/Council/Swarm, Prewalk, resident-host, trajectory-handoff, and the legacy dashboard/control-plane runtime are not part of Lean V2. `/fabric` provides a new lightweight dashboard over the retained `AgentManager` only.
 
 ## 1. Install
 
@@ -123,7 +123,28 @@ The `fabric_exec` card keeps generated code visible:
 - final: call count, duration, failures, and only a real returned value;
 - `undefined` return: no synthetic `(no output)` body.
 
-This keeps the useful original Fabric Code Mode observability without restoring the old dashboard stack.
+For session-level observability, `/fabric` opens a lightweight overlay backed directly by the current `AgentManager`:
+
+- left pane: top-level and recursive subagents with live status, runner, tool, call, and token summaries;
+- right pane: live worker output from `events.jsonl` for the selected agent;
+- `↑/↓` or `j/k`: select;
+- `g/G`: first/last;
+- `x`: guarded two-step stop for a top-level running agent;
+- `r`: refresh;
+- `Esc`: close.
+
+Wide terminals use a two-pane view; narrow terminals switch to a stacked layout. Workflow helpers ultimately delegate through the same agent runtime, so workflow-launched agents appear in this dashboard without a second workflow state model.
+
+The focused command forms remain available:
+
+```text
+/fabric agents
+/fabric status <id>
+/fabric log <id> [--lines N]
+/fabric stop <id>
+```
+
+This keeps the useful original Fabric observability without restoring the old Actors/Mesh/dashboard control-plane stack.
 
 ## 4. Pi core tools
 
