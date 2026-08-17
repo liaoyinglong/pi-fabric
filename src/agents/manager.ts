@@ -101,13 +101,13 @@ export const effectiveAgentTimeoutMs = (
   );
 };
 
-interface AgentParticipantGuidanceRequest {
+interface AgentGuidanceRequest {
   model?: string;
   runner: FabricAgentRunner;
 }
 
-type AgentParticipantGuidanceResolver = (
-  request: AgentParticipantGuidanceRequest,
+type AgentGuidanceResolver = (
+  request: AgentGuidanceRequest,
 ) => string | undefined;
 
 interface ManagedAgent {
@@ -344,7 +344,7 @@ export class AgentManager {
   readonly #onBackgroundComplete: ((result: AgentRunResult) => void) | undefined;
   readonly #onLifecycle: ((event: FabricLifecyclePublishRequest) => void) | undefined;
   readonly #preparePiModel: ((model: string) => Promise<void>) | undefined;
-  readonly #resolveParticipantGuidance: AgentParticipantGuidanceResolver | undefined;
+  readonly #resolveAgentGuidance: AgentGuidanceResolver | undefined;
   readonly #piModelPreparations = new Map<string, Promise<void>>();
   readonly #budget: BudgetLedgerState | undefined;
   readonly #budgetOwned: boolean;
@@ -376,7 +376,7 @@ export class AgentManager {
       onBackgroundComplete?: (result: AgentRunResult) => void;
       onLifecycle?: (event: FabricLifecyclePublishRequest) => void;
       preparePiModel?: (model: string) => Promise<void>;
-      resolveParticipantGuidance?: AgentParticipantGuidanceResolver;
+      resolveAgentGuidance?: AgentGuidanceResolver;
     } = {},
   ) {
     this.#semaphore = new Semaphore(config.maxConcurrent);
@@ -396,7 +396,7 @@ export class AgentManager {
     this.#onBackgroundComplete = options.onBackgroundComplete;
     this.#onLifecycle = options.onLifecycle;
     this.#preparePiModel = options.preparePiModel;
-    this.#resolveParticipantGuidance = options.resolveParticipantGuidance;
+    this.#resolveAgentGuidance = options.resolveAgentGuidance;
     this.#currentDepth = Math.max(0, Number(process.env.PI_FABRIC_DEPTH ?? "0") || 0);
     this.#fullCodeMode = options.fullCodeMode ?? true;
     this.#mainAgentId =
@@ -556,7 +556,7 @@ export class AgentManager {
       const extensions = recursive ? true : (request.extensions ?? this.config.extensions);
       const componentGuidance = recursive
         ? undefined
-        : this.#resolveParticipantGuidance?.({ ...(model ? { model } : {}), runner })?.trim();
+        : this.#resolveAgentGuidance?.({ ...(model ? { model } : {}), runner })?.trim();
       const systemPrompt = [request.systemPrompt?.trim(), componentGuidance]
         .filter((section): section is string => Boolean(section))
         .join("\n\n") || undefined;

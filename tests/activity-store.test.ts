@@ -168,31 +168,31 @@ describe("FabricActivityStore", () => {
     expect(store.get("bounded")).toBeUndefined();
   });
 
-  it("reopens a completed run for boundary continuation activity", () => {
+  it("reopens a completed run for continued nested activity", () => {
     const store = new FabricActivityStore();
     store.start("run-boundary");
     store.beginCall("run-boundary", {
-      callId: "prewalk",
-      ref: "agents.handoff",
-      args: { name: "Deferred handoff" },
+      callId: "continued-agent",
+      ref: "agents.run",
+      args: { name: "Nested workflow executor" },
     });
-    store.finishCall("run-boundary", "prewalk", {
+    store.finishCall("run-boundary", "continued-agent", {
       success: true,
-      result: { status: "deferred" },
+      result: { status: "completed" },
     });
     store.finish("run-boundary", true);
 
     store.resume("run-boundary");
     store.beginCall("run-boundary", {
-      callId: "prewalk",
-      ref: "agents.handoff",
-      args: { name: "Prewalk trajectory executor" },
+      callId: "continued-agent",
+      ref: "agents.run",
+      args: { name: "Nested workflow executor" },
     });
-    store.updateCall("run-boundary", "prewalk", {
+    store.updateCall("run-boundary", "continued-agent", {
       type: "entity",
       id: "child-1",
       kind: "agent",
-      name: "Prewalk trajectory executor",
+      name: "Nested workflow executor",
     });
 
     const resumed = store.get("run-boundary");
