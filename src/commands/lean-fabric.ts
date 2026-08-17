@@ -153,17 +153,17 @@ const agentCompletions = (manager: AgentManager, prefix: string): AutocompleteIt
 const openLeanFabricDashboard = async (
   manager: AgentManager,
   context: ExtensionContext,
-): Promise<void> => {
+): Promise<"settings" | undefined> => {
   if (context.mode !== "tui") {
     context.ui.notify(formatLeanFabricAgentList(manager.listForUi()), "info");
-    return;
+    return undefined;
   }
   const { LeanFabricDashboard } = await import("../ui/lean-dashboard.js");
   let dispose: (() => void) | undefined;
   try {
-    await context.ui.custom<void>(
+    return await context.ui.custom<"settings" | undefined>(
       (tui, theme, _keybindings, done) => {
-        const dashboard = new LeanFabricDashboard(tui, theme, manager, () => done(undefined));
+        const dashboard = new LeanFabricDashboard(tui, theme, manager, (action) => done(action));
         dispose = () => dashboard.dispose();
         return dashboard;
       },
@@ -249,7 +249,8 @@ export function registerLeanFabricCommand(
         }
 
         if (command === "dashboard" || command === "ui") {
-          await openLeanFabricDashboard(manager, context);
+          const action = await openLeanFabricDashboard(manager, context);
+          if (action === "settings") await openLeanFabricSettings(context);
           return;
         }
 
