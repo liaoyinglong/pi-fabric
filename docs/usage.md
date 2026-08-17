@@ -133,7 +133,7 @@ For session-level observability, `/fabric` opens a lightweight overlay backed di
 - `r`: refresh;
 - `Esc`: close.
 
-Wide terminals use a two-pane view; narrow terminals switch to a stacked layout. Workflow helpers ultimately delegate through the same agent runtime, so workflow-launched agents appear in this dashboard without a second workflow state model.
+Wide terminals use a two-pane view; narrow terminals switch to a stacked layout. Workflow helpers delegate through the same agent runtime, so workflow-launched agents appear in this dashboard without a second workflow state model.
 
 The focused command forms remain available:
 
