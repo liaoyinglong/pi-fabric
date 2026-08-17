@@ -82,6 +82,28 @@ roles:
       .toThrow("Unknown subagent role: missing");
   });
 
+  it("does not load project role files for an untrusted project", () => {
+    const root = project(`
+roles:
+  unsafe_project_role_9f31:
+    model: provider/project-only
+    thinking: high
+`);
+
+    const resolved = resolveSubagentRole(
+      { name: "unsafe_project_role_9f31", task: "x" },
+      root,
+      { projectTrusted: false },
+    );
+    expect(resolved.role).toBeUndefined();
+    expect(resolved.args.model).toBeUndefined();
+
+    const result = describeSubagentRoles(root, { projectTrusted: false }) as {
+      sources: string[];
+    };
+    expect(result.sources.some((source) => source.startsWith(root))).toBe(false);
+  });
+
   it("lists role metadata without returning role instructions", () => {
     const root = project(`
 roles:
