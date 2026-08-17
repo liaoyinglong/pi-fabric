@@ -85,7 +85,10 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
     const overrideGuidance = coreOverridePromptGuidance(capturedTools).trim();
     const guidance = [
       fabricExecutionKernelGuidance(true),
-      defaultFabricExecutionGuidance(true),
+      defaultFabricExecutionGuidance(true, {
+        agentsEnabled: runtime.config.agents.enabled,
+        mcpEnabled: runtime.config.mcp.enabled,
+      }),
       overrideGuidance || undefined,
     ].filter((value): value is string => Boolean(value)).join("\n\n");
     return { systemPrompt: `${systemPrompt}\n\n${guidance}` };
