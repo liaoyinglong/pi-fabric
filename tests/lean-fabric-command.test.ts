@@ -36,7 +36,6 @@ describe("lean /fabric command formatting", () => {
       id: "abcdef1234567890",
       name: "nested check",
       currentTool: "grep",
-      nestedAgents: undefined,
     });
     const root = run({ nestedAgents: [nested] });
     const output = formatLeanFabricAgentList([root]);
