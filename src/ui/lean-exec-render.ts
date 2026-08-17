@@ -4,12 +4,21 @@ import { diffLines } from "diff";
 import { headlineArg } from "../core/call-preview.js";
 
 const COLLAPSED_CODE_LINES = 8;
-const COLLAPSED_RESULT_LINES = 12;
 const COLLAPSED_AUDIT_LINES = 5;
 const COLLAPSED_DIFF_LINES = 8;
+const COLLAPSED_INLINE_RESULT_CHARS = 160;
+const EXPANDED_RESULT_LINES = 40;
+const EXPANDED_RESULT_LINE_CHARS = 240;
 
 const countLabel = (count: number, singular: string): string =>
   `${count} ${count === 1 ? singular : `${singular}s`}`;
+
+const compactCount = (count: number): string => {
+  if (count < 1_000) return String(count);
+  if (count < 10_000) return `${(count / 1_000).toFixed(1)}k`;
+  if (count < 1_000_000) return `${Math.round(count / 1_000)}k`;
+  return `${(count / 1_000_000).toFixed(count < 10_000_000 ? 1 : 0)}m`;
+};
 
 // Tool arguments and nested outputs are model/tool-generated text. Strip
 // terminal escape/control sequences before rendering them into the TUI.
@@ -222,6 +231,45 @@ const normalizedAudits = (value: unknown): LeanAudit[] =>
     ? value.filter((entry): entry is LeanAudit => typeof entry === "object" && entry !== null)
     : [];
 
+const resultMeta = (output: string): string => {
+  const lines = output.split("\n").length;
+  return `${countLabel(lines, "line")} · ${compactCount(output.length)} chars`;
+};
+
+const truncateResultLine = (line: string): { text: string; truncated: boolean } => {
+  if (line.length <= EXPANDED_RESULT_LINE_CHARS) return { text: line, truncated: false };
+  return {
+    text: `${line.slice(0, EXPANDED_RESULT_LINE_CHARS - 1)}…`,
+    truncated: true,
+  };
+};
+
+const renderResultBody = (output: string, theme: Theme, expanded: boolean): string[] => {
+  if (!output) return [];
+  const lines = output.split("\n");
+  if (!expanded) {
+    if (lines.length === 1 && output.length <= COLLAPSED_INLINE_RESULT_CHARS) {
+      return [`${theme.fg("dim", "result ›")} ${theme.fg("toolOutput", output)}`];
+    }
+    return [theme.fg("dim", `result · ${resultMeta(output)} · Ctrl+O to inspect`)];
+  }
+
+  const visible = lines.slice(0, EXPANDED_RESULT_LINES).map(truncateResultLine);
+  const rendered = [
+    theme.fg("dim", `result · ${resultMeta(output)}`),
+    ...visible.map(({ text }) => theme.fg("toolOutput", text || " ")),
+  ];
+  const hiddenLines = lines.length - visible.length;
+  const truncatedLines = visible.filter(({ truncated }) => truncated).length;
+  if (hiddenLines > 0) {
+    rendered.push(theme.fg("dim", `… ${countLabel(hiddenLines, "result line")} hidden from TUI`));
+  }
+  if (truncatedLines > 0) {
+    rendered.push(theme.fg("dim", `… ${countLabel(truncatedLines, "long result line")} truncated in TUI`));
+  }
+  return rendered;
+};
+
 export const renderLeanExecResult = (
   result: { content?: unknown; details?: unknown },
   theme: Theme,
@@ -251,15 +299,7 @@ export const renderLeanExecResult = (
   const activity = renderAudits(audits, theme, expanded);
   const output = safeExecDisplayText(textContent(result.content)).trimEnd();
   const sections = [header, ...(activity.length > 0 ? [activity.join("\n")] : [])];
-  if (!output) return new Text(sections.join("\n"), 0, 0);
-
-  const lines = output.split("\n");
-  const limit = expanded ? lines.length : Math.min(lines.length, COLLAPSED_RESULT_LINES);
-  const shown = lines.slice(0, limit).map((line) => theme.fg("toolOutput", line || " "));
-  const hidden = lines.length - shown.length;
-  if (hidden > 0) {
-    shown.push(theme.fg("dim", `… ${countLabel(hidden, "line")} hidden · Ctrl+O to expand`));
-  }
-  sections.push(shown.join("\n"));
+  const resultBody = renderResultBody(output, theme, expanded);
+  if (resultBody.length > 0) sections.push(resultBody.join("\n"));
   return new Text(sections.join("\n"), 0, 0);
 };
