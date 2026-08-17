@@ -1,0 +1,262 @@
+name: Fix Lean runtime contracts
+
+on:
+  push:
+    branches:
+      - agent/code-mode-runtime-v2
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.event.head_commit.message == 'chore: run runtime contract migration'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/code-mode-runtime-v2
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Patch contracts
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"missing expected text in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Unknown pi.* properties are functional errors, not ignorable type looseness.
+          replace(
+              "src/runtime/type-checker.ts",
+              "const TYPE_CORRECTNESS_CODES = new Set<number>([\n  2339, 2551,\n  2322, 2345, 2367,",
+              "const TYPE_CORRECTNESS_CODES = new Set<number>([\n  2322, 2345, 2367,",
+          )
+
+          replace(
+              "src/core/system-guidance.ts",
+              "Pi Code Mode: use `fabric_exec` as the model-facing execution gateway. Call Pi core tools as `pi.*` inside `code`; compose related operations in one program and return only the bounded result needed by the caller.",
+              "Pi Code Mode: use `fabric_exec` as the model-facing execution gateway. Pi core actions are `pi.read`, `pi.bash`, `pi.edit`, `pi.write`, `pi.grep`, `pi.find`, and `pi.ls`; run shell commands with `pi.bash` (`pi.exec` does not exist). Compose related operations in one program and return only the bounded result needed by the caller.",
+          )
+
+          skill = Path("skills/fabric-exec/SKILL.md")
+          text = skill.read_text()
+          text = text.replace("collapsed cards show the first 8 lines", "collapsed cards show the first 15 lines")
+          marker = "| `pi.write` | `{ path, content }` | envelope |\n"
+          if marker not in text:
+              raise SystemExit("Pi tool table marker missing")
+          text = text.replace(
+              marker,
+              marker + "\nShell execution is `pi.bash(...)`; there is no `pi.exec`. Unknown `pi.*` members are rejected by the guest TypeScript checker before execution.\n",
+              1,
+          )
+          skill.write_text(text)
+
+          # Veda accepts the prompt as a positional CLI argument. Keep -- before it so
+          # prompts beginning with '-' remain literal and cannot become flags.
+          veda = Path("src/agents/veda-cli.ts")
+          text = veda.read_text()
+          text = text.replace(
+              "export interface VedaRunArguments {\n  backend: string;",
+              "export interface VedaRunArguments {\n  prompt: string;\n  backend: string;",
+              1,
+          )
+          text = text.replace(
+              "/** Headless run arguments: veda -b <backend> -p <persona> [model/reasoning/\n *  tools] --json --no-sel -S <session> --no-notify. The task itself is\n *  delivered over stdin by the worker so arbitrarily long prompts never hit\n *  ARG_MAX. */",
+              "/** Headless run arguments: veda -b <backend> -p <persona> [model/reasoning/\n *  tools] --json --no-sel -S <session> --no-notify -- <prompt>. Veda parses\n *  the prompt positionally; `--` keeps arbitrary task text from being parsed\n *  as CLI flags. */",
+              1,
+          )
+          text = text.replace(
+              "  args.push(\"--json\", \"--no-sel\", \"-S\", options.session, \"--no-notify\");\n  return args;",
+              "  args.push(\"--json\", \"--no-sel\", \"-S\", options.session, \"--no-notify\");\n  args.push(\"--\", options.prompt);\n  return args;",
+              1,
+          )
+          veda.write_text(text)
+
+          worker = Path("src/worker.ts")
+          text = worker.read_text()
+          marker = '''  const claudeCli = options.runner === "claude" ? await loadClaudeCli() : undefined;
+          const vedaCli = options.runner === "veda" ? await loadVedaCli() : undefined;
+          const childArguments ='''
+          insertion = '''  const claudeCli = options.runner === "claude" ? await loadClaudeCli() : undefined;
+          const vedaCli = options.runner === "veda" ? await loadVedaCli() : undefined;
+          const vedaPrompt =
+            options.runner === "veda"
+              ? [
+                  ...(options.systemPrompt
+                    ? [`<system_instructions>\\n${options.systemPrompt}\\n</system_instructions>`]
+                    : []),
+                  ...(schema
+                    ? [`Your final response must contain only JSON matching this schema, without Markdown fences:\\n${schema}`]
+                    : []),
+                  task,
+                ].join("\\n\\n")
+              : undefined;
+          const childArguments ='''
+          if marker not in text:
+              raise SystemExit("worker child argument marker missing")
+          text = text.replace(marker, insertion, 1)
+          call_marker = '''        ? vedaCli!.buildVedaArguments({
+                      backend: options.vedaBackend,
+                      persona: options.vedaPersona,'''
+          call_replacement = '''        ? vedaCli!.buildVedaArguments({
+                      prompt: vedaPrompt!,
+                      backend: options.vedaBackend,
+                      persona: options.vedaPersona,'''
+          if call_marker not in text:
+              raise SystemExit("worker Veda builder marker missing")
+          text = text.replace(call_marker, call_replacement, 1)
+          old_stdin = '''  } else if (options.runner === "veda") {
+              // Veda reads the prompt from stdin when no positional prompt is given.
+              // Mirror its <system_instructions> wrapping so systemPrompt and schema
+              // instructions reach the backend model.
+              const sections: string[] = [];
+              if (options.systemPrompt) {
+                sections.push(`<system_instructions>\\n${options.systemPrompt}\\n</system_instructions>`);
+              }
+              if (schema) {
+                sections.push(
+                  `Your final response must contain only JSON matching this schema, without Markdown fences:\\n${schema}`,
+                );
+              }
+              sections.push(task);
+              child.stdin?.write(sections.join("\\n\\n"));
+              child.stdin?.end();
+            } else {'''
+          new_stdin = '''  } else if (options.runner === "veda") {
+              // Veda receives its one-shot prompt positionally in childArguments.
+              // Close unused stdin so the child cannot wait on an input stream.
+              child.stdin?.end();
+            } else {'''
+          if old_stdin not in text:
+              raise SystemExit("worker Veda stdin block missing")
+          worker.write_text(text.replace(old_stdin, new_stdin, 1))
+
+          # Fake Veda now enforces the real positional-prompt contract. If Fabric
+          # regresses to stdin again, the e2e will echo an empty prompt and fail.
+          Path("tests/fixtures/fake-veda.mjs").write_text(r'''#!/usr/bin/env node
+          // Stub Veda for worker e2e. Real Veda takes one positional prompt; Fabric
+          // passes it after `--` so prompt text beginning with '-' stays literal.
+          const behavior = process.env.FAKE_VEDA_BEHAVIOR || "success";
+          const separator = process.argv.indexOf("--");
+          const input = separator >= 0 ? process.argv.slice(separator + 1).join(" ") : "";
+
+          switch (behavior) {
+            case "error":
+              process.stdout.write(JSON.stringify({
+                text: "partial",
+                error: "backend quota exceeded",
+                sessionId: "conv-1",
+                usage: { inputTokens: 10, outputTokens: 5 },
+              }, null, 2) + "\\n");
+              process.exit(1);
+              break;
+            case "design-fail":
+              process.stdout.write(JSON.stringify({
+                text: "no program here",
+                sessionId: "conv-1",
+                usage: { inputTokens: 10, outputTokens: 5 },
+                design: { ok: false, errors: ["[missing] no <program> block found"] },
+              }, null, 2) + "\\n");
+              process.exit(1);
+              break;
+            case "no-json":
+              process.exit(0);
+              break;
+            case "hang":
+              setInterval(() => {}, 60_000);
+              break;
+            case "success":
+            default:
+              process.stdout.write(JSON.stringify({
+                text: `echo: ${input.slice(0, 200)}`,
+                sessionId: "conv-1",
+                usage: { inputTokens: 10, outputTokens: 5, cachedTokens: 2 },
+              }, null, 2) + "\\n");
+              process.exit(0);
+          }
+          '''.replace("          ", ""))
+
+          tests = Path("tests/veda-cli.test.ts")
+          text = tests.read_text()
+          text = re.sub(
+              r'(buildVedaArguments\(\{\n)(\s+)(backend:)',
+              lambda m: m.group(1) + m.group(2) + 'prompt: "test prompt",\n' + m.group(2) + m.group(3),
+              text,
+          )
+          text = text.replace(
+              '      "--json", "--no-sel", "-S", "fabric-run-123", "--no-notify",\n    ]);',
+              '      "--json", "--no-sel", "-S", "fabric-run-123", "--no-notify",\n      "--", "test prompt",\n    ]);',
+              1,
+          )
+          test_marker = '  it("forwards a custom persona name unchanged", () => {'
+          prompt_test = '''  it("passes arbitrary prompt text as one literal argument after --", () => {
+              const prompt = "-leading flag-like text\\nsecond line";
+              const args = buildVedaArguments({
+                prompt,
+                backend: "agy",
+                persona: "navigator-chat",
+                tools: [],
+                session: "fabric-prompt",
+              });
+              expect(args.slice(-2)).toEqual(["--", prompt]);
+            });
+
+          '''
+          if test_marker not in text:
+              raise SystemExit("Veda test insertion marker missing")
+          tests.write_text(text.replace(test_marker, prompt_test + test_marker, 1))
+
+          tests = Path("tests/type-checker.test.ts")
+          text = tests.read_text()
+          marker = '  it("accepts dynamic MCP namespaces and profile-based orchestration", () => {'
+          regression = '''  it("rejects unknown Pi core actions before runtime", () => {
+              const result = typeCheckFabricCode(
+                'return await pi.exec("pwd");',
+                GUEST_TYPE_DECLARATIONS,
+              );
+              expect(result.errors.some((error) =>
+                error.message.includes("Property 'exec' does not exist") || error.message.includes("'exec' does not exist")
+              )).toBe(true);
+              expect(result.javascript).toBeUndefined();
+            });
+
+          '''
+          if marker not in text:
+              raise SystemExit("type checker test marker missing")
+          tests.write_text(text.replace(marker, regression + marker, 1))
+
+          tests = Path("tests/worker-e2e.test.ts")
+          text = tests.read_text()
+          marker = '  it("rejects recursive Fabric for the Veda runner", async () => {'
+          regression = '''  it("passes the complete Veda task as a positional prompt", async () => {
+              const result = await runVeda("success", "prompt-through-argv");
+              expect(result.status).toBe("completed");
+              expect(result.text).toContain("echo: prompt-through-argv");
+            }, 30_000);
+
+          '''
+          if marker not in text:
+              raise SystemExit("worker e2e insertion marker missing")
+          tests.write_text(text.replace(marker, regression + marker, 1))
+      - name: Verify
+        run: pnpm check
+      - name: Commit verified fix
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/fix-lean-runtime-contracts.yml
+          git add src tests skills
+          git commit -m "fix: enforce Lean tool and Veda prompt contracts"
+          git push origin HEAD:agent/code-mode-runtime-v2
