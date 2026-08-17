@@ -1,5 +1,5 @@
 import type { ImageContent } from "@earendil-works/pi-ai";
-import type { FabricAgentRunner, FabricAgentTransport } from "../config.js";
+import type { FabricAgentRunner, FabricAgentTransport, FabricCliAdapter } from "../config.js";
 import type { FabricThinking } from "../thinking.js";
 
 export type AgentRunStatus =
@@ -15,9 +15,9 @@ export interface AgentRunRequest {
   images?: ImageContent[];
   name?: string;
   runner?: FabricAgentRunner;
+  cli?: FabricCliAdapter;
   transport?: FabricAgentTransport;
   model?: string;
-  persona?: string;
   thinking?: FabricThinking;
   tools?: string[];
   timeoutMs?: number;
@@ -63,6 +63,7 @@ export interface AgentRunRecord {
   task: string;
   status: AgentRunStatus;
   runner: FabricAgentRunner;
+  cli?: FabricCliAdapter;
   transport: FabricAgentTransport;
   cwd: string;
   model?: string;
@@ -101,6 +102,7 @@ export interface AgentHandleInfo {
   name: string;
   status: AgentRunStatus;
   runner: FabricAgentRunner;
+  cli?: FabricCliAdapter;
   transport: FabricAgentTransport;
   cwd: string;
   model?: string;
@@ -116,6 +118,8 @@ export interface AgentHandleInfo {
 export interface AgentWorkerOptions {
   id: string;
   runner: FabricAgentRunner;
+  cliAdapter?: FabricCliAdapter;
+  cliBinary?: string;
   name: string;
   taskFile: string;
   imagesFile?: string;
@@ -126,9 +130,6 @@ export interface AgentWorkerOptions {
   cwd: string;
   piBinary: string;
   claudeBinary: string;
-  vedaBinary: string;
-  vedaBackend: string;
-  vedaPersona: string;
   timeoutMs: number;
   depth: number;
   fullCodeMode: boolean;
