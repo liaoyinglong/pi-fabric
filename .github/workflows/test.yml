@@ -15,8 +15,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -25,9 +23,6 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Apply runtime contract migration
-        if: github.event_name == 'push' && github.event.head_commit.message == 'chore: apply runtime contract migration'
-        run: node scripts/fix-lean-runtime-contracts.mjs
       - name: Install ripgrep
         # pi's grep tool downloads rg on first use when it is absent; on shared
         # runners that ad-hoc GitHub Releases download is rate-limited, so
@@ -50,14 +45,3 @@ jobs:
         run: pnpm test
       - name: Lint (dead code)
         run: pnpm lint:dead
-      - name: Commit verified migration
-        if: runner.os == 'Linux' && github.event_name == 'push' && github.event.head_commit.message == 'chore: apply runtime contract migration'
-        shell: bash
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git checkout HEAD^ -- .github/workflows/test.yml
-          git rm .github/workflows/fix-lean-runtime-contracts.yml scripts/fix-lean-runtime-contracts.mjs
-          git add .github/workflows/test.yml src tests skills
-          git commit -m "fix: enforce Lean tool and Veda prompt contracts"
-          git push origin HEAD:agent/code-mode-runtime-v2
