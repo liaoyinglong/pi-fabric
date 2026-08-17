@@ -1,44 +1,47 @@
 # Lean one-shot agents reference
 
-Lean V2 keeps only local one-shot child workers. Persistent actors, participant directories, Mesh routing, lifecycle subscriptions, trajectory handoff, Prewalk, and resident-host residency are not part of this runtime.
+Lean V2 keeps local one-shot workers plus one bounded recursive Pi primitive. Persistent actors, Mesh routing, participant directories, trajectory handoff, Prewalk, resident hosts, Councils, Swarms, and the old RLM provider are not part of this runtime.
 
 Every method takes one options object.
 
-## Run one worker
+## Profiles, not raw models
 
-`agents.run(args)` starts one child and waits for completion.
+Model routing belongs in subagent profile configuration. Runtime callers select a semantic `profile` and provide the task.
+
+Discover active profiles:
+
+```ts
+return agents.profiles({});
+```
+
+Run one profile and wait:
 
 ```ts
 const result = await agents.run({
-  name: "research",
+  profile: "research",
   task: "Collect bounded evidence for this question.",
 });
 return result;
 ```
 
-A run request accepts:
+The public run request is intentionally small:
 
 ```text
 task        required child task
-name        display name; also selects a configured role when names match
-runner      pi | claude | veda
-transport   auto | process | tmux | screen | localterm | herdr
-model       runner-specific model string
-persona     Veda persona
-thinking    off | minimal | low | medium | high | xhigh | max
-tools       portable child tool allowlist
-timeoutMs   requested timeout
-extensions  whether child runner extensions are enabled
-recursive   whether a Pi child may load Fabric recursively
-worktree    create an isolated Git worktree
-schema      JSON Schema for structured result validation
+profile     configured semantic profile
+name        optional display name only
+timeoutMs   optional bounded timeout override
+worktree    optional isolated Git worktree
+schema      optional JSON Schema for structured output
 ```
 
-Explicit supported call arguments override named-role defaults.
+Do not put `runner`, `model`, `persona`, `thinking`, `tools`, `extensions`, or `recursive` in ordinary run/spawn calls. Those are profile policy.
 
-## Named roles
+For compatibility, an old `name` that exactly matches a configured profile still resolves that profile internally, but new code should use `profile` explicitly.
 
-Global roles are loaded from:
+## Profile files
+
+Global files:
 
 ```text
 ~/.pi/agent/fabric/subagents.yaml
@@ -46,7 +49,7 @@ Global roles are loaded from:
 ~/.pi/agent/fabric/subagents.json
 ```
 
-Trusted project roles are loaded from:
+Trusted project files:
 
 ```text
 .pi/fabric/subagents.yaml
@@ -54,9 +57,13 @@ Trusted project roles are loaded from:
 .pi/fabric/subagents.json
 ```
 
-`PI_FABRIC_SUBAGENTS_FILE` can add one explicit role file after global and trusted project files. Role profiles merge field-by-field in that order. Project role files are skipped when Pi marks the project untrusted.
+Optional host-supplied file:
 
-Example:
+```text
+PI_FABRIC_SUBAGENTS_FILE=/absolute/path/to/subagents.yaml
+```
+
+Definitions remain under `roles:` for config compatibility:
 
 ```yaml
 roles:
@@ -65,8 +72,6 @@ roles:
     instructions: |
       Gather concrete evidence and return only material needed by the caller.
     runner: veda
-    model: agy/gemini-3.1-pro-high
-    persona: navigator-chat
     thinking: low
     tools: [read, grep, find, ls]
 
@@ -76,6 +81,11 @@ roles:
     thinking: low
     tools: [read, grep, find, ls]
 
+  deep:
+    runner: pi
+    model: azure-openai-responses/gpt-5.6-sol
+    thinking: high
+
   review:
     runner: pi
     model: azure-openai-responses/gpt-5.6-sol
@@ -83,21 +93,18 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-When `name` exactly matches a configured role, that role is selected automatically. A non-role `name` is only the worker display name. The `name` form is the public Code Mode role selector.
+A profile can define `description`, `instructions`, `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, `recursive`, and `worktree`. Project definitions merge over global definitions field-by-field only when Pi trusts the project. `PI_FABRIC_SUBAGENTS_FILE` is host supplied and loads last.
 
-Discover roles:
-
-```ts
-return agents.roles({});
-```
+Profile `instructions` are prepended to the child task.
 
 ## Spawn and wait
 
-`agents.spawn(args)` starts one local child and returns a handle.
+Start a detached worker:
 
 ```ts
 const handle = await agents.spawn({
-  name: "review",
+  profile: "review",
+  name: "independent review",
   task: "Review the current diff independently.",
 });
 
@@ -106,15 +113,17 @@ const review = await agents.wait({ id: handle.id });
 return { localWork, review };
 ```
 
-Use:
+Retained lifecycle operations:
 
-- `agents.wait({ id })` when the current program needs the final result.
-- `agents.status({ id })` for one point-in-time status read.
-- `agents.list({})` to list children created by this Pi host.
-- `agents.stop({ id })` to stop a local child.
-- `agents.cleanup({ id, deleteBranch? })` to remove completed run state and an optional worktree branch.
+```text
+agents.wait({ id })
+agents.status({ id })
+agents.list({})
+agents.stop({ id })
+agents.cleanup({ id, deleteBranch? })
+```
 
-Detached spawned runs can notify Main on completion when `agents.notifyOnComplete` is enabled. Calling `wait()` makes the run foreground work for the current program.
+Detached runs can notify Main on completion when `agents.notifyOnComplete` is enabled. Calling `wait()` makes the run foreground work for the current program.
 
 ## Steering and follow-up
 
@@ -122,7 +131,7 @@ Running Pi/Claude children can be redirected between turns:
 
 ```ts
 const handle = await agents.spawn({
-  name: "deep",
+  profile: "deep",
   task: "Investigate the authentication failure.",
 });
 
@@ -134,7 +143,7 @@ await agents.steer({
 return agents.wait({ id: handle.id });
 ```
 
-Retained controls:
+Controls:
 
 ```text
 agents.steer({ id, message, data? })
@@ -143,55 +152,59 @@ agents.setSteeringMode({ id, mode: "all" | "one-at-a-time" })
 agents.setFollowUpMode({ id, mode: "all" | "one-at-a-time" })
 ```
 
-These controls target local one-shot children only. Lean V2 does not route them through Mesh to peers, actors, or other roots.
+These target local one-shot children only. Veda is one-shot and does not support steering/follow-up.
 
 ## Child compaction
 
-`agents.compact({ id, instructions? })` requests advisory compaction for a running Pi child.
+`agents.compact({ id, instructions? })` requests advisory compaction for a running Pi child. This is child-session control only; Lean V2 has no Fabric main-session compaction runtime.
+
+## Minimal recursive delegation
+
+Use recursion only when one child context is insufficient:
 
 ```ts
-return agents.compact({
-  id,
-  instructions: "Preserve implementation decisions and unresolved failures.",
+return agents.recurse({
+  profile: "deep",
+  task: "Decompose this cross-module problem, delegate bounded evidence gathering if needed, and return the verified conclusion.",
 });
 ```
 
-This is child-session control only. Lean V2 has no Fabric main-session compaction runtime.
+The resolved profile must use `runner: pi`. Lean starts that child with recursive Code Mode enabled and returns a compact result containing status, text/value, error, turns, tool-call count, and usage rather than the full internal run record.
 
-## Runner selection
+Existing guards apply:
+
+- `agents.maxDepth` limits recursive Pi depth;
+- `agents.maxPerExecution` / top-level `agentBudget` cap agent starts in the current `fabric_exec`;
+- child timeouts and `maxTokensPerChild` still apply;
+- `agents.budgetUsd` shares a cost ledger across recursive Pi descendants when configured.
+
+Use ordinary `run`/`spawn` for normal delegation. `agents.recurse` is a primitive, not a replacement workflow engine.
+
+## Runner policy lives in profiles
 
 ### Pi
 
-Pi is the default runner. If a Pi role does not specify `model`, Lean V2 uses `agents.model` when configured, otherwise it can inherit the current host model.
+Pi is the default runner. If a Pi profile does not specify `model`, Lean uses `agents.model` when configured, otherwise the child may inherit the host model.
 
-```yaml
-roles:
-  explore:
-    runner: pi
-    model: azure-openai-responses/gpt-5.6-luna
-    thinking: low
-    tools: [read, grep, find, ls]
-```
-
-`recursive: true` is meaningful only for a Pi child that is intentionally allowed to load Fabric again. Prefer non-recursive bounded workers unless recursion is specifically needed.
+A profile may opt into `recursive: true`, but prefer the explicit `agents.recurse(...)` call when recursion is part of the task semantics.
 
 ### Claude
 
-Claude uses the configured `agents.claude.binary`. Portable tool names map to Claude Code tools. Unsupported tool names fail before launch.
+Claude uses `agents.claude.binary` and the profile/config model defaults. Portable tool names map to Claude Code tools. Unsupported names fail before launch.
 
 ### Veda
 
-Veda uses the configured `agents.veda.binary`, `agents.veda.backend`, and default persona. A role can override `persona`, `model`, `thinking`, and tools.
+Veda uses `agents.veda.binary`, backend defaults, and an isolated Veda session per child. A profile can set Veda `model`, `persona`, `thinking`, and portable tools.
 
-Fabric conceptually invokes:
+Conceptually:
 
 ```text
 veda -b <backend> -p <persona> -m <model> -r <thinking> --tools ... --json
 ```
 
-The model value is forwarded to Veda's `-m` argument. A `veda/` prefix is stripped; other model strings pass through unchanged. Omit `model` to let the Veda backend choose its default.
+Omit model/persona when the installed backend defaults are preferred.
 
-Portable Veda tool mapping:
+Portable mapping:
 
 ```text
 read  -> read
@@ -203,11 +216,9 @@ edit  -> edit
 write -> write
 ```
 
-Each Fabric Veda child uses an isolated Veda session, so parallel children do not share conversation or selection state.
+## Transport policy lives in profiles
 
-## Transport selection
-
-Runner and transport are separate.
+Runner and transport are independent profile settings:
 
 ```text
 runner:    pi | claude | veda
@@ -225,15 +236,7 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-Here Veda executes the child while Herdr hosts the process.
-
-## Model discovery
-
-```ts
-return agents.models({ runner: "pi" });
-```
-
-The lean provider exposes runtime discovery only when the selected runner can provide it. Veda currently returns an empty advisory list; configure its backend/model in the role catalog without relying on discovery.
+Veda executes the worker while Herdr hosts the process.
 
 ## Structured results
 
@@ -241,7 +244,7 @@ Pass `schema` when the parent needs machine-readable output:
 
 ```ts
 const result = await agents.run({
-  name: "explore",
+  profile: "explore",
   task: "Find the files responsible for authentication.",
   schema: {
     type: "object",
@@ -259,27 +262,21 @@ return result.value;
 
 ## Worktrees
 
-`worktree: true` creates a dedicated Git worktree for the child. Use it when parallel implementation workers need isolated file ownership. Clean it with:
+`worktree: true` creates a dedicated Git worktree for the child. Use it when parallel implementation workers need isolated file ownership, then clean it with `agents.cleanup({ id, deleteBranch: true })`.
 
-```ts
-await agents.cleanup({ id: handle.id, deleteBranch: true });
-```
+Do not let multiple workers edit the same files concurrently in one shared workspace.
 
-Do not let multiple concurrent workers edit the same files in one shared workspace.
-
-## What is intentionally absent
+## Intentionally absent
 
 Do not call or document these as Lean V2 APIs:
 
 ```text
+agents.models / call-site model routing
 agents.create / actors
 agents.members / peers / main / participant directory
 agents.subscribe / subscriptions / unsubscribe
 agents.handoff
-persistent/durable residency
 Mesh-backed cross-process steering
 Prewalk
-Council / Swarm / RLM persistent orchestration
+Council / Swarm / standalone RLM provider
 ```
-
-Use bounded `run` / `spawn` workers and workflow composition.
