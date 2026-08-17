@@ -37,6 +37,11 @@ jobs:
               p.write_text(text.replace(old, new))
 
           replace(
+              "src/ui/lean-exec-render.ts",
+              '''  audit.ref ?? [audit.provider, audit.tool].filter(Boolean).join(".") || "tool";\n''',
+              '''  (audit.ref ?? [audit.provider, audit.tool].filter(Boolean).join(".")) || "tool";\n''',
+          )
+          replace(
               "src/runtime/guest-types.ts",
               '''interface FabricAgentRequest {\n  task: string;\n  name?: string;\n  runner?: FabricAgentRunner;\n  transport?: FabricTransport;\n  model?: string;\n  persona?: string;\n  thinking?: FabricThinking;\n  tools?: string[];\n  timeoutMs?: number;\n  extensions?: boolean;\n  recursive?: boolean;\n  worktree?: boolean;\n  schema?: Record<string, unknown>;\n}\n''',
               '''interface FabricAgentRequest {\n  task: string;\n  profile?: string;\n  name?: string;\n  timeoutMs?: number;\n  worktree?: boolean;\n  schema?: Record<string, unknown>;\n}\n''',
