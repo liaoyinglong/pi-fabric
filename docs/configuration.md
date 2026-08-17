@@ -1,6 +1,6 @@
 # Pi Fabric Lean V2 Configuration Reference
 
-This reference describes the configuration fields read by Lean V2. The day-to-day examples live in [usage.md](usage.md).
+This reference describes the configuration fields read by Lean V2. Day-to-day examples live in [usage.md](usage.md).
 
 ## File locations and precedence
 
@@ -28,9 +28,9 @@ Precedence:
 global < trusted project < PI_FABRIC_CONFIG
 ```
 
-Project configuration is skipped when Pi marks the project untrusted. Changes to `fabric.json` take effect after the Lean runtime is initialized again, such as in a new Pi session. Named subagent role files are resolved per agent call.
+Project configuration is skipped when Pi marks the project untrusted. `fabric.json` changes apply when the Lean runtime initializes again; subagent profile files are resolved per agent call.
 
-Configuration objects merge recursively. Scalar values replace earlier values. Arrays replace earlier arrays; they are not concatenated. This matters for fields such as `capture.keepVisible`, `agents.defaultTools`, and a role's `tools` list.
+Configuration objects merge recursively. Scalar values replace earlier values. Arrays replace earlier arrays; they are not concatenated.
 
 ## `executor`
 
@@ -43,21 +43,23 @@ Configuration objects merge recursively. Scalar values replace earlier values. A
 | `maxNestedResultChars` | `2000000` | Maximum serialized result retained for one nested call |
 | `resultFormat` | `auto` | `auto`, `yaml`, `json`, or `text` |
 
-Agent and workflow calls can extend the active execution deadline up to the configured agent timeout when the runtime detects blocking orchestration.
+Blocking agent/workflow calls can extend the active execution deadline up to the configured child timeout.
 
 ## `approvals`
 
-The risk classes are `read`, `write`, `execute`, `network`, and `agent`.
+Risk classes:
 
-Each class accepts:
+```text
+read | write | execute | network | agent
+```
+
+Each accepts:
 
 ```text
 allow | ask | auto | deny
 ```
 
-The defaults are `allow` for all five classes.
-
-`approvals.model` optionally selects the model used by automatic approval classification when that path is enabled.
+Defaults are `allow`. `approvals.model` optionally selects the automatic approval classifier model.
 
 ## `mcp`
 
@@ -66,37 +68,41 @@ The defaults are `allow` for all five classes.
 | `enabled` | `true` | Enables MCP discovery and calls |
 | `configPath` | unset | Explicit mcporter configuration path |
 | `disableOAuth` | `true` | Prevents a new interactive OAuth flow |
-| `allowDynamicServers` | `true` | Allows `mcp.register(...)` for ephemeral servers |
+| `allowDynamicServers` | `true` | Allows ephemeral dynamic MCP servers |
 | `callTimeoutMs` | `120000` | MCP call deadline |
-| `cache.enabled` | `true` | Enables the descriptor cache |
+| `cache.enabled` | `true` | Enables descriptor caching |
 | `cache.revalidate` | `changed` | `changed`, `all`, or `off` |
-| `cache.revalidateBudgetMs` | `60000` | Background descriptor revalidation budget |
+| `cache.revalidateBudgetMs` | `60000` | Background revalidation budget |
 
-The descriptor cache is stored under the project Fabric directory when caching is enabled. With `mcp.enabled: false`, Lean V2 does not register or warm the MCP provider, and the `mcp` guest global is omitted from that runtime's capability surface.
+For trusted projects, mcporter can discover from the project root. For untrusted projects, Lean uses the user Agent directory as discovery root and keeps descriptor cache state outside the repository.
+
+With `mcp.enabled: false`, Lean does not register/warm the MCP provider and omits the `mcp` guest global.
 
 ## `agents`
 
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `enabled` | `true` | Enables one-shot child workers |
-| `runner` | `pi` | Default runner: `pi`, `claude`, or `veda` |
-| `transport` | `process` | Default transport |
-| `model` | unset | Default Pi child model; an unset Pi model can inherit the host model |
-| `thinking` | `medium` | Default child reasoning level |
+| `runner` | `pi` | Fallback runner when a profile does not specify one |
+| `transport` | `process` | Fallback process transport |
+| `model` | unset | Fallback Pi child model; an unset Pi model can inherit the host model |
+| `thinking` | `medium` | Fallback child reasoning level |
 | `maxConcurrent` | `4` | Maximum concurrently managed children |
-| `maxPerExecution` | `100` | Maximum agent starts in one `fabric_exec` |
+| `maxPerExecution` | `100` | Maximum `run`/`spawn`/`recurse` starts in one `fabric_exec` |
 | `maxDepth` | `2` | Maximum recursive Pi child depth |
 | `timeoutMs` | `3600000` | Default child deadline |
 | `extensions` | `true` | Enables runner extensions for children |
-| `defaultTools` | Pi core tool set | Default portable child tool allowlist |
+| `defaultTools` | Pi core tool set | Fallback portable child tool allowlist |
 | `retainRuns` | `false` | Keeps completed local run state when enabled |
-| `notifyOnComplete` | `true` | Delivers a detached `agents.spawn` completion back to Main as a follow-up and triggers a turn |
-| `budgetUsd` | `0` | Shared child cost budget; `0` disables the budget |
+| `notifyOnComplete` | `true` | Delivers detached `spawn` completion back to Main |
+| `budgetUsd` | `0` | Shared child cost budget; `0` disables it |
 | `maxTokensPerChild` | `0` | Per-child cumulative token guard; `0` disables it |
 | `sessionExport` | `true` | Exports Pi-format usage records for child attribution |
 | `sessionExportDir` | empty | Optional explicit export directory |
 
-`agents.run` and `agents.wait` are foreground work for the current program. `agents.spawn` is detached until the program waits on its handle; when a detached run settles and `notifyOnComplete` is enabled, Lean V2 sends the bounded completion summary back to Main.
+These values are defaults and safety ceilings. Ordinary Code Mode calls should select a semantic `profile`; model/runner/tool policy belongs in the profile file rather than the `agents.run` call.
+
+`agents.run` and `agents.wait` are foreground work. `agents.spawn` is detached until waited; when detached work settles and `notifyOnComplete` is enabled, Lean sends a bounded follow-up to Main.
 
 ### Claude runner
 
@@ -109,16 +115,16 @@ The descriptor cache is stored under the project Fabric directory when caching i
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `agents.veda.binary` | `veda` | Veda CLI executable |
+| `agents.veda.binary` | `veda` | Veda executable |
 | `agents.veda.backend` | `agy` | Veda backend |
 | `agents.veda.persona` | `navigator-chat` | Default Veda persona |
 | `agents.veda.model` | unset | Veda model default |
 
-A named role can override runner, transport, model, persona, thinking, tools, timeout, extensions, recursion, and worktree behavior for one semantic role. Explicit supported call arguments take precedence over role defaults.
+## Subagent profile files
 
-## Named subagent role files
+The historical configuration key remains `roles:`; the public runtime selector is `profile`.
 
-Global role files:
+Global files:
 
 ```text
 ~/.pi/agent/fabric/subagents.yaml
@@ -126,7 +132,7 @@ Global role files:
 ~/.pi/agent/fabric/subagents.json
 ```
 
-Trusted project role files:
+Trusted project files:
 
 ```text
 .pi/fabric/subagents.yaml
@@ -134,47 +140,77 @@ Trusted project role files:
 .pi/fabric/subagents.json
 ```
 
-Optional explicit role file:
+Optional explicit host file:
 
 ```bash
 PI_FABRIC_SUBAGENTS_FILE=/absolute/path/to/subagents.yaml pi
 ```
 
-Role precedence:
+Precedence:
 
 ```text
-global < trusted project < PI_FABRIC_SUBAGENTS_FILE < supported call overrides
+global < trusted project < PI_FABRIC_SUBAGENTS_FILE
 ```
 
-Project role files are skipped for untrusted projects. The explicit environment path is host supplied and remains eligible. Role profiles merge field-by-field; a later `tools` array replaces the earlier role's `tools` array.
+Project files are skipped for untrusted projects. Profiles merge field-by-field; later arrays such as `tools` replace earlier arrays.
+
+Profile fields:
+
+| Field | Meaning |
+| --- | --- |
+| `description` | Short semantic purpose shown during profile discovery |
+| `instructions` | Instructions prepended to the child task |
+| `runner` | `pi`, `claude`, or `veda` |
+| `transport` | `auto`, `process`, `tmux`, `screen`, `localterm`, or `herdr` |
+| `model` | Runner-specific model identifier |
+| `persona` | Veda persona |
+| `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` |
+| `tools` | Portable child tool allowlist |
+| `timeoutMs` | Profile child timeout |
+| `extensions` | Whether child extensions are enabled |
+| `recursive` | Allow recursive Pi Code Mode when this profile is run internally |
+| `worktree` | Create an isolated Git worktree |
+
+Public `agents.run` / `agents.spawn` calls expose only `task`, `profile`, optional display `name`, `timeoutMs`, `worktree`, and `schema`. Raw runner/model/thinking/tool fields are intentionally not part of the model-facing call schema.
+
+## Recursive delegation
+
+`agents.recurse({ profile, task })` explicitly starts a recursive Pi profile and returns a compact result. The resolved profile must use `runner: pi`.
+
+Relevant guards:
+
+- `agents.maxDepth` limits recursive depth;
+- `agents.maxPerExecution` limits starts in the current Code Mode execution;
+- `agents.timeoutMs` / profile timeout bound each child;
+- `agents.maxTokensPerChild` bounds cumulative child tokens when non-zero;
+- `agents.budgetUsd` provides a shared cost ledger across recursive Pi descendants when non-zero.
+
+There is no separate RLM provider or persistent recursive scheduler.
 
 ## `capture`
 
-Lean V2 owns model-facing tool visibility as part of Full Code Mode. The runtime forces capture on and forces captured tools hidden from the main model. `capture.enabled` and `capture.hideFromModel` are retained compatibility inputs; Lean V2 normalizes their effective values to `true`.
+Lean V2 owns model-facing tool visibility in Full Code Mode. The runtime forces capture on and captured extension tools hidden from Main. `capture.enabled` and `capture.hideFromModel` remain compatibility inputs but normalize to `true`.
 
-The user-facing capture controls are:
+User-facing controls:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `keepVisible` | `["fabric_exec"]` | Captured extension tool names that remain directly model-visible |
-| `defaultRisk` | `execute` | Risk assigned to an unknown captured additive tool |
+| `defaultRisk` | `execute` | Risk for an unknown additive captured tool |
 | `risks` | core mappings | Per-tool risk overrides |
 
-Core Pi tool names remain owned by Code Mode. A captured extension that replaces a core registration, such as an FFF `find` or `grep` override, is reached through `pi.find` or `pi.grep` inside `fabric_exec`.
+Core Pi names remain owned by Code Mode. Captured core overrides, such as FFF `find` / `grep`, are reached through `pi.find` / `pi.grep` inside `fabric_exec`.
 
-The old capture advisory mechanism is disabled in Lean V2.
+Valid risks are `read`, `write`, `execute`, `network`, and `agent`.
 
 ## `retention`
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `orphanedTempRunMs` | `21600000` | Retention period for orphaned temporary run roots |
-| `oneShotRunMs` | `86400000` | Retention period for completed one-shot runs |
+| `orphanedTempRunMs` | `21600000` | Retention for orphaned temporary run roots |
+| `oneShotRunMs` | `86400000` | Retention for completed one-shot runs |
 
-
-## Fields fixed by Lean V2
-
-Lean V2 fixes these internal values regardless of old Full Fabric configuration:
+## Values fixed by Lean V2
 
 ```text
 fullCodeMode = true
@@ -186,4 +222,4 @@ mcp.advisory = false
 ui.updateDebounceMs = 100
 ```
 
-Old Full Fabric groups such as Mesh, Memory, State, Schema runtime, Actor, resident-host, and Component supervisor configuration do not become active providers in Lean V2.
+Old Full Fabric groups such as Mesh, Memory, State, Actor, resident-host, standalone RLM, and Component supervisor configuration do not activate providers in Lean V2.
