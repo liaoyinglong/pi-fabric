@@ -183,7 +183,7 @@ With `mcp.enabled: false`, Lean does not register/warm the provider and the `mcp
 
 ## 7. Semantic subagent profiles
 
-Configuration files keep the historical `roles:` key, but runtime selection is explicitly `profile`.
+Configuration files keep the historical `roles:` key, but runtime selection is explicitly `profile`. For an in-depth guide on how subagents are triggered in chat conversations and how the model autonomously delegates tasks, see [subagents-and-workflows.md](subagents-and-workflows.md).
 
 Global profile files:
 
@@ -366,7 +366,7 @@ Veda executes the worker while Herdr hosts its process.
 
 ## 10. Thin workflow
 
-Workflow is not another agent runtime. Use plain TypeScript whenever it is clearer.
+Workflow is not another agent runtime. Use plain TypeScript whenever it is clearer. See [subagents-and-workflows.md](subagents-and-workflows.md) for chat-based prompting triggers and lifecycle behavior.
 
 Few independent workers:
 

@@ -1,15 +1,21 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   describeSubagentRoles,
   resolveSubagentRole,
 } from "../src/subagents/profiles.js";
 
 const tempRoots: string[] = [];
+let tempHome = "";
 const originalProjectRoot = process.env.PI_FABRIC_PROJECT_ROOT;
 const originalProfilesFile = process.env.PI_FABRIC_SUBAGENTS_FILE;
+
+beforeEach(() => {
+  tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-home-"));
+  vi.spyOn(os, "homedir").mockReturnValue(tempHome);
+});
 
 const project = (yaml: string): string => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-subagents-"));
@@ -24,6 +30,8 @@ const project = (yaml: string): string => {
 };
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  if (tempHome) fs.rmSync(tempHome, { recursive: true, force: true });
   for (const root of tempRoots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
   if (originalProjectRoot === undefined) delete process.env.PI_FABRIC_PROJECT_ROOT;
   else process.env.PI_FABRIC_PROJECT_ROOT = originalProjectRoot;

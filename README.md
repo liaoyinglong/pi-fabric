@@ -54,6 +54,7 @@ Requires Node.js 24+ and Pi 0.80.6+.
 ## Start here
 
 - **[Usage Guide](docs/usage.md)**: installation, Code Mode, FFF/captured tools, MCP, profiles, Veda/AGY, workflow, recursion, troubleshooting.
+- **[Subagents & Workflows Guide](docs/subagents-and-workflows.md)**: chat triggering, automatic model delegation, workflow fan-out, and execution lifecycle.
 - **[Configuration Reference](docs/configuration.md)**: every Lean V2 configuration field and default.
 - **[Architecture](docs/lean-code-mode.md)**: implementation boundaries and removed systems.
 
