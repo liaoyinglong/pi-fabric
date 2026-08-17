@@ -114,7 +114,7 @@ const elapsedLabel = (value: unknown): string | undefined => {
 };
 
 const auditRef = (audit: LeanAudit): string =>
-  audit.ref ?? [audit.provider, audit.tool].filter(Boolean).join(".") || "tool";
+  (audit.ref ?? [audit.provider, audit.tool].filter(Boolean).join(".")) || "tool";
 
 const auditDuration = (audit: LeanAudit): string | undefined =>
   typeof audit.startedAt === "number" && typeof audit.endedAt === "number"

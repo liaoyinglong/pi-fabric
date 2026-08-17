@@ -292,16 +292,9 @@ type FabricMcpApi = Record<string, FabricMcpServer> & FabricMcpManagement;
 
 interface FabricAgentRequest {
   task: string;
+  profile?: string;
   name?: string;
-  runner?: FabricAgentRunner;
-  transport?: FabricTransport;
-  model?: string;
-  persona?: string;
-  thinking?: FabricThinking;
-  tools?: string[];
   timeoutMs?: number;
-  extensions?: boolean;
-  recursive?: boolean;
   worktree?: boolean;
   schema?: Record<string, unknown>;
 }
@@ -351,8 +344,8 @@ interface FabricSubagentRoleInfo {
   thinking?: FabricThinking;
   tools?: string[];
 }
-interface FabricSubagentRoleCatalog {
-  roles: FabricSubagentRoleInfo[];
+interface FabricSubagentProfileCatalog {
+  profiles: FabricSubagentRoleInfo[];
   sources: string[];
 }
 type FabricAgentTargetArgs = { id: string };
@@ -362,8 +355,18 @@ interface FabricAgentsApi {
   wait(args: FabricAgentTargetArgs): Promise<FabricAgentResult>;
   status(args: FabricAgentTargetArgs): Promise<FabricAgentResult | FabricAgentHandle>;
   list(args?: Record<string, never>): Promise<Array<FabricAgentResult | FabricAgentHandle>>;
-  roles(args?: Record<string, never>): Promise<FabricSubagentRoleCatalog>;
-  models(args?: { runner?: FabricAgentRunner; refresh?: boolean }): Promise<FabricModelInfo[]>;
+  profiles(args?: Record<string, never>): Promise<FabricSubagentProfileCatalog>;
+  recurse(args: FabricAgentRequest & { profile: string }): Promise<{
+    id: string;
+    name: string;
+    status: FabricAgentResult["status"];
+    text: string;
+    value?: unknown;
+    error?: string;
+    turns: number;
+    toolCalls: number;
+    usage: FabricAgentUsage;
+  }>;
   stop(args: FabricAgentTargetArgs): Promise<FabricAgentResult>;
   cleanup(args: FabricAgentTargetArgs & { deleteBranch?: boolean }): Promise<{ cleaned: boolean }>;
   steer(args: FabricAgentTargetArgs & { message: string; data?: unknown }): Promise<{ queued: true; messageId: string }>;

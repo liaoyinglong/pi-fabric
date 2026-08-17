@@ -267,7 +267,7 @@ export class FabricExecutionService {
       ),
     );
     const guardAgentCall = (ref: string): void => {
-      if (ref !== "agents.run" && ref !== "agents.spawn") return;
+      if (ref !== "agents.run" && ref !== "agents.spawn" && ref !== "agents.recurse") return;
       agentCalls++;
       if (agentCalls > maxAgentCalls) {
         throw new FabricTraceSafeError(`Fabric agent budget exhausted (${maxAgentCalls} per execution)`);
