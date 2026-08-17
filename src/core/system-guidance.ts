@@ -1,13 +1,13 @@
 export const fabricExecutionKernelGuidance = (fullCodeMode: boolean): string =>
   fullCodeMode
-    ? "Pi Code Mode: use `fabric_exec` as the model-facing execution gateway. Pi core actions are `pi.read`, `pi.bash`, `pi.edit`, `pi.write`, `pi.grep`, `pi.find`, and `pi.ls`; run shell commands with `pi.bash` (`pi.exec` does not exist). Compose related operations in one program and return only the bounded result needed by the caller."
+    ? "Pi Code Mode: use `fabric_exec` as the model-facing execution gateway. Pi core actions are `pi.read`, `pi.bash`, `pi.edit`, `pi.write`, `pi.grep`, `pi.find`, and `pi.ls`; run shell commands with `pi.bash` (`pi.exec` does not exist). Core ABI: `pi.read`/`pi.grep`/`pi.find`/`pi.ls` resolve to strings; `pi.bash`/`pi.edit`/`pi.write` resolve to `{ok,output,details}` envelopes. The sandbox is not Node.js: `process` and `require` are unavailable. Compose related operations in one program and return only the bounded result needed by the caller."
     : "Pi Fabric is in orchestration-only mode. Pi core and registered extension tools remain on their native direct execution path.";
 
 const dependencyAwareCompositionGuidance =
   " For dependent work inside one `fabric_exec`, use ordinary `await`; use `parallel(...)` or `all({...})` only for independent work. Keep side effects explicitly ordered.";
 
 const semanticSubagentGuidance =
-  " When delegation is useful, route by semantic profile rather than raw model id. Discover profiles with `agents.profiles({})`, then pass `profile` to `agents.run`, `agents.spawn`, or workflow `agent(...)`; `name` is display-only. Prefer bounded cheaper profiles for search and repetitive inspection, and stronger profiles only for difficult reasoning, implementation decisions, or independent verification. Use `agents.recurse({profile,task})` only when a Pi profile genuinely needs recursive decomposition beyond one child context; ordinary delegation should stay on run/spawn. The caller should not need to name a model in ordinary conversation.";
+  " When delegation is useful, route by semantic profile rather than raw model id. `agents.profiles({})` resolves to `{profiles,sources}`; inspect `catalog.profiles`, and select a profile by its `name` (there is no profile `id`). Then pass that name as `profile` to `agents.run`, `agents.spawn`, or workflow `agent(...)`; `name` on a run is display-only. If the semantic profile name is already known, call it directly instead of discovering first. Prefer bounded cheaper profiles for search and repetitive inspection, and stronger profiles only for difficult reasoning, implementation decisions, or independent verification. Use `agents.recurse({profile,task})` only when a Pi profile genuinely needs recursive decomposition beyond one child context; ordinary delegation should stay on run/spawn. The caller should not need to name a model in ordinary conversation.";
 
 export interface FabricExecutionGuidanceOptions {
   agentsEnabled?: boolean;
@@ -32,7 +32,7 @@ export const defaultFabricExecutionGuidance = (
     ? " Profile-based one-shot workers are available through `agents.*`; workflow helpers such as `agent(...)`, `parallel(...)`, and `pipeline(...)` orchestrate those workers inside the same Code Mode program."
     : " One-shot agents and agent-backed workflow delegation are disabled by configuration.";
   const progressive =
-    " Detailed contracts stay progressive in the `fabric-exec`, `fabric-subagents`, and `fabric-workflow` skills rather than in the system prompt.";
+    " Detailed orchestration patterns stay progressive in the `fabric-exec`, `fabric-subagents`, and `fabric-workflow` skills; the primitive ABI required to write a correct first call is stated here.";
   const base = fullCodeMode
     ? `Inside \`fabric_exec\`, ${surfaces}.${discovery}${agents}${progressive}`
     : "Use `fabric_exec` only for orchestration surfaces that are explicitly needed by the task; native Pi tools remain direct.";
