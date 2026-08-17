@@ -4,9 +4,7 @@ on:
   push:
     branches: ["agent/code-mode-runtime-v2"]
     paths:
-      - "scripts/lean-physical-cleanup.mjs"
-      - "scripts/lean-test-contract-cleanup.mjs"
-      - "package.json"
+      - "scripts/lean-agent-substrate-cleanup.mjs"
       - ".github/workflows/lean-physical-cleanup.yml"
 
 permissions:
@@ -30,9 +28,7 @@ jobs:
       - name: Install ripgrep
         run: sudo apt-get install -y ripgrep
       - name: Apply physical cleanup
-        run: |
-          node scripts/lean-physical-cleanup.mjs
-          node scripts/lean-test-contract-cleanup.mjs
+        run: node scripts/lean-agent-substrate-cleanup.mjs
       - name: Validate
         run: pnpm check
       - name: Commit cleanup
@@ -43,6 +39,6 @@ jobs:
           fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add src tests package.json scripts
-          git commit -m "refactor: remove legacy QuickJS and handoff surfaces"
+          git add src tests docs package.json scripts
+          git commit -m "refactor: remove actor mesh and trajectory compatibility"
           git push origin HEAD:agent/code-mode-runtime-v2
