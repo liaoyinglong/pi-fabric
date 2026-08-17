@@ -83,6 +83,17 @@ describe("lean Fabric skill surface", () => {
     }
   });
 
+  it("does not advertise disabled MCP or semantic subagents", () => {
+    const guidance = defaultFabricExecutionGuidance(true, {
+      agentsEnabled: false,
+      mcpEnabled: false,
+    });
+    expect(guidance).not.toContain("mcp.<server>.<tool>");
+    expect(guidance).not.toContain("agents.roles({})");
+    expect(guidance).not.toContain("semantic subagent roles");
+    expect(guidance).toContain("agents and agent-backed workflow delegation are disabled");
+  });
+
   it("keeps the progressive exec skill focused on the lean product surface", () => {
     const skill = fs.readFileSync("skills/fabric-exec/SKILL.md", "utf8");
     expect(skill).toContain("Pi Code Mode");
