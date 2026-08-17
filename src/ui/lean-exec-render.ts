@@ -3,7 +3,7 @@ import { Text, type Component } from "@earendil-works/pi-tui";
 import { diffLines } from "diff";
 import { headlineArg } from "../core/call-preview.js";
 
-const COLLAPSED_CODE_LINES = 8;
+const COLLAPSED_CODE_LINES = 15;
 const COLLAPSED_AUDIT_LINES = 5;
 const COLLAPSED_DIFF_LINES = 8;
 const COLLAPSED_INLINE_RESULT_CHARS = 160;
