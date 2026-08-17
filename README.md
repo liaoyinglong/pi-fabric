@@ -8,7 +8,7 @@ This fork keeps three product surfaces:
 2. **Named one-shot subagents**: semantic roles such as `research`, `explore`, `deep`, and `review` can bind to different runners, models, thinking levels, tools, personas, and instructions.
 3. **Workflow orchestration**: `agent`, `parallel`, `pipeline`, and workflow phase helpers compose the same one-shot subagent runtime.
 
-V2 physically removes the persistent Fabric systems that are outside this scope: Actor, Mesh, State, Schema runtime, Memory, RLM skills, Prewalk, resident hosts, the Component supervisor, trajectory handoff, the Fabric dashboard, and main-session Fabric compaction.
+Lean V2 does not expose the persistent Fabric product systems that are outside this scope: Actor, Mesh, State, Schema runtime, Memory, RLM skills, Prewalk, resident hosts, the Component supervisor, trajectory handoff, the Fabric dashboard, and main-session Fabric compaction. Some low-level compatibility code is still being removed from the fork internals; it is not part of the Lean V2 public capability surface.
 
 ## Runtime shape
 
@@ -65,7 +65,9 @@ For day-to-day setup and examples, read **[Lean V2 Usage Guide](docs/usage.md)**
 - migration from full Fabric
 - troubleshooting
 
-For implementation boundaries and removed systems, read **[Lean Code Mode V2 Architecture](docs/lean-code-mode.md)**.
+For every Lean V2 configuration field and its default, read **[Configuration Reference](docs/configuration.md)**.
+
+For implementation boundaries and removed public systems, read **[Lean Code Mode V2 Architecture](docs/lean-code-mode.md)**.
 
 ## Code Mode
 
@@ -109,7 +111,7 @@ Project roles live at:
 .pi/fabric/subagents.yaml
 ```
 
-Project fields override global fields. `PI_FABRIC_SUBAGENTS_FILE` can add one explicit role file.
+Trusted project fields override global fields. `PI_FABRIC_SUBAGENTS_FILE` can add one explicit host-supplied role file.
 
 Example:
 
@@ -133,7 +135,7 @@ roles:
     tools: [read, grep, find, ls]
 
   deep:
-    description: Difficult reasoning and implementation decisions
+    description: Difficult reasoning or implementation
     runner: pi
     model: azure-openai-responses/gpt-5.6-sol
     thinking: high
@@ -146,118 +148,82 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-A role can define:
-
-- `description`
-- `instructions`
-- `runner`: `pi`, `claude`, or `veda`
-- `transport`: `auto`, `process`, `tmux`, `screen`, `localterm`, or `herdr`
-- `model`
-- `persona`
-- `thinking`
-- `tools`
-- `timeoutMs`
-- `extensions`
-- `recursive`
-- `worktree`
-
-Explicit call arguments override role defaults.
+The public role selector is `name`. When `name` matches a configured role, its profile is applied; a non-role `name` remains a display name.
 
 ```ts
 const evidence = await agents.run({
-  name: "research",
-  task: "Find the upstream behavior relevant to this bug.",
+  name: "explore",
+  task: "Find the files and call chain involved in this bug.",
 });
 
-return evidence;
+const decision = await agents.run({
+  name: "deep",
+  task: `Analyze this evidence and propose the safest fix:\n${evidence.text}`,
+});
+
+return decision.text;
 ```
 
-When `name` matches a configured role, the role profile is selected automatically. The low-level provider also accepts an explicit `role` field.
-
-Discover roles:
-
-```ts
-return tools.call({ ref: "agents.roles", args: {} });
-```
-
-The one-shot agent surface keeps `run`, `spawn`, `wait`, `status`, `list`, `roles`, `models`, `stop`, `cleanup`, `steer`, `followUp`, steering/follow-up modes, and child `compact`.
-
-Child `compact` remains because it controls a running child Pi session. V2 does not install Fabric main-session compaction.
+Main can discover the current catalog with `agents.roles({})`. Normal conversation guidance tells Main to prefer semantic roles over raw model ids, so the user does not need to specify Luna, Sol, or another provider model on each delegated task.
 
 ## Workflow
 
-Workflow is a thin orchestration layer over named one-shot subagents.
-
-```text
-Workflow -> named subagent roles -> AgentManager
-```
+Workflow is orchestration over the same one-shot subagent substrate. It does not have a separate agent runtime or model router.
 
 ```ts
 const findings = await parallel(
-  items.map((item) => () =>
-    agent(`Collect bounded evidence for ${item}`, {
-      label: `explore ${item}`,
+  ["auth", "routing", "cache"].map((topic) => () =>
+    agent(`Inspect ${topic} and return bounded evidence.`, {
+      label: `inspect ${topic}`,
       name: "explore",
     })
   ),
-  { concurrency: 4 },
+  { concurrency: 3 },
 );
 
-const review = await agent(
-  `Verify these findings:\n${JSON.stringify(findings)}`,
+return agent(
+  `Verify these findings and remove unsupported claims:\n${JSON.stringify(findings)}`,
   { label: "verify", name: "review" },
 );
-
-return review;
 ```
 
-Model routing stays in role configuration. A workflow can use cheap evidence-gathering roles and strong reasoning roles without embedding model IDs throughout the workflow.
+Role names keep model ids out of workflow code. Explicit supported worker options can still override a role for one exceptional call.
 
-## Configuration
+## Veda
 
-V2 reads the existing global and project Fabric config paths for migration convenience:
+Veda is a one-shot runner option, separate from the process transport. Configure the default Veda binary/backend/persona in `fabric.json`, then bind a semantic role to `runner: veda`.
+
+Fabric invokes Veda headlessly with the configured backend, persona, model, reasoning level, portable tool allowlist, and an isolated session id. The model value is passed to Veda's `-m` argument; a leading `veda/` routing prefix is stripped.
+
+Supported portable tool mapping:
 
 ```text
-~/.pi/agent/fabric.json
-.pi/fabric.json
+read  -> read
+grep  -> grep
+find  -> glob
+ls    -> glob
+bash  -> bash
+edit  -> edit
+write -> write
 ```
 
-Only the lean runtime groups are used:
+## Package surface
 
-- `executor`
-- `approvals`
-- `mcp`
-- `agents`
-- `capture`
-- `retention`
+The package registers only:
 
-Legacy persistent-runtime fields are ignored. V2 always runs Full Code Mode and does not enable the old Schema runtime.
-
-## Included Pi skills
-
-The package registers and ships only:
-
-- `fabric-exec`
-- `fabric-subagents`
-- `fabric-workflow`
-
-Pi's normal skill catalog is still available. Because Full Code Mode hides the model-facing `read` tool, the extension adapts Pi's progressive skill-loading instruction to use `pi.read` inside `fabric_exec`.
-
-## Development
-
-```bash
-pnpm typecheck
-pnpm build
-pnpm test
-pnpm lint:dead
+```text
+dist/lean-index.js
+skills/fabric-exec
+skills/fabric-subagents
+skills/fabric-workflow
 ```
 
-The GitHub Actions workflow runs these checks on Ubuntu and Windows for `agent/**` branches.
+User documentation packed with the package:
 
-## Upstream
+```text
+docs/usage.md
+docs/configuration.md
+docs/lean-code-mode.md
+```
 
-This fork is based on [monotykamary/pi-fabric](https://github.com/monotykamary/pi-fabric). It keeps the mature Code Mode, tool capture, execution, MCP, and one-shot agent paths while removing the persistent multi-agent runtime.
-
-## License
-
-MIT
+The public protocol export remains available for the Lean Code Mode provider/action contract. Persistent Full Fabric providers are not registered by the Lean entrypoint.
