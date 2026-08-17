@@ -68,7 +68,7 @@ describe("lean settings persistence", () => {
     expect(JSON.parse(fs.readFileSync(explicit, "utf8")).agents.maxConcurrent).toBe(99);
   });
 
-  it("saves profile edits to the selected scope and does not merge explicit profile overrides", () => {
+  it("edits subagent profiles within the selected scope only", () => {
     const options = fixture();
     saveEditableSubagentProfile("global", options, "research", {
       runner: "cli",
@@ -81,12 +81,26 @@ describe("lean settings persistence", () => {
       thinking: "high",
     });
 
+    const globalCatalog = loadEditableSubagentCatalog("global", options);
+    const projectCatalog = loadEditableSubagentCatalog("project", options);
+    expect(globalCatalog.profiles.research?.cli).toBe("agy");
+    expect(globalCatalog.profiles.review).toBeUndefined();
+    expect(projectCatalog.profiles.review?.cli).toBe("droid");
+    expect(projectCatalog.profiles.research).toBeUndefined();
+  });
+
+  it("reports explicit profile overrides without merging them into the editable scope", () => {
+    const options = fixture();
+    saveEditableSubagentProfile("project", options, "review", {
+      runner: "cli",
+      cli: "droid",
+      thinking: "high",
+    });
     const explicit = path.join(path.dirname(options.cwd), "explicit-subagents.yaml");
     fs.writeFileSync(explicit, "roles:\n  hidden:\n    runner: pi\n");
     process.env.PI_FABRIC_SUBAGENTS_FILE = explicit;
 
     const catalog = loadEditableSubagentCatalog("project", options);
-    expect(catalog.profiles.research?.cli).toBe("agy");
     expect(catalog.profiles.review?.cli).toBe("droid");
     expect(catalog.profiles.hidden).toBeUndefined();
     expect(catalog.explicitOverride).toBe(path.resolve(explicit));
