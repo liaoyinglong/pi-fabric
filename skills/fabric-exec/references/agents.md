@@ -34,7 +34,7 @@ worktree    create an isolated Git worktree
 schema      JSON Schema for structured result validation
 ```
 
-Explicit call arguments override named-role defaults.
+Explicit supported call arguments override named-role defaults.
 
 ## Named roles
 
@@ -46,7 +46,7 @@ Global roles are loaded from:
 ~/.pi/agent/fabric/subagents.json
 ```
 
-Project roles are loaded from:
+Trusted project roles are loaded from:
 
 ```text
 .pi/fabric/subagents.yaml
@@ -54,7 +54,7 @@ Project roles are loaded from:
 .pi/fabric/subagents.json
 ```
 
-`PI_FABRIC_SUBAGENTS_FILE` can add one explicit role file after global and project files. Role profiles merge field-by-field in that order.
+`PI_FABRIC_SUBAGENTS_FILE` can add one explicit role file after global and trusted project files. Role profiles merge field-by-field in that order. Project role files are skipped when Pi marks the project untrusted.
 
 Example:
 
@@ -83,7 +83,7 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-When `name` exactly matches a configured role, that role is selected automatically. The provider also accepts a low-level explicit `role` field, but the `name` form is preferred in Code Mode because it matches the static guest types.
+When `name` exactly matches a configured role, that role is selected automatically. A non-role `name` is only the worker display name. The `name` form is the public Code Mode role selector.
 
 Discover roles:
 
@@ -233,7 +233,7 @@ Here Veda executes the child while Herdr hosts the process.
 return agents.models({ runner: "pi" });
 ```
 
-The lean provider exposes runtime discovery only when the selected runner can provide it. Veda currently returns an empty advisory list; configure its backend/model in the role catalog instead of relying on discovery.
+The lean provider exposes runtime discovery only when the selected runner can provide it. Veda currently returns an empty advisory list; configure its backend/model in the role catalog without relying on discovery.
 
 ## Structured results
 
@@ -282,4 +282,4 @@ Prewalk
 Council / Swarm / RLM persistent orchestration
 ```
 
-Use bounded `run` / `spawn` workers and workflow composition instead.
+Use bounded `run` / `spawn` workers and workflow composition.
