@@ -38,7 +38,7 @@ return run.status;
     expect(result.errors).toEqual([]);
   });
 
-  it("accepts dynamic MCP namespaces and orchestration helpers", () => {
+  it("accepts dynamic MCP namespaces and supported orchestration helpers", () => {
     const result = typeCheckFabricCode(
       `
 const mcpResult = await mcp.context7.resolve_library_id({ libraryName: "react" });
@@ -51,125 +51,89 @@ return { mcpResult, review };
     expect(result.errors).toEqual([]);
   });
 
-  it("accepts immediate and predicate-gated trajectory handoff", () => {
+  it("rejects removed trajectory handoff APIs", () => {
     const result = typeCheckFabricCode(
       `
 await pi.edit({ path: "src/a.ts", old: "a", new: "b" });
-const migrated = await agents.setModel({ id: "reviewer", model: "anthropic/executor" });
-return agents.handoff({
-  model: "anthropic/executor",
-  task: migrated.name,
-  when: ({ count, calls }) =>
-    count(["pi.edit", "mcp.docs.lookup"]) >= 1 && calls[0]?.ref === "pi.edit",
-});
+return agents.handoff({ model: "anthropic/executor" });
 `,
       GUEST_TYPE_DECLARATIONS,
     );
-    expect(result.errors).toEqual([]);
+    expect(result.errors.some((error) => /handoff/.test(error.message))).toBe(true);
   });
 
-  it("accepts scoped actor bindings and per-activation overrides", () => {
+  it("rejects removed actor APIs", () => {
     const result = typeCheckFabricCode(
       `
-const session = await agents.setModel({
-  id: "reviewer",
-  model: "anthropic/session-model",
-});
-await agents.setThinking({ id: session.id, thinking: "low", scope: "session" });
-const answer = await agents.ask({
-  id: session.id,
-  message: "Review once",
-  model: "anthropic/one-off",
-  thinking: "high",
-});
-await agents.setModel({ id: session.id, model: "anthropic/project", scope: "project" });
-return { answer, binding: session.binding, defaults: session.projectDefaults };
+const actor = await agents.create({ name: "reviewer", instructions: "Review once" });
+return agents.ask({ id: actor.id, message: "Review once" });
 `,
       GUEST_TYPE_DECLARATIONS,
     );
-    expect(result.errors).toEqual([]);
+    expect(result.errors.some((error) => /create|ask/.test(error.message))).toBe(true);
   });
-  it("accepts typed first-class Fabric provider calls", () => {
+
+  it("rejects removed first-class provider globals", () => {
     const result = typeCheckFabricCode(
       `
 const recalled = await memory.recall({ query: "proxy", branches: "active" });
 const current = await state.get();
 const status = await schema.status();
-const hypothesis = await schema.hypothesize({
-  label: "proxy-surface",
-  summary: "The direct provider surface is available",
-  evidence: [{ kind: "file_exists", path: "package.json" }],
-});
 const pending = await compact.status();
-return { recalled, current, mode: status.mode, hypothesis: hypothesis.hypothesisId, pending };
+return { recalled, current, status, pending };
 `,
       GUEST_TYPE_DECLARATIONS,
     );
-    expect(result.errors).toEqual([]);
+    for (const name of ["memory", "state", "schema", "compact"]) {
+      expect(result.errors.some((error) => error.message.includes(`Cannot find name '${name}'`))).toBe(true);
+    }
   });
 
-  it("rejects misspelled first-class provider argument keys", () => {
-    const result = typeCheckFabricCode(
-      'await compact.request({ reasno: "context pressure" }); return "never";',
-      GUEST_TYPE_DECLARATIONS,
-    );
-    expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toMatch(/reasno|known properties/i);
-  });
-
-  it("keeps first-class Fabric providers typed in orchestration-only mode", () => {
+  it("keeps supported providers typed when Pi core tools are omitted", () => {
     const declarations = guestTypeDeclarations(false);
     expect(declarations).not.toContain("declare const pi: PiToolsApi");
     expect(declarations).not.toContain("declare const extensions: FabricExtensionsApi");
-    expect(declarations).toContain("declare const schema: FabricSchemaApi");
+    expect(declarations).toContain("declare const agents: FabricAgentsApi");
+    expect(declarations).toContain("declare const mcp: FabricMcpApi");
+    expect(declarations).toContain("declare const workflow: FabricWorkflowApi");
 
     const result = typeCheckFabricCode(
-      'const mode = (await schema.status()).mode; const matches = await memory.recall({ query: "x" }); return { mode, matches };',
+      'const run = await agents.run({ task: "x" }); return run.status;',
       declarations,
     );
     expect(result.errors).toEqual([]);
   });
 
-  it("excludes globals for unavailable providers", () => {
-    const declarations = guestTypeDeclarations(false, { excludeGlobals: ["memory", "state"] });
-    expect(declarations).not.toContain("declare const memory: FabricMemoryApi;");
-    expect(declarations).not.toContain("declare const state: FabricStateApi;");
-    expect(declarations).toContain("declare const schema: FabricSchemaApi");
+  it("excludes globals for providers marked unavailable", () => {
+    const declarations = guestTypeDeclarations(false, { excludeGlobals: ["mcp"] });
+    expect(declarations).not.toContain("declare const mcp: FabricMcpApi;");
+    expect(declarations).toContain("declare const agents: FabricAgentsApi;");
 
-    const typed = typeCheckFabricCode(
-      'return memory.recall({ query: "x" });',
+    const excluded = typeCheckFabricCode(
+      'return mcp.call({ server: "docs", tool: "lookup" });',
       declarations,
     );
-    expect(typed.errors.some((error) => /Cannot find name 'memory'/.test(error.message))).toBe(
-      true,
-    );
+    expect(excluded.errors.some((error) => /Cannot find name 'mcp'/.test(error.message))).toBe(true);
 
     const untouched = typeCheckFabricCode(
-      'return (await schema.status()).mode;',
+      'return (await agents.run({ task: "x" })).status;',
       declarations,
     );
     expect(untouched.errors).toEqual([]);
   });
 
-  it("accepts workflow, actor, and mesh primitives", () => {
+  it("accepts workflow and one-shot agent primitives", () => {
     const result = typeCheckFabricCode(
       `
 const captured = await extensions.project_status({ verbose: true });
 console.log(captured.text);
-const main = await agents.main();
-await agents.followUp({ id: main.id, message: "review the result" });
-const watcher = await agents.create({
-  name: "advisor",
-  instructions: "Review each turn",
-  events: ["turn_end"],
-  responseMode: "directive",
-});
-await agents.setTools({ id: watcher.id, tools: ["read", "grep", "find", "ls"] });
-await mesh.publish({ topic: "team.review", to: watcher.id, text: "start" });
+const handle = await agents.spawn({ name: "review", task: "Review the result" });
+await agents.followUp({ id: handle.id, message: "focus on correctness" });
 await phase("Review");
 const findings = await parallel([
   () => agent<{ issues: string[] }>("Find issues", {
     label: "issue scan",
+    name: "review",
     schema: {
       type: "object",
       properties: { issues: { type: "array", items: { type: "string" } } },
@@ -177,11 +141,20 @@ const findings = await parallel([
     },
   }),
 ]);
-return findings;
+const review = await agents.wait({ id: handle.id });
+return { findings, review };
 `,
       GUEST_TYPE_DECLARATIONS,
     );
     expect(result.errors).toEqual([]);
+  });
+
+  it("rejects removed mesh primitives", () => {
+    const result = typeCheckFabricCode(
+      'await mesh.publish({ topic: "team.review", text: "start" }); return "never";',
+      GUEST_TYPE_DECLARATIONS,
+    );
+    expect(result.errors.some((error) => /Cannot find name 'mesh'/.test(error.message))).toBe(true);
   });
 
   it("accepts parallel(items, mapper, concurrency) and infers item types", () => {
@@ -197,7 +170,7 @@ return out;
   });
 
   it("reports user-facing line numbers for functional errors", () => {
-    // Wrong arg type (path: 42) is now deferred to runtime (functional-errors-only);
+    // Wrong arg type (path: 42) is deferred to runtime (functional-errors-only);
     // an undefined name is a genuine breakage still caught at type-check.
     const result = typeCheckFabricCode(
       'await pi.read({ path: missingFile });\nreturn "never";',
