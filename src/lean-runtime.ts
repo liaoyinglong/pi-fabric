@@ -132,36 +132,41 @@ export class LeanCodeModeRuntime {
       registry.markUnavailable("mcp", "MCP support is disabled in Fabric configuration");
     }
 
-    const workerPath = fileURLToPath(new URL("./worker.js", import.meta.url));
-    const agents = new AgentManager(context.cwd, config.agents, {
-      workerPath,
-      fabricExtensionPath: this.extensionPath,
-      fullCodeMode: true,
-      projectRoot,
-      retention: config.retention,
-      onBackgroundComplete: (result) => {
-        const durationMs = Math.max(0, (result.finishedAt ?? Date.now()) - result.startedAt);
-        const duration =
-          durationMs < 60_000
-            ? `${Math.round(durationMs / 1_000)}s`
-            : `${(durationMs / 60_000).toFixed(1)}m`;
-        const summary = result.text || result.error || "no result";
-        const clippedSummary =
-          summary.length > BACKGROUND_COMPLETION_MAX_CHARS
-            ? `${summary.slice(0, BACKGROUND_COMPLETION_MAX_CHARS)}\n[completion truncated]`
-            : summary;
-        this.pi.sendMessage(
-          {
-            customType: "pi-fabric-agent-complete",
-            content: `Fabric agent ${result.id.slice(0, 8)} ${result.status} after ${duration}: ${clippedSummary}`,
-            display: true,
-            details: result,
-          },
-          { deliverAs: "followUp", triggerTurn: true },
-        );
-      },
-    });
-    registry.register(new LeanAgentsProvider(agents));
+    let agents: AgentManager | undefined;
+    if (config.agents.enabled) {
+      const workerPath = fileURLToPath(new URL("./worker.js", import.meta.url));
+      agents = new AgentManager(context.cwd, config.agents, {
+        workerPath,
+        fabricExtensionPath: this.extensionPath,
+        fullCodeMode: true,
+        projectRoot,
+        retention: config.retention,
+        onBackgroundComplete: (result) => {
+          const durationMs = Math.max(0, (result.finishedAt ?? Date.now()) - result.startedAt);
+          const duration =
+            durationMs < 60_000
+              ? `${Math.round(durationMs / 1_000)}s`
+              : `${(durationMs / 60_000).toFixed(1)}m`;
+          const summary = result.text || result.error || "no result";
+          const clippedSummary =
+            summary.length > BACKGROUND_COMPLETION_MAX_CHARS
+              ? `${summary.slice(0, BACKGROUND_COMPLETION_MAX_CHARS)}\n[completion truncated]`
+              : summary;
+          this.pi.sendMessage(
+            {
+              customType: "pi-fabric-agent-complete",
+              content: `Fabric agent ${result.id.slice(0, 8)} ${result.status} after ${duration}: ${clippedSummary}`,
+              display: true,
+              details: result,
+            },
+            { deliverAs: "followUp", triggerTurn: true },
+          );
+        },
+      });
+      registry.register(new LeanAgentsProvider(agents));
+    } else {
+      registry.markUnavailable("agents", "One-shot agents are disabled in Fabric configuration");
+    }
 
     for (const provider of REMOVED_LEAN_PROVIDERS) {
       registry.markUnavailable(provider, `${provider} is not part of the Lean V2 runtime`);
