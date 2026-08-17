@@ -1,0 +1,45 @@
+name: Lean dependency cleanup
+
+on:
+  push:
+    branches: [agent/code-mode-runtime-v2]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/code-mode-runtime-v2
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Remove obsolete UI dependency and tighten dead-code gate
+        run: |
+          pnpm remove shiki
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'knip.json';
+          const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+          delete data.ignoreDependencies;
+          fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
+          NODE
+      - run: pnpm check
+      - name: Commit verified cleanup
+        run: |
+          rm .github/workflows/lean-deps-cleanup.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: remove obsolete TUI dependency"
+          git push origin HEAD:agent/code-mode-runtime-v2
