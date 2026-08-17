@@ -14,6 +14,7 @@ import { initBudgetLedger, readBudgetLedgerDetailed } from "../src/agents/budget
 // worker that writes status directly. Skips when the package is not built.
 const workerPath = path.resolve("dist/worker.js");
 const piBinary = path.resolve("tests/fixtures/fake-pi.mjs");
+const cliBinary = path.resolve("tests/fixtures/fake-cli.mjs");
 const hasWorker = fs.existsSync(workerPath);
 
 describe.skipIf(!hasWorker)("AgentManager real worker e2e", () => {
@@ -230,125 +231,84 @@ describe.skipIf(!hasWorker)("AgentManager real worker e2e", () => {
     }, 30_000);
   });
 
-  const runVeda = async (
+  const runCli = async (
+    adapter: "agy" | "droid",
     behavior: string,
     task = "do it",
     timeoutMs = 4_000,
   ): Promise<AgentRunResult> => {
-    process.env.FAKE_VEDA_BEHAVIOR = behavior;
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-e2e-"));
+    process.env.FAKE_CLI_BEHAVIOR = behavior;
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-cli-e2e-"));
     roots.push(root);
     const config = { ...DEFAULT_FABRIC_CONFIG.agents, timeoutMs, maxConcurrent: 1 };
     const manager = new AgentManager(process.cwd(), config, {
       workerPath,
       piBinary,
-      vedaBinary: path.resolve("tests/fixtures/fake-veda.mjs"),
+      cliBinaries: { agy: cliBinary, droid: cliBinary },
       runRoot: root,
     });
     managers.push(manager);
-    return manager.run({ task, transport: "process", runner: "veda" });
+    return manager.run({ task, transport: "process", runner: "cli", cli: adapter });
   };
 
-  it.each([
-    {
-      behavior: "success",
-      check: (r: AgentRunResult) => {
-        expect(r.status).toBe("completed");
-        expect(r.runner).toBe("veda");
-        expect(r.text).toContain("echo:");
-        expect(r.usage).toMatchObject({ input: 10, output: 5, cacheRead: 2, cacheWrite: 0 });
-        expect(r.runnerSessionId).toBe("conv-1");
-        expect(r.turns).toBe(1);
-      },
-    },
-    {
-      behavior: "error",
-      check: (r: AgentRunResult) => {
-        expect(r.status).toBe("failed");
-        expect(r.error ?? "").toMatch(/quota exceeded/);
-      },
-    },
-    {
-      behavior: "design-fail",
-      check: (r: AgentRunResult) => {
-        expect(r.status).toBe("failed");
-        expect(r.error ?? "").toMatch(/design failed/);
-        expect(r.error ?? "").toMatch(/missing.*program/);
-      },
-    },
-    {
-      behavior: "no-json",
-      check: (r: AgentRunResult) => {
-        expect(r.status).toBe("failed");
-        expect(r.error ?? "").toMatch(/Veda agent reported an error before exiting/);
-      },
-    },
-    {
-      behavior: "hang",
-      timeoutMs: 2_000,
-      check: (r: AgentRunResult) => {
-        expect(r.status).toBe("timed_out");
-      },
-    },
-  ])("maps veda child behavior $behavior to the correct run outcome", async ({ behavior, timeoutMs, check }) => {
-    const result = await runVeda(behavior, "do it", timeoutMs);
-    try {
-      check(result);
-    } catch (error) {
-      throw new Error(
-        `${behavior}: ${(error as Error).message} (status=${result.status} error=${result.error ?? ""})`,
-      );
-    }
-  }, 30_000);
-
-  it("passes the complete Veda task as a positional prompt", async () => {
-    const result = await runVeda("success", "prompt-through-argv");
+  it("runs Agy directly without a Veda intermediary", async () => {
+    const result = await runCli("agy", "success", "research-directly");
     expect(result.status).toBe("completed");
-    expect(result.text).toContain("echo: prompt-through-argv");
+    expect(result.runner).toBe("cli");
+    expect(result.cli).toBe("agy");
+    expect(result.text).toContain("research-directly");
   }, 30_000);
 
-  it("rejects recursive Fabric for the Veda runner", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-e2e-"));
+  it("runs Droid directly and preserves its usage/session envelope", async () => {
+    const result = await runCli("droid", "success", "review-directly");
+    expect(result.status).toBe("completed");
+    expect(result.runner).toBe("cli");
+    expect(result.cli).toBe("droid");
+    expect(result.text).toContain("review-directly");
+    expect(result.usage).toMatchObject({ input: 10, output: 5, cacheRead: 2, cacheWrite: 0, cost: 0.01 });
+    expect(result.runnerSessionId).toBe("droid-session-1");
+    expect(result.turns).toBe(1);
+  }, 30_000);
+
+  it("maps Droid's structured error result to a failed run", async () => {
+    const result = await runCli("droid", "error");
+    expect(result.status).toBe("failed");
+    expect(result.error ?? "").toMatch(/quota exceeded/);
+  }, 30_000);
+
+  it("times out a hanging CLI adapter process", async () => {
+    const result = await runCli("agy", "hang", "hang", 2_000);
+    expect(result.status).toBe("timed_out");
+  }, 30_000);
+
+  it("rejects recursive Fabric for one-shot CLI adapters", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-cli-e2e-"));
     roots.push(root);
     const manager = new AgentManager(
       process.cwd(),
       { ...DEFAULT_FABRIC_CONFIG.agents, timeoutMs: 2_000, maxConcurrent: 1 },
-      { workerPath, piBinary, runRoot: root },
+      { workerPath, piBinary, cliBinaries: { agy: cliBinary, droid: cliBinary }, runRoot: root },
     );
     managers.push(manager);
     await expect(
-      manager.run({ task: "do it", transport: "process", runner: "veda", recursive: true }),
-    ).rejects.toThrow(/does not support recursive Fabric/);
+      manager.run({ task: "do it", transport: "process", runner: "cli", cli: "agy", recursive: true }),
+    ).rejects.toThrow(/do not support recursive Fabric/);
   });
 
-  it("rejects steering and follow-ups for Veda children at call time", async () => {
-    process.env.FAKE_VEDA_BEHAVIOR = "hang";
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-e2e-"));
+  it("rejects steering and follow-ups for one-shot CLI children at call time", async () => {
+    process.env.FAKE_CLI_BEHAVIOR = "hang";
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-cli-e2e-"));
     roots.push(root);
     const manager = new AgentManager(
       process.cwd(),
       { ...DEFAULT_FABRIC_CONFIG.agents, timeoutMs: 10_000, maxConcurrent: 1 },
-      { workerPath, piBinary, vedaBinary: path.resolve("tests/fixtures/fake-veda.mjs"), runRoot: root },
+      { workerPath, piBinary, cliBinaries: { agy: cliBinary, droid: cliBinary }, runRoot: root },
     );
     managers.push(manager);
-    const handle = await manager.spawn({ task: "do it", transport: "process", runner: "veda" });
-    expect(() => manager.steer(handle.id, "redirect")).toThrow(/does not support steering/);
-    expect(() => manager.followUp(handle.id, "one more pass")).toThrow(/does not support steering/);
+    const handle = await manager.spawn({ task: "do it", transport: "process", runner: "cli", cli: "agy" });
+    expect(() => manager.steer(handle.id, "redirect")).toThrow(/do not support steering/);
+    expect(() => manager.followUp(handle.id, "one more pass")).toThrow(/do not support steering/);
     await manager.stop(handle.id);
-  });
-
-  it("rejects persona for non-Veda runners", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-e2e-"));
-    roots.push(root);
-    const manager = new AgentManager(process.cwd(), { ...DEFAULT_FABRIC_CONFIG.agents, timeoutMs: 2_000, maxConcurrent: 1 }, {
-      workerPath,
-      piBinary,
-      runRoot: root,
-    });
-    managers.push(manager);
-    await expect(
-      manager.run({ task: "do it", transport: "process", runner: "pi", persona: "frontend" }),
-    ).rejects.toThrow(/persona option is only supported by the Veda runner/);
   });
 
   it.each([
