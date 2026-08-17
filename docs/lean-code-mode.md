@@ -134,6 +134,7 @@ The Full Fabric product paths listed above are no longer merely hidden from the 
 - QuickJS no longer creates Memory, State, Schema, Components, Mesh, Council, RLM, Actor, participant, or trajectory-handoff globals/helpers.
 - `FabricExecutionService` and `FabricInvocationContext` no longer carry deferred handoff state or hooks.
 - `AgentManager`, worker arguments, worker environment propagation, lifecycle records, and retention no longer carry Actor/Mesh identity, capability-digest ownership, durable residency, session-seed, or thinking-transfer fields.
+- Lifecycle and budget telemetry identify one-shot runs and runner attribution only; there is no Actor identity or Actor-specific rollup path.
 - trajectory handoff/session-seed source files and Actor archive retention have been removed.
 
 Lean intentionally retains one-shot child features that are useful independently of those systems: runner sessions for steering/follow-up, child compaction for running Pi workers, session export, worktrees, budgets, transports, and bounded recursive Pi children.
