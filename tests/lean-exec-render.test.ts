@@ -31,15 +31,18 @@ const renderCall = (args: Record<string, unknown>, expanded = false): string =>
     .join("\n");
 
 const renderResult = (
-  output: string,
+  output: string | undefined,
   details: Record<string, unknown>,
-  expanded = false,
+  options: { expanded?: boolean; partial?: boolean } = {},
 ): string =>
   tool.renderResult!(
-    { content: [{ type: "text", text: output }], details } as never,
-    { expanded, isPartial: false },
+    {
+      content: output === undefined ? [] : [{ type: "text", text: output }],
+      details,
+    } as never,
+    { expanded: options.expanded ?? false, isPartial: options.partial ?? false },
     plainTheme,
-    renderContext(expanded) as never,
+    renderContext(options.expanded ?? false) as never,
   )
     .render(120)
     .join("\n");
@@ -70,13 +73,47 @@ describe("Lean fabric_exec TUI rendering", () => {
     expect(expanded).not.toContain("hidden");
   });
 
-  it("renders a concise Fabric completion instead of the generic result card", () => {
+  it("shows nested tool headlines and progress while execution is live", () => {
+    const rendered = renderResult(undefined, {
+      progress: "grep: 3 matches",
+      audits: [
+        { ref: "pi.find", tool: "find", args: { pattern: "**/*.ts" }, success: true },
+        { ref: "pi.bash", tool: "bash", args: { command: "pnpm test" } },
+      ],
+    }, { partial: true });
+
+    expect(rendered).toContain("◆ Fabric running · 2 calls · grep: 3 matches");
+    expect(rendered).toContain("✓ pi.find **/*.ts");
+    expect(rendered).toContain("◆ pi.bash pnpm test");
+  });
+
+  it("renders a concise completion and omits an empty result body", () => {
     const rendered = renderResult(
-      "done",
-      { elapsedMs: 125, audits: [{ ref: "pi.read" }, { ref: "pi.find" }] },
+      undefined,
+      { elapsedMs: 125, audits: [{ ref: "pi.read", tool: "read", args: { path: "src/a.ts" }, success: true }] },
     );
 
-    expect(rendered).toContain("✓ Fabric complete · 2 calls · 125ms");
-    expect(rendered).toContain("done");
+    expect(rendered).toContain("✓ Fabric complete · 1 call · 125ms");
+    expect(rendered).toContain("✓ pi.read src/a.ts");
+    expect(rendered).not.toContain("(no output)");
+  });
+
+  it("shows a bounded write diff using the captured preview", () => {
+    const rendered = renderResult(undefined, {
+      audits: [{
+        ref: "pi.write",
+        tool: "write",
+        args: { path: "src/a.ts" },
+        success: true,
+        preview: {
+          writeContent: "const next = 2;\n",
+          codePreviewBeforeWrite: { kind: "content", content: "const next = 1;\n" },
+        },
+      }],
+    });
+
+    expect(rendered).toContain("diff · pi.write");
+    expect(rendered).toContain("- const next = 1;");
+    expect(rendered).toContain("+ const next = 2;");
   });
 });
