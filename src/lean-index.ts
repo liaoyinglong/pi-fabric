@@ -27,7 +27,20 @@ const leanSkillPaths = [
 export const getLeanFabricSkillPaths = (): string[] =>
   leanSkillPaths.filter((skillPath) => existsSync(skillPath));
 
+/**
+ * Ordinary Pi subagents still discover extensions so dynamically registered
+ * model providers remain available. If that discovery encounters Fabric
+ * itself, it must stay inert: only an explicit recursive child should enter
+ * Full Code Mode again.
+ */
+export const isOneShotFabricChild = (
+  env: NodeJS.ProcessEnv = process.env,
+): boolean =>
+  Boolean(env.PI_FABRIC_PARENT_RUN) && env.PI_FABRIC_FULL_CODE_MODE !== "true";
+
 export default async function leanFabricExtension(pi: ExtensionAPI): Promise<void> {
+  if (isOneShotFabricChild()) return;
+
   const capturedTools = new CapturedToolCatalog();
   const runtime = new LeanCodeModeRuntime(pi, capturedTools, extensionPath);
   const fabricTool = createLeanFabricExecTool(runtime);
