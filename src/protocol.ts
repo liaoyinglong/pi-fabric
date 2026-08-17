@@ -154,8 +154,6 @@ export interface FabricInvocationContext {
   extensionContext: ExtensionContext;
   update(message: string): void;
   activity?(update: FabricInvocationActivityUpdate): void;
-  /** @internal Legacy ExecutionService test hook pending physical handoff cleanup. */
-  deferHandoff?(args: Record<string, unknown>): Record<string, unknown>;
   attachMedia?(blocks: FabricMediaBlock[], note?: string): void;
   updateArguments?(args: Record<string, unknown>): void;
   attachPreview?(preview: unknown): void;

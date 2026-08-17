@@ -12,141 +12,10 @@ import { PiToolsProvider } from "../src/providers/pi-tools-provider.js";
 import type { FabricActionDescriptor, FabricProvider } from "../src/protocol.js";
 
 describe("FabricExecutionService", () => {
-  it("defers explicit handoff and completes every later call in the same program", async () => {
-    const registry = new ActionRegistry();
-    const demoDescriptor = {
-      name: "call",
-      description: "demo call",
-      inputSchema: {
-        type: "object",
-        properties: { value: { type: "string" } },
-        additionalProperties: false,
-      },
-      risk: "read" as const,
-    };
-    registry.register({
-      name: "demo",
-      description: "demo",
-      async list() { return [demoDescriptor]; },
-      async describe(name) { return name === "call" ? demoDescriptor : undefined; },
-      async invoke(_name, args) { return { echoed: args.value }; },
-    });
-    const handoffDescriptor = {
-      name: "handoff",
-      description: "defer handoff",
-      inputSchema: {
-        type: "object",
-        properties: { model: { type: "string" }, task: { type: "string" } },
-        required: ["model"],
-        additionalProperties: false,
-      },
-      risk: "agent" as const,
-    };
-    registry.register({
-      name: "agents",
-      description: "agents",
-      async list() { return [handoffDescriptor]; },
-      async describe(name) { return name === "handoff" ? handoffDescriptor : undefined; },
-      async invoke(_name, args, context) {
-        if (!context.deferHandoff) throw new Error("missing deferred boundary");
-        return context.deferHandoff(args);
-      },
-    });
-    const config = structuredClone(DEFAULT_FABRIC_CONFIG);
-    config.fullCodeMode = false;
-    config.approvals.read = "allow";
-    config.approvals.agent = "allow";
-    const service = new FabricExecutionService(registry, config);
-    const result = await service.execute({
-      code: `
-await tools.call({ ref: "demo.call", args: { value: "before" } });
-const scheduled = await agents.handoff({
-  model: "provider/executor",
-  task: "Finish after this complete Fabric program",
-});
-const after = await tools.call({ ref: "demo.call", args: { value: "after" } });
-return { scheduled, after };
-`,
-      signal: undefined,
-      parentToolCallId: "handoff-at-outer-boundary",
-      context: { cwd: process.cwd(), hasUI: false } as ExtensionContext,
-      onPartial() {},
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.audits.map((audit) => audit.ref)).toEqual([
-      "demo.call",
-      "agents.handoff",
-      "demo.call",
-    ]);
-    expect(result.value).toMatchObject({
-      scheduled: {
-        scheduled: true,
-        status: "deferred",
-        boundary: "fabric_exec_end",
-      },
-      after: { echoed: "after" },
-    });
-    expect(result.handoffRequest).toEqual({
-      model: "provider/executor",
-      task: "Finish after this complete Fabric program",
-    });
-  });
-
-  it("applies the same deferred boundary through generic tools.call", async () => {
-    const registry = new ActionRegistry();
-    const descriptor = {
-      name: "handoff",
-      description: "defer handoff",
-      inputSchema: {
-        type: "object",
-        properties: { model: { type: "string" } },
-        required: ["model"],
-        additionalProperties: false,
-      },
-      risk: "agent" as const,
-    };
-    registry.register({
-      name: "agents",
-      description: "agents",
-      async list() { return [descriptor]; },
-      async describe(name) { return name === "handoff" ? descriptor : undefined; },
-      async invoke(_name, args, context) {
-        return context.deferHandoff!(args);
-      },
-    });
-    const config = structuredClone(DEFAULT_FABRIC_CONFIG);
-    config.fullCodeMode = false;
-    config.approvals.agent = "allow";
-    const result = await new FabricExecutionService(registry, config).execute({
-      code: `
-const scheduled = await tools.call({
-  ref: "agents.handoff",
-  args: { model: "provider/generic" },
-});
-return { scheduled, tail: "still ran" };
-`,
-      signal: undefined,
-      parentToolCallId: "generic-handoff-boundary",
-      context: { cwd: process.cwd(), hasUI: false } as ExtensionContext,
-      onPartial() {},
-    });
-
-    expect(result.value).toMatchObject({
-      scheduled: {
-        scheduled: true,
-        status: "deferred",
-        boundary: "fabric_exec_end",
-      },
-      tail: "still ran",
-    });
-    expect(result.handoffRequest).toEqual({ model: "provider/generic" });
-  });
-
   it.each(["quickjs", "node-process"] as const)(
-    "finishes every nested call in the %s fabric_exec before handoff can be claimed",
+    "finishes every nested call in the %s fabric_exec before returning the outer result",
     async (runtime) => {
-      const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-prewalk-"));
+      const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-nested-calls-"));
       try {
         const registry = new ActionRegistry();
         registry.register(new PiToolsProvider(cwd, undefined, undefined));
@@ -167,7 +36,7 @@ await Promise.all([
 return "complete outer result";
 `,
           signal: undefined,
-          parentToolCallId: "prewalk-complete-program",
+          parentToolCallId: "nested-calls-complete-program",
           context: { cwd, hasUI: false } as ExtensionContext,
           onPartial() {},
         });

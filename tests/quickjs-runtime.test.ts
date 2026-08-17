@@ -183,33 +183,6 @@ return {
     expect(result.value).toEqual([{ ref: "extensions.fovea_focus" }]);
   });
 
-  it("routes stable Fabric providers through first-class proxies", async () => {
-    const calls: Array<{ ref: string; args: Record<string, unknown> }> = [];
-    const result = await new QuickJsRuntime().execute(
-      `
-return Promise.all([
-  memory.recall({ query: "needle" }),
-  state.history({ limit: 2 }),
-  schema.status(),
-  compact.request({ reason: "context pressure" }),
-]);
-`,
-      async (ref, args) => {
-        calls.push({ ref, args });
-        return { ref };
-      },
-      options,
-    );
-
-    expect(result.error).toBeUndefined();
-    expect(calls).toEqual([
-      { ref: "memory.recall", args: { query: "needle" } },
-      { ref: "state.history", args: { limit: 2 } },
-      { ref: "schema.status", args: {} },
-      { ref: "compact.request", args: { reason: "context pressure" } },
-    ]);
-  });
-
   it("routes JavaScript-safe MCP aliases through the direct MCP proxy", async () => {
     const result = await new QuickJsRuntime().execute(
       'return mcp.fal_ai.get_model_schema({ endpoint_id: "openai/gpt-image-2" });',
@@ -224,22 +197,42 @@ return Promise.all([
     });
   });
 
-  it("exposes durable mesh operations through the host bridge", async () => {
+  it("does not expose removed Full Fabric globals or actor/participant actions", async () => {
     const result = await new QuickJsRuntime().execute(
-      `
-const self = await mesh.self();
-await mesh.publish({ topic: "team.auth", text: "ready" });
-return self.name;
-`,
-      async (ref) => {
-        if (ref === "mesh.self") return { id: "actor-1", name: "reviewer", kind: "actor" };
-        if (ref === "mesh.publish") return { sequence: 1 };
-        throw new Error(`Unexpected call: ${ref}`);
-      },
+      `return {
+  memory: typeof memory,
+  state: typeof state,
+  schema: typeof schema,
+  components: typeof components,
+  compact: typeof compact,
+  mesh: typeof mesh,
+  rlm: typeof rlm,
+  council: typeof council,
+  handoff: typeof agents.handoff,
+  create: typeof agents.create,
+  main: typeof agents.main,
+  members: typeof agents.members,
+  subscribe: typeof agents.subscribe,
+};`,
+      async () => undefined,
       options,
     );
     expect(result.error).toBeUndefined();
-    expect(result.value).toBe("reviewer");
+    expect(result.value).toEqual({
+      memory: "undefined",
+      state: "undefined",
+      schema: "undefined",
+      components: "undefined",
+      compact: "undefined",
+      mesh: "undefined",
+      rlm: "undefined",
+      council: "undefined",
+      handoff: "undefined",
+      create: "undefined",
+      main: "undefined",
+      members: "undefined",
+      subscribe: "undefined",
+    });
   });
 
   it("does not expose Node globals", async () => {
@@ -538,321 +531,6 @@ await Promise.all([
     ]);
   });
 
-  it("counts council.run role usage toward budget.spent()", async () => {
-    const result = await new QuickJsRuntime().execute(
-      `await council.run({ task: "review", roles: ["a", "b"], synthesize: false }); return budget.spent();`,
-      async (ref, args) => {
-        if (ref === "agents.run") {
-          return { status: "completed", text: String(args.name), usage: { input: 10, output: 5 } };
-        }
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      { ...options, tokenBudget: 100 },
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toBe(30);
-  });
-
-  it("counts rlm.query usage and forces the Pi runner", async () => {
-    let request: Record<string, unknown> | undefined;
-    const result = await new QuickJsRuntime().execute(
-      `await rlm.query({ task: "map" }); return budget.spent();`,
-      async (ref, args) => {
-        if (ref === "agents.run") {
-          request = args;
-          return { status: "completed", text: "done", usage: { input: 7, output: 3 } };
-        }
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      { ...options, tokenBudget: 100 },
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toBe(10);
-    expect(request).toMatchObject({ task: "map", runner: "pi", recursive: true });
-  });
-
-  it("preempts the council synthesizer when roles exhaust the token budget", async () => {
-    const calls: string[] = [];
-    const result = await new QuickJsRuntime().execute(
-      `await council.run({ task: "review", roles: ["a", "b"] }); return "done";`,
-      async (ref, args) => {
-        if (ref === "agents.run") {
-          calls.push(String(args.name));
-          return { status: "completed", text: "x", usage: { input: 100, output: 50 } };
-        }
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      { ...options, tokenBudget: 20 },
-    );
-    expect(result.error).toContain("token budget exhausted");
-    expect(calls).toEqual(["a", "b"]);
-  });
-
-
-  it("gates handoff with a pure predicate over successful call facts", async () => {
-    const calls: Array<{ ref: string; args: Record<string, unknown> }> = [];
-    const result = await new QuickJsRuntime().execute(
-      `
-await pi.edit({ path: "src/guard.ts", old: "false", new: "true" });
-return agents.handoff({
-  model: "anthropic/executor",
-  task: "Finish and verify the guard",
-  when: ({ count, calls }) =>
-    count("pi.edit") === 1 && calls[0]?.ref === "pi.edit",
-});
-`,
-      async (ref, args) => {
-        calls.push({ ref, args });
-        if (ref === "pi.edit") return { ok: true };
-        if (ref === "agents.handoff") {
-          return {
-            scheduled: true,
-            status: "deferred",
-            boundary: "fabric_exec_end",
-          };
-        }
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      options,
-    );
-
-    expect(result.error).toBeUndefined();
-    expect(result.value).toMatchObject({
-      scheduled: true,
-      status: "deferred",
-      boundary: "fabric_exec_end",
-    });
-    expect(calls.map((call) => call.ref)).toEqual(["pi.edit", "agents.handoff"]);
-    expect(calls[1]?.args).toEqual({
-      model: "anthropic/executor",
-      task: "Finish and verify the guard",
-    });
-  });
-
-  it("counts successful calls across Pi, extensions, MCP, and computed providers", async () => {
-    const calls: string[] = [];
-    const result = await new QuickJsRuntime().execute(
-      `
-await pi.read({ path: "a.txt" });
-await extensions.format({ path: "a.txt" });
-await mcp.docs.lookup({ query: "handoff" });
-await tools.call({ ref: "external.inspect", args: { id: "a" } });
-return agents.handoff({
-  model: "anthropic/executor",
-  when: ({ count, calls }) =>
-    count() === 4 &&
-    count(["pi.read", "extensions.format", "mcp.docs.lookup", "external.inspect"]) === 4 &&
-    calls.map((call) => call.ref).join(",") ===
-      "pi.read,extensions.format,mcp.docs.lookup,external.inspect",
-});
-`,
-      async (ref) => {
-        calls.push(ref);
-        if (ref === "agents.handoff") {
-          return { scheduled: true, status: "deferred", boundary: "fabric_exec_end" };
-        }
-        return { ok: true };
-      },
-      options,
-    );
-
-    expect(result.error).toBeUndefined();
-    expect(calls).toEqual([
-      "pi.read",
-      "extensions.format",
-      "mcp.docs.lookup",
-      "fabric.$call",
-      "agents.handoff",
-    ]);
-  });
-
-  it("does not call the host when the handoff predicate returns false", async () => {
-    const calls: string[] = [];
-    const result = await new QuickJsRuntime().execute(
-      `return agents.handoff({
-  model: "anthropic/executor",
-  when: ({ count }) => count("pi.edit") > 0,
-});`,
-      async (ref) => {
-        calls.push(ref);
-        return undefined;
-      },
-      options,
-    );
-
-    expect(result.error).toContain("predicate returned false");
-    expect(calls).toEqual([]);
-  });
-
-  it("does not count failed mutation calls in handoff facts", async () => {
-    const result = await new QuickJsRuntime().execute(
-      `
-try { await pi.edit({ path: "missing.ts", old: "a", new: "b" }); } catch {}
-return agents.handoff({
-  model: "anthropic/executor",
-  when: ({ count }) => count("pi.edit") === 1,
-});
-`,
-      async (ref) => {
-        if (ref === "pi.edit") throw new Error("edit failed");
-        throw new Error("handoff should not run");
-      },
-      options,
-    );
-
-    expect(result.error).toContain("predicate returned false");
-  });
-
-  it("rejects asynchronous handoff predicates", async () => {
-    const result = await new QuickJsRuntime().execute(
-      `return agents.handoff({
-  model: "anthropic/executor",
-  when: async () => true,
-});`,
-      async () => undefined,
-      options,
-    );
-
-    expect(result.error).toContain("must return a boolean synchronously");
-  });
-
-  it("keeps immediate boundary scheduling available without a predicate", async () => {
-    let args: Record<string, unknown> | undefined;
-    const result = await new QuickJsRuntime().execute(
-      'return agents.handoff({ model: "anthropic/executor", task: "Continue" });',
-      async (ref, value) => {
-        if (ref !== "agents.handoff") throw new Error(`Unexpected call: ${ref}`);
-        args = value;
-        return {
-          scheduled: true,
-          status: "deferred",
-          boundary: "fabric_exec_end",
-        };
-      },
-      options,
-    );
-
-    expect(result.error).toBeUndefined();
-    expect(args).toEqual({ model: "anthropic/executor", task: "Continue" });
-  });
-
-  it("routes agents.main and Main steering through the agents provider", async () => {
-    const calls: string[] = [];
-    const result = await new QuickJsRuntime().execute(
-      `
-const main = await agents.main();
-const queued = await agents.steer({ id: main.id, message: "focus" });
-return { main, queued };
-`,
-      async (ref) => {
-        calls.push(ref);
-        if (ref === "agents.main") {
-          return { id: "session:root", name: "Main", kind: "main", status: "idle" };
-        }
-        if (ref === "agents.steer") {
-          return { queued: true, messageId: "m1", routed: "main" };
-        }
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      options,
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toMatchObject({
-      main: { id: "session:root", name: "Main" },
-      queued: { queued: true, routed: "main" },
-    });
-    expect(calls).toEqual(["agents.main", "agents.steer"]);
-  });
-
-  it("routes unified participant discovery through the agents provider", async () => {
-    const calls: Array<{ ref: string; args: Record<string, unknown> }> = [];
-    const result = await new QuickJsRuntime().execute(
-      `
-const self = await agents.self();
-const members = await agents.members({ scope: "project", kinds: ["agent"] });
-const lineage = await agents.list({ scope: "lineage" });
-return { self, members, lineage };
-`,
-      async (ref, args) => {
-        calls.push({ ref, args });
-        if (ref === "agents.self") return { id: "agent:self", kind: "agent" };
-        if (ref === "agents.members") return [{ id: "agent:peer", kind: "agent" }];
-        if (ref === "agents.list") return [{ id: "agent:self", kind: "agent" }];
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      options,
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toMatchObject({
-      self: { id: "agent:self" },
-      members: [{ id: "agent:peer" }],
-      lineage: [{ id: "agent:self" }],
-    });
-    expect(calls).toEqual([
-      { ref: "agents.self", args: {} },
-      { ref: "agents.members", args: { scope: "project", kinds: ["agent"] } },
-      { ref: "agents.list", args: { scope: "lineage" } },
-    ]);
-  });
-
-  it("routes lifecycle subscriptions through the direct agents API", async () => {
-    const calls: Array<{ ref: string; args: Record<string, unknown> }> = [];
-    const result = await new QuickJsRuntime().execute(
-      `
-const created = await agents.subscribe({
-  from: "session:peer",
-  events: ["pi.agent_settled"],
-  delivery: "followUp",
-  triggerTurn: true,
-  once: true,
-});
-const listed = await agents.subscriptions({ from: "session:peer" });
-const removed = await agents.unsubscribe({ id: created.id });
-return { created, listed, removed };
-`,
-      async (ref, args) => {
-        calls.push({ ref, args });
-        if (ref === "agents.subscribe") return { id: "subscription-1", ...args };
-        if (ref === "agents.subscriptions") return [{ id: "subscription-1" }];
-        if (ref === "agents.unsubscribe") return { removed: true };
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      options,
-    );
-
-    expect(result.error).toBeUndefined();
-    expect(result.value).toMatchObject({
-      created: { id: "subscription-1" },
-      listed: [{ id: "subscription-1" }],
-      removed: { removed: true },
-    });
-    expect(calls.map((call) => call.ref)).toEqual([
-      "agents.subscribe",
-      "agents.subscriptions",
-      "agents.unsubscribe",
-    ]);
-  });
-
-  it("routes agents.setEvents and agents.setInstructions to the actors provider", async () => {
-    const calls: string[] = [];
-    const result = await new QuickJsRuntime().execute(
-      `
-await agents.setEvents({ id: "a1", events: ["turn_end"] });
-await agents.setInstructions({ id: "a1", instructions: "Be brief." });
-return { done: true };
-`,
-      async (ref, args) => {
-        calls.push(ref);
-        if (ref === "agents.setEvents") return { id: args.id, status: "idle", name: "x" };
-        if (ref === "agents.setInstructions") return { id: args.id, status: "idle", name: "x" };
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      options,
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toEqual({ done: true });
-    expect(calls).toEqual(["agents.setEvents", "agents.setInstructions"]);
-  });
 });
 
 describe("pi proxy silent repairs and envelope guard", () => {
