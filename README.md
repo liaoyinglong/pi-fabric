@@ -207,6 +207,10 @@ edit  -> edit
 write -> write
 ```
 
+## Verification
+
+`pnpm check` is the local release gate. It runs type checking, the distributable build and artifact assertions, the full Vitest suite, and dead-code analysis. GitHub Actions runs the same repository checks on both Ubuntu and Windows so platform-specific worker and type-checker regressions remain covered.
+
 ## Package surface
 
 The package registers only:
