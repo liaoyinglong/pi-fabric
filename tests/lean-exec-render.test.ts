@@ -98,6 +98,32 @@ describe("Lean fabric_exec TUI rendering", () => {
     expect(rendered).not.toContain("(no output)");
   });
 
+  it("keeps a short single-line result visible when collapsed", () => {
+    const rendered = renderResult("42 files", { elapsedMs: 80 });
+
+    expect(rendered).toContain("result › 42 files");
+  });
+
+  it("hides large result bodies while collapsed and only shows result metadata", () => {
+    const output = Array.from({ length: 30 }, (_, index) => `line-${index + 1}`).join("\n");
+    const rendered = renderResult(output, { elapsedMs: 80 });
+
+    expect(rendered).toContain("result · 30 lines");
+    expect(rendered).toContain("Ctrl+O to inspect");
+    expect(rendered).not.toContain("line-1");
+    expect(rendered).not.toContain("line-30");
+  });
+
+  it("bounds expanded result previews instead of flooding the TUI", () => {
+    const output = Array.from({ length: 55 }, (_, index) => `result-line-${index + 1}`).join("\n");
+    const rendered = renderResult(output, { elapsedMs: 80 }, { expanded: true });
+
+    expect(rendered).toContain("result · 55 lines");
+    expect(rendered).toContain("result-line-40");
+    expect(rendered).not.toContain("result-line-41");
+    expect(rendered).toContain("… 15 result lines hidden from TUI");
+  });
+
   it("shows a bounded write diff using the captured preview", () => {
     const rendered = renderResult(undefined, {
       audits: [{
