@@ -42,13 +42,23 @@ export const parseWorkerOptions = (
   const maxTokens = optional(args, "max-tokens");
   const runnerSessionId = optional(args, "runner-session-id");
   const mainAgentId = optional(args, "main-agent-id");
+  const cliAdapter = optional(args, "cli-adapter");
+  const cliBinary = optional(args, "cli-binary");
   const runner = required(args, "runner");
-  if (runner !== "pi" && runner !== "claude" && runner !== "veda") {
+  if (runner !== "pi" && runner !== "claude" && runner !== "cli") {
     throw new Error(`Unsupported Fabric agent runner: ${runner}`);
+  }
+  if (runner === "cli") {
+    if (cliAdapter !== "agy" && cliAdapter !== "droid") {
+      throw new Error(`Unsupported Fabric CLI adapter: ${cliAdapter ?? "<missing>"}`);
+    }
+    if (!cliBinary) throw new Error("Missing worker argument: --cli-binary");
   }
   return {
     id: required(args, "id"),
     runner,
+    ...(cliAdapter === "agy" || cliAdapter === "droid" ? { cliAdapter } : {}),
+    ...(cliBinary ? { cliBinary } : {}),
     name: required(args, "name"),
     taskFile: required(args, "task-file"),
     ...(imagesFile ? { imagesFile } : {}),
@@ -59,9 +69,6 @@ export const parseWorkerOptions = (
     cwd: required(args, "cwd"),
     piBinary: required(args, "pi-binary"),
     claudeBinary: required(args, "claude-binary"),
-    vedaBinary: required(args, "veda-binary"),
-    vedaBackend: required(args, "veda-backend"),
-    vedaPersona: required(args, "veda-persona"),
     timeoutMs: Number(required(args, "timeout-ms")),
     depth: Number(required(args, "depth")),
     fullCodeMode: required(args, "full-code-mode") === "true",
