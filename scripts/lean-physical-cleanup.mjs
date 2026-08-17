@@ -14,6 +14,14 @@ const replaceExact = (source, before, after, label) => {
   return next;
 };
 
+const removeBetween = (source, start, end, label) => {
+  const startIndex = source.indexOf(start);
+  if (startIndex < 0) throw new Error(`cleanup start anchor not found: ${label}`);
+  const endIndex = source.indexOf(end, startIndex);
+  if (endIndex < 0) throw new Error(`cleanup end anchor not found: ${label}`);
+  return source.slice(0, startIndex) + source.slice(endIndex);
+};
+
 const path = "src/runtime/quickjs-runtime.ts";
 let source = await read(path);
 
@@ -174,34 +182,10 @@ const __budgetedRun = async (args) => {
   "council/rlm budget helper",
 );
 
-source = replaceExact(
+source = removeBetween(
   source,
-  `globalThis.rlm = Object.freeze({
-  query: (args) => {
-    if (args && args.runner && args.runner !== "pi") {
-      throw new Error("rlm.query requires the Pi runner because recursive Fabric is unavailable in Claude Code");
-    }
-    return __budgetedRun({ ...args, runner: "pi", recursive: true });
-  },
-});
-globalThis.council = Object.freeze({
-  async run(args) {
-    const { task, roles, synthesize = true, ...agentOptions } = args;
-    const results = await Promise.all(roles.map((role) => __budgetedRun({
-      ...agentOptions,
-      name: role,
-      task: "Act as the " + role + " council member. Independently analyze this task:\\n\\n" + task,
-    })));
-    if (!synthesize) return results;
-    return __budgetedRun({
-      ...agentOptions,
-      name: "council-synthesizer",
-      task: "Synthesize the council's independent reports into one decision. Preserve disagreements and cite which role raised each concern.\\n\\nTask:\\n" + task + "\\n\\nReports:\\n" + JSON.stringify(results),
-    });
-  },
-});
-`,
-  "",
+  "globalThis.rlm = Object.freeze({",
+  "globalThis.console = Object.freeze({",
   "rlm/council globals",
 );
 
