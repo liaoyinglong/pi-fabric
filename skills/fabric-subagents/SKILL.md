@@ -15,6 +15,8 @@ const catalog = await agents.profiles({});
 return catalog.profiles;
 ```
 
+`agents.profiles()` returns `{ profiles, sources }`. Each profile has a `name`; there is no profile `id`. If the profile name is already known, call it directly instead of discovering first.
+
 Run a configured profile synchronously:
 
 ```ts
@@ -69,7 +71,9 @@ roles:
     thinking: high
 ```
 
-If `tools` is omitted, an ordinary one-shot child inherits the safe read-only allowlist `read`, `grep`, `find`, and `ls`. Add `bash`, `edit`, or `write` explicitly only for profiles that need execution or mutation. If `extensions` is omitted, ordinary Pi children do not auto-load extensions; this prevents an installed Fabric extension from capturing the child's core tools again. A profile can explicitly opt into extensions when it needs them.
+If `tools` is omitted, an ordinary one-shot child inherits the safe read-only allowlist `read`, `grep`, `find`, and `ls`. Add `bash`, `edit`, or `write` explicitly only for profiles that need execution or mutation.
+
+Pi extension discovery stays enabled by default. This is necessary for extensions that dynamically register model providers. Ordinary nested Pi children still do **not** enter Fabric again: when they discover the Fabric extension it detects one-shot child mode and stays inert, while the child's `--tools` allowlist remains the model-facing tool boundary. Set `extensions: false` explicitly only when the child genuinely needs no extension-provided model/provider or other extension behavior.
 
 Profile configuration owns `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, and `worktree`. The public `agents.run`/`spawn` call surface intentionally does not expose raw model-routing fields; change the profile when routing policy changes. Profile `instructions` are prepended to the child task.
 
@@ -79,7 +83,7 @@ For Veda, omit `model` and `persona` to use the current backend defaults. Add ei
 
 ## Minimal recursive delegation
 
-Use recursion only when one isolated child context is not enough. `agents.recurse` is deliberately small: it starts a recursive **Pi** profile, allows that child to use Lean Code Mode and delegate again, and returns only a compact result that omits the full run record.
+Use recursion only when one isolated child context is not enough. `agents.recurse` starts a recursive **Pi** profile, allows that child to use Lean Code Mode and delegate again, and returns only a compact result that omits the full run record.
 
 ```ts
 return await agents.recurse({
@@ -88,6 +92,8 @@ return await agents.recurse({
 });
 ```
 
-The profile selected by `agents.recurse` must resolve to `runner: pi`; Veda and Claude remain one-shot workers. Recursive Pi children force extensions on and add `fabric_exec` to their configured tool set because recursion requires Lean Code Mode in the child. Recursion is bounded by `agents.maxDepth`, the execution agent-call ceiling, child timeouts/token limits, and the shared `agents.budgetUsd` cost ledger when configured. Prefer ordinary `run`/`spawn` unless recursive decomposition materially reduces the parent context burden.
+The profile selected by `agents.recurse` must resolve to `runner: pi`; Veda and Claude remain one-shot workers. A recursive Pi child's model-facing execution gateway is `fabric_exec`; Lean hides the direct Pi core tools from that child model. The selected profile's original `tools` list is retained as the internal Code Mode capability grant, so recursion cannot expand authority. For example, a profile that only grants `read`, `grep`, `find`, and `ls` can use those actions through `pi.*` inside `fabric_exec`, but `pi.bash`, `pi.edit`, and `pi.write` are unavailable. Granted captured extension tool names are filtered the same way.
+
+Recursion is bounded by `agents.maxDepth`, the execution agent-call ceiling, child timeouts/token limits, and the shared `agents.budgetUsd` cost ledger when configured. Prefer ordinary `run`/`spawn` unless recursive decomposition materially reduces the parent context burden.
 
 The intended routing pattern is semantic: cheap profiles such as `research`/`explore` gather evidence, while `deep`/`review` handle difficult reasoning or independent verification. The main agent should choose the profile, not the provider/model identifier.
