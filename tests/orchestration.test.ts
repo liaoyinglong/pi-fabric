@@ -5,14 +5,21 @@ import {
 } from "../src/runtime/orchestration.js";
 
 describe("isBlockingOrchestrationRef", () => {
-  it("classifies only host calls that wait for child agent turns", () => {
+  it("classifies only supported calls that wait for child agent turns", () => {
     expect(isBlockingOrchestrationRef("agents.run")).toBe(true);
-    expect(isBlockingOrchestrationRef("agents.handoff")).toBe(false);
     expect(isBlockingOrchestrationRef("agents.wait")).toBe(true);
-    expect(isBlockingOrchestrationRef("agents.ask")).toBe(true);
-    expect(isBlockingOrchestrationRef("agents.spawn")).toBe(false);
-    expect(isBlockingOrchestrationRef("agents.status")).toBe(false);
-    expect(isBlockingOrchestrationRef("demo.slow")).toBe(false);
+    for (const ref of [
+      "agents.handoff",
+      "agents.ask",
+      "agents.spawn",
+      "agents.status",
+      "agents.roles",
+      "council.run",
+      "rlm.query",
+      "demo.slow",
+    ]) {
+      expect(isBlockingOrchestrationRef(ref)).toBe(false);
+    }
   });
 });
 
@@ -32,20 +39,21 @@ describe("codeUsesOrchestration", () => {
     ).toBe(true);
   });
 
-  it("detects direct blocking agents calls", () => {
+  it("detects direct supported blocking agent calls", () => {
     expect(codeUsesOrchestration('await agents.run({ task: "x" });')).toBe(true);
-    expect(codeUsesOrchestration('await agents.handoff({ model: "p/m" });')).toBe(false);
     expect(codeUsesOrchestration('await agents.wait({ id: h.id });')).toBe(true);
-    expect(codeUsesOrchestration('await agents.ask({ id, message: "go" });')).toBe(true);
   });
 
-  it("detects council and rlm entry points", () => {
-    expect(codeUsesOrchestration('await council.run({ task: "review", roles: ["a"] });')).toBe(true);
-    expect(codeUsesOrchestration('await rlm.query({ task: "map" });')).toBe(true);
+  it("ignores removed orchestration entry points", () => {
+    expect(codeUsesOrchestration('await agents.handoff({ model: "p/m" });')).toBe(false);
+    expect(codeUsesOrchestration('await agents.ask({ id, message: "go" });')).toBe(false);
+    expect(codeUsesOrchestration('await council.run({ task: "review", roles: ["a"] });')).toBe(false);
+    expect(codeUsesOrchestration('await rlm.query({ task: "map" });')).toBe(false);
   });
 
   it("ignores read-only and non-blocking agent calls", () => {
     expect(codeUsesOrchestration('return agents.list();')).toBe(false);
+    expect(codeUsesOrchestration('return agents.roles();')).toBe(false);
     expect(codeUsesOrchestration('return agents.status({ id });')).toBe(false);
     expect(
       codeUsesOrchestration('const h = await agents.spawn({ task: "x" }); return h;'),
