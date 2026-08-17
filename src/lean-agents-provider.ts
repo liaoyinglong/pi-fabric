@@ -102,12 +102,17 @@ export const LEAN_AGENT_ACTIONS: FabricActionDescriptor[] = [
 const strings = (value: unknown): string[] | undefined =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : undefined;
 
+const projectTrusted = (context: FabricInvocationContext): boolean =>
+  context.extensionContext.isProjectTrusted();
+
 const runRequest = (
   raw: Record<string, unknown>,
   context: FabricInvocationContext,
   manager: AgentManager,
 ): AgentRunRequest => {
-  const { args } = resolveSubagentRole(raw, manager.cwd);
+  const { args } = resolveSubagentRole(raw, manager.cwd, {
+    projectTrusted: projectTrusted(context),
+  });
   const runner = args.runner === "pi" || args.runner === "claude" || args.runner === "veda"
     ? args.runner
     : manager.config.runner;
@@ -179,7 +184,9 @@ export class LeanAgentsProvider implements FabricProvider {
       case "list":
         return this.manager.list();
       case "roles":
-        return describeSubagentRoles(this.manager.cwd);
+        return describeSubagentRoles(this.manager.cwd, {
+          projectTrusted: projectTrusted(context),
+        });
       case "models": {
         const runner = args.runner === "claude" || args.runner === "veda" || args.runner === "pi"
           ? args.runner
