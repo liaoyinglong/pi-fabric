@@ -24,16 +24,133 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Remove obsolete UI dependency and tighten dead-code gate
+      - name: Final Lean cleanup
         run: |
           pnpm remove shiki
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          const path = 'knip.json';
-          const data = JSON.parse(fs.readFileSync(path, 'utf8'));
-          delete data.ignoreDependencies;
-          fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
-          NODE
+          python <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"missing cleanup anchor in {path}: {old!r}")
+              p.write_text(text.replace(old, new))
+
+          # Tighten dead-dependency checking now that diff is a real Lean TUI
+          # dependency and shiki has been removed with its lockfile graph.
+          knip = Path("knip.json")
+          data = json.loads(knip.read_text())
+          data.pop("ignoreDependencies", None)
+          knip.write_text(json.dumps(data, indent=2) + "\n")
+
+          # Profiles select worker policy; recursion is an explicit call
+          # semantic owned only by agents.recurse.
+          replace("src/subagents/profiles.ts", "  recursive?: boolean;\n", "")
+          replace(
+              "src/subagents/profiles.ts",
+              '    ...(typeof input.recursive === "boolean" ? { recursive: input.recursive } : {}),\n',
+              "",
+          )
+          replace(
+              "src/subagents/profiles.ts",
+              '  ...(profile.recursive !== undefined ? { recursive: profile.recursive } : {}),\n',
+              "",
+          )
+
+          # Keep user docs inside the repository writing-style contract and
+          # remove implicit recursion from the profile contract.
+          replace(
+              "docs/configuration.md",
+              "model/runner/tool policy belongs in the profile file rather than the `agents.run` call.",
+              "model/runner/tool policy belongs in the profile file and stays out of the `agents.run` call.",
+          )
+          replace(
+              "docs/configuration.md",
+              "| `recursive` | Allow recursive Pi Code Mode when this profile is run internally |\n",
+              "",
+          )
+          replace(
+              "docs/lean-code-mode.md",
+              "extension policy, recursion capability, and worktree policy.",
+              "extension policy and worktree policy.",
+          )
+          replace(
+              "docs/lean-code-mode.md",
+              "selects semantic profiles rather than provider/model ids.",
+              "selects semantic profiles and leaves provider/model ids in configuration.",
+          )
+          replace(
+              "docs/lean-code-mode.md",
+              "returns a compact result instead of the full internal run record.",
+              "returns a compact result that omits the full internal run record.",
+          )
+          replace(
+              "docs/usage.md",
+              "`timeoutMs`, `extensions`, `recursive`, and `worktree`.",
+              "`timeoutMs`, `extensions`, and `worktree`.",
+          )
+          replace(
+              "docs/usage.md",
+              "The parent receives a compact result rather than the full internal run record.",
+              "The parent receives a compact result that omits the full internal run record.",
+          )
+
+          # Skill/reference text follows the same explicit-recursion contract.
+          replace(
+              "skills/fabric-subagents/SKILL.md",
+              "Route by semantic profile instead of choosing raw models in ordinary calls.",
+              "Route ordinary calls by semantic profile and keep raw model choices in configuration.",
+          )
+          replace(
+              "skills/fabric-subagents/SKILL.md",
+              "`timeoutMs`, `extensions`, `recursive`, and `worktree`.",
+              "`timeoutMs`, `extensions`, and `worktree`.",
+          )
+          replace(
+              "skills/fabric-subagents/SKILL.md",
+              "Fabric forwards those selections to Veda rather than maintaining its own Veda model or persona catalog.",
+              "Fabric forwards those selections to Veda and maintains no Veda model or persona catalog.",
+          )
+          replace(
+              "skills/fabric-subagents/SKILL.md",
+              "returns only a compact result instead of the full run record.",
+              "returns only a compact result that omits the full run record.",
+          )
+          replace(
+              "skills/fabric-subagents/SKILL.md",
+              "A recursive profile must resolve to `runner: pi`; Veda and Claude remain one-shot workers.",
+              "The profile selected by `agents.recurse` must resolve to `runner: pi`; Veda and Claude remain one-shot workers.",
+          )
+          replace(
+              "skills/fabric-exec/references/agents.md",
+              "`timeoutMs`, `extensions`, `recursive`, and `worktree`.",
+              "`timeoutMs`, `extensions`, and `worktree`.",
+          )
+          replace(
+              "skills/fabric-exec/references/agents.md",
+              "usage rather than the full internal run record.",
+              "usage and omits the full internal run record.",
+          )
+          replace(
+              "skills/fabric-exec/references/agents.md",
+              "A profile may opt into `recursive: true`, but prefer the explicit `agents.recurse(...)` call when recursion is part of the task semantics.\n\n",
+              "Recursion is enabled only by the explicit `agents.recurse(...)` call. Ordinary `run` and `spawn` remain one-shot.\n\n",
+          )
+
+          # Update the progressive-skill contract for renamed Lean sections.
+          replace(
+              "tests/skill-docs.test.ts",
+              'expect(skill).toContain("Named subagents");',
+              'expect(skill).toContain("Profile-based subagents");',
+          )
+          replace(
+              "tests/skill-docs.test.ts",
+              'expect(skill).toContain("Workflow composition");',
+              'expect(skill).toContain("Thin workflow composition");',
+          )
+          PY
       - run: pnpm check
       - name: Commit verified cleanup
         run: |
@@ -41,5 +158,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "chore: remove obsolete TUI dependency"
+          git commit -m "refactor: finalize Lean profile and dependency surface"
           git push origin HEAD:agent/code-mode-runtime-v2
