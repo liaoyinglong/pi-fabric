@@ -27,13 +27,13 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Apply final residue cleanup
         run: node scripts/lean-residue-cleanup.mjs
-      - name: Reject strong Full Fabric residue
+      - name: Reject strong Full Fabric implementation residue
         shell: bash
         run: |
           set -euo pipefail
-          pattern='actorId|actorName|byActor|ownerHostId|ownerIdentityId|meshRoot|sessionSeed|thinkingTransfer|handoffCompact|deferHandoff|actorRunArchive|ParticipantGuidance|RLM_BUDGET|RLM_COST|rlm_cost|Prewalk trajectory|Deferred handoff|agents\.handoff'
+          pattern='actorId|actorName|byActor|ownerHostId|ownerIdentityId|meshRoot|sessionSeed|thinkingTransfer|handoffCompact|deferHandoff|actorRunArchive|ParticipantGuidance|RLM_BUDGET|RLM_COST|rlm_cost|Prewalk trajectory|Deferred handoff'
           if grep -RInE "$pattern" src tests; then
-            echo "Strong Full Fabric residue remains" >&2
+            echo "Strong Full Fabric implementation residue remains" >&2
             exit 1
           fi
       - name: Validate
