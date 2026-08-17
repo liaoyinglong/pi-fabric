@@ -44,11 +44,11 @@ const shouldKeepSemanticDiagnostic = (diagnostic: ts.Diagnostic): boolean => {
   if (!TYPE_CORRECTNESS_CODES.has(diagnostic.code)) return true;
   if (diagnostic.code !== 2339 && diagnostic.code !== 2551) return false;
   const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
-  // Dynamic MCP namespaces and intentionally-wide agent unions still rely on
-  // property-miss tolerance. Plain string results do not: pi.read/grep/find/ls
-  // are stable string contracts, so object-style access such as .content or
-  // .matches should fail before the guest reaches QuickJS.
-  return /does not exist on type 'string'/.test(message);
+  // Dynamic MCP namespaces and intentionally-wide agent result unions still
+  // rely on property-miss tolerance. Stable primitive/catalog contracts do
+  // not: reject object-style access on Pi strings and the recurring
+  // agents.profiles() mistakes (catalog.find / profile.id) before QuickJS.
+  return /does not exist on type '(?:string|FabricSubagentProfileCatalog|FabricSubagentRoleInfo)'/.test(message);
 };
 
 const PI_CORE_ACTIONS = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
