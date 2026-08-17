@@ -44,7 +44,6 @@ roles:
     instructions: |
       Gather concrete evidence. Avoid architecture decisions unless requested.
     runner: veda
-    model: agy/gemini-flash
     persona: researcher
     thinking: low
     tools: [read, grep, find, ls]
@@ -75,5 +74,7 @@ Role defaults include `runner`, `transport`, `model`, `persona`, `thinking`, `to
 When `name` exactly matches a configured role, that profile is selected automatically. A `name` with no matching role remains an ordinary worker display name. Use this `name` form as the public Code Mode role selector.
 
 Project role files are skipped when Pi marks the project untrusted. Global roles and an explicit host-supplied `PI_FABRIC_SUBAGENTS_FILE` remain available.
+
+For Veda, omit `model` to use the current backend default. Add a Veda model value only after confirming the model identifier accepted by the installed Veda backend. Fabric forwards that value to Veda rather than maintaining its own Veda model catalog.
 
 Prefer semantic roles (`research`, `explore`, `deep`, `review`) over model names. This keeps model routing in configuration and lets the main agent decide what kind of worker it needs without binding workflow code to one provider implementation.
