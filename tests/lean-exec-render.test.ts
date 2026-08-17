@@ -60,16 +60,16 @@ describe("Lean fabric_exec TUI rendering", () => {
     expect(rendered).toContain("2 return files;");
   });
 
-  it("previews eight code lines collapsed and shows the full program expanded", () => {
-    const code = Array.from({ length: 12 }, (_, index) => `const line${index + 1} = ${index + 1};`).join("\n");
+  it("previews fifteen code lines collapsed and shows the full program expanded", () => {
+    const code = Array.from({ length: 18 }, (_, index) => `const line${index + 1} = ${index + 1};`).join("\n");
     const collapsed = renderCall({ code });
     const expanded = renderCall({ code }, true);
 
-    expect(collapsed).toContain("TypeScript · 12 lines");
-    expect(collapsed).toContain("const line8 = 8;");
-    expect(collapsed).not.toContain("const line9 = 9;");
-    expect(collapsed).toContain("… 4 lines hidden · Ctrl+O to expand");
-    expect(expanded).toContain("const line12 = 12;");
+    expect(collapsed).toContain("TypeScript · 18 lines");
+    expect(collapsed).toContain("const line15 = 15;");
+    expect(collapsed).not.toContain("const line16 = 16;");
+    expect(collapsed).toContain("… 3 lines hidden · Ctrl+O to expand");
+    expect(expanded).toContain("const line18 = 18;");
     expect(expanded).not.toContain("hidden");
   });
 
