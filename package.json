@@ -20,6 +20,7 @@
     "skills/fabric-exec/",
     "skills/fabric-subagents/",
     "skills/fabric-workflow/",
+    "docs/usage.md",
     "docs/lean-code-mode.md",
     "README.md",
     "LICENSE",
