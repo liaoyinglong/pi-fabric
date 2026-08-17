@@ -10,7 +10,7 @@ description: >-
 
 `fabric_exec` runs one type-checked TypeScript program in an isolated executor. Compose related calls in that program and return only the bounded value Main needs. `print()` and `console.log()` are diagnostics, not the returned result.
 
-The TUI always keeps generated TypeScript observable: collapsed cards show the first 8 lines, `Ctrl+O` expands the program, live nested calls show concise headlines, and write/edit activity includes a bounded diff preview.
+The TUI always keeps generated TypeScript observable: collapsed cards show the first 15 lines, `Ctrl+O` expands the program, live nested calls show concise headlines, and write/edit activity includes a bounded diff preview.
 
 ## Pi tools
 
@@ -33,6 +33,8 @@ Common forms:
 | `pi.bash` | command or `{ command, timeout?, settle? }` | envelope |
 | `pi.edit` | `{ path, oldText, newText }` or edit list | envelope |
 | `pi.write` | `{ path, content }` | envelope |
+
+Shell execution is `pi.bash(...)`; there is no `pi.exec`. Unknown `pi.*` members are rejected by the guest TypeScript checker before execution.
 
 Prefer search-before-read and bounded ranges. Avoid returning large raw tool results when a smaller derived value is enough.
 

@@ -40,6 +40,43 @@ const TYPE_CORRECTNESS_CODES = new Set<number>([
   7006, 7008, 7019, 7031, 7032, 7033, 7034,
 ]);
 
+const PI_CORE_ACTIONS = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
+const PI_CORE_ACTION_LIST = [...PI_CORE_ACTIONS].map((action) => `pi.${action}`).join(", ");
+
+const unknownPiCoreActionErrors = (sourceFile: ts.SourceFile): FabricTypeError[] => {
+  const errors: FabricTypeError[] = [];
+  const visit = (node: ts.Node): void => {
+    let action: string | undefined;
+    let nameNode: ts.Node | undefined;
+    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "pi") {
+      action = node.name.text;
+      nameNode = node.name;
+    } else if (
+      ts.isElementAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "pi" &&
+      node.argumentExpression &&
+      ts.isStringLiteralLike(node.argumentExpression)
+    ) {
+      action = node.argumentExpression.text;
+      nameNode = node.argumentExpression;
+    }
+    if (action && nameNode && !PI_CORE_ACTIONS.has(action)) {
+      const position = sourceFile.getLineAndCharacterOfPosition(nameNode.getStart(sourceFile));
+      errors.push({
+        line: Math.max(1, position.line),
+        column: position.character + 1,
+        message: `Unknown Pi core action: pi.${action}. Available actions: ${PI_CORE_ACTION_LIST}.${
+          action === "exec" ? " Use pi.bash for shell commands." : ""
+        }`,
+      });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return errors;
+};
+
 let nextCheckerId = 0;
 
 export const normalizeTypeScriptPath = (fileName: string): string =>
@@ -149,6 +186,7 @@ class FabricTypeChecker {
         message,
       };
     });
+    errors.push(...unknownPiCoreActionErrors(this.#sourceFile));
     if (errors.length > 0) return { errors };
 
     let javascript: string | undefined;

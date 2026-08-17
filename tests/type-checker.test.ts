@@ -48,6 +48,17 @@ return await agents.run({
     expect(rawRouting.errors.some((error) => error.message.includes("'runner' does not exist"))).toBe(true);
   });
 
+  it("rejects unknown Pi core actions before runtime", () => {
+    const result = typeCheckFabricCode(
+      'return await pi.exec("pwd");',
+      GUEST_TYPE_DECLARATIONS,
+    );
+    expect(result.errors.some((error) =>
+      error.message.includes("Unknown Pi core action: pi.exec") && error.message.includes("pi.bash")
+    )).toBe(true);
+    expect(result.javascript).toBeUndefined();
+  });
+
   it("accepts dynamic MCP namespaces and profile-based orchestration", () => {
     const result = typeCheckFabricCode(
       `

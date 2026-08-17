@@ -9,6 +9,7 @@ import {
 describe("Veda runner arguments", () => {
   it("builds a headless json argv with backend, persona, model, and isolated session", () => {
     const args = buildVedaArguments({
+      prompt: "test prompt",
       backend: "agy",
       persona: "navigator-plan",
       model: "agy/gemini-3.1-pro-high",
@@ -23,11 +24,25 @@ describe("Veda runner arguments", () => {
       "-r", "high",
       "--tools", "read,grep,glob",
       "--json", "--no-sel", "-S", "fabric-run-123", "--no-notify",
+      "--", "test prompt",
     ]);
+  });
+
+  it("passes arbitrary prompt text as one literal argument after --", () => {
+    const prompt = "-leading flag-like text\nsecond line";
+    const args = buildVedaArguments({
+      prompt,
+      backend: "agy",
+      persona: "navigator-chat",
+      tools: [],
+      session: "fabric-prompt",
+    });
+    expect(args.slice(-2)).toEqual(["--", prompt]);
   });
 
   it("forwards a custom persona name unchanged", () => {
     const args = buildVedaArguments({
+      prompt: "test prompt",
       backend: "agy",
       persona: "frontend",
       tools: [],
@@ -41,6 +56,7 @@ describe("Veda runner arguments", () => {
   it("forwards non-AGY Veda backends unchanged", () => {
     expect(
       buildVedaArguments({
+        prompt: "test prompt",
         backend: "claude-code",
         persona: "navigator-chat",
         tools: [],
@@ -49,6 +65,7 @@ describe("Veda runner arguments", () => {
     ).toContainEqual("claude-code");
     expect(
       buildVedaArguments({
+        prompt: "test prompt",
         backend: "codex",
         persona: "navigator-chat",
         tools: [],
@@ -59,6 +76,7 @@ describe("Veda runner arguments", () => {
 
   it("passes --no-tools when the allowlist is empty", () => {
     const args = buildVedaArguments({
+      prompt: "test prompt",
       backend: "agy",
       persona: "reviewer",
       tools: [],

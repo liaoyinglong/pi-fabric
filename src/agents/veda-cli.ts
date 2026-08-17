@@ -19,6 +19,7 @@ const VEDA_TOOL_NAMES: Readonly<Record<string, string>> = {
 };
 
 export interface VedaRunArguments {
+  prompt: string;
   backend: string;
   persona: string;
   model?: string;
@@ -58,9 +59,9 @@ export const vedaReasoning = (thinking: FabricThinking): string =>
   thinking === "off" || thinking === "minimal" ? "minimal" : thinking;
 
 /** Headless run arguments: veda -b <backend> -p <persona> [model/reasoning/
- *  tools] --json --no-sel -S <session> --no-notify. The task itself is
- *  delivered over stdin by the worker so arbitrarily long prompts never hit
- *  ARG_MAX. */
+ *  tools] --json --no-sel -S <session> --no-notify -- <prompt>. Veda parses
+ *  the prompt positionally; `--` keeps arbitrary task text from being parsed
+ *  as CLI flags. */
 export const buildVedaArguments = (options: VedaRunArguments): string[] => {
   const tools = mapVedaTools(options.tools);
   const args = ["-b", options.backend, "-p", options.persona];
@@ -69,5 +70,6 @@ export const buildVedaArguments = (options: VedaRunArguments): string[] => {
   if (tools.length > 0) args.push("--tools", tools.join(","));
   else args.push("--no-tools");
   args.push("--json", "--no-sel", "-S", options.session, "--no-notify");
+  args.push("--", options.prompt);
   return args;
 };

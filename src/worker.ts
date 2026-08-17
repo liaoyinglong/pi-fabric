@@ -319,6 +319,18 @@ const main = async (): Promise<void> => {
   }
   const claudeCli = options.runner === "claude" ? await loadClaudeCli() : undefined;
   const vedaCli = options.runner === "veda" ? await loadVedaCli() : undefined;
+  const vedaPrompt =
+    options.runner === "veda"
+      ? [
+          ...(options.systemPrompt
+            ? [`<system_instructions>\n${options.systemPrompt}\n</system_instructions>`]
+            : []),
+          ...(schema
+            ? [`Your final response must contain only JSON matching this schema, without Markdown fences:\n${schema}`]
+            : []),
+          task,
+        ].join("\n\n")
+      : undefined;
   const childArguments =
     options.runner === "claude"
       ? claudeCli!.buildClaudeArguments({
@@ -334,6 +346,7 @@ const main = async (): Promise<void> => {
         })
       : options.runner === "veda"
         ? vedaCli!.buildVedaArguments({
+            prompt: vedaPrompt!,
             backend: options.vedaBackend,
             persona: options.vedaPersona,
             ...(options.model ? { model: options.model } : {}),
@@ -902,20 +915,8 @@ const main = async (): Promise<void> => {
   if (options.runner === "claude") {
     writeClaudeInput("initial", task, images);
   } else if (options.runner === "veda") {
-    // Veda reads the prompt from stdin when no positional prompt is given.
-    // Mirror its <system_instructions> wrapping so systemPrompt and schema
-    // instructions reach the backend model.
-    const sections: string[] = [];
-    if (options.systemPrompt) {
-      sections.push(`<system_instructions>\n${options.systemPrompt}\n</system_instructions>`);
-    }
-    if (schema) {
-      sections.push(
-        `Your final response must contain only JSON matching this schema, without Markdown fences:\n${schema}`,
-      );
-    }
-    sections.push(task);
-    child.stdin?.write(sections.join("\n\n"));
+    // Veda receives its one-shot prompt positionally in childArguments.
+    // Close unused stdin so the child cannot wait on an input stream.
     child.stdin?.end();
   } else {
     child.stdin?.write(

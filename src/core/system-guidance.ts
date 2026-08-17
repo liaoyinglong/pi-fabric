@@ -1,6 +1,6 @@
 export const fabricExecutionKernelGuidance = (fullCodeMode: boolean): string =>
   fullCodeMode
-    ? "Pi Code Mode: use `fabric_exec` as the model-facing execution gateway. Call Pi core tools as `pi.*` inside `code`; compose related operations in one program and return only the bounded result needed by the caller."
+    ? "Pi Code Mode: use `fabric_exec` as the model-facing execution gateway. Pi core actions are `pi.read`, `pi.bash`, `pi.edit`, `pi.write`, `pi.grep`, `pi.find`, and `pi.ls`; run shell commands with `pi.bash` (`pi.exec` does not exist). Compose related operations in one program and return only the bounded result needed by the caller."
     : "Pi Fabric is in orchestration-only mode. Pi core and registered extension tools remain on their native direct execution path.";
 
 const dependencyAwareCompositionGuidance =

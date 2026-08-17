@@ -301,6 +301,12 @@ describe.skipIf(!hasWorker)("AgentManager real worker e2e", () => {
     }
   }, 30_000);
 
+  it("passes the complete Veda task as a positional prompt", async () => {
+    const result = await runVeda("success", "prompt-through-argv");
+    expect(result.status).toBe("completed");
+    expect(result.text).toContain("echo: prompt-through-argv");
+  }, 30_000);
+
   it("rejects recursive Fabric for the Veda runner", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-e2e-"));
     roots.push(root);
