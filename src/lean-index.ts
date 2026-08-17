@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { CapturedToolCatalog } from "./capture/catalog.js";
 import { installRegisteredToolCapture } from "./capture/interceptor.js";
+import { registerLeanFabricCommand } from "./commands/lean-fabric.js";
 import { DEFAULT_FABRIC_CONFIG } from "./config.js";
 import { coreOverridePromptGuidance } from "./core/core-override-guidance.js";
 import { PI_CORE_TOOL_NAME_SET } from "./core/pi-tools.js";
@@ -45,6 +46,8 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
   const runtime = new LeanCodeModeRuntime(pi, capturedTools, extensionPath);
   const fabricTool = createLeanFabricExecTool(runtime);
   let savedActiveTools: string[] | undefined;
+
+  registerLeanFabricCommand(pi, runtime);
 
   const inactiveCapturePolicy = {
     ...structuredClone(DEFAULT_FABRIC_CONFIG.capture),

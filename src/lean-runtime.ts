@@ -125,6 +125,10 @@ export class LeanCodeModeRuntime {
     return this.#registry;
   }
 
+  get agentManager(): AgentManager | undefined {
+    return this.#agents;
+  }
+
   async initialize(context: ExtensionContext): Promise<void> {
     if (this.#cwd === context.cwd && this.#execution) return;
     await this.close();

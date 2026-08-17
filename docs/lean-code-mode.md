@@ -24,7 +24,30 @@ Only the bounded program return is intended to reach Main. Intermediate tool res
 
 `fabric_exec` is the model-facing execution gateway over Pi core tools, captured Pi extension tools, optional MCP, and optional profile-based one-shot agents.
 
-The Lean TUI renderer is deliberately small but observable: it shows generated TypeScript, live nested tool headlines/progress, bounded write/edit diffs, and a concise completion result. It does not depend on the removed Fabric dashboard/control plane.
+The Lean TUI renderer is deliberately small but observable: it shows generated TypeScript, live nested tool headlines/progress, bounded write/edit diffs, and a concise completion result.
+
+### Lean dashboard
+
+`/fabric` opens a lightweight TUI overlay for runtime observability. It reads the existing `AgentManager` directly and does not recreate the removed Fabric state/control plane.
+
+The dashboard provides:
+
+- a live tree of top-level and recursive subagents;
+- status, runner, transport, model, current tool, call count, and token summaries;
+- live `events.jsonl` output for the selected agent, including recursive children;
+- keyboard navigation and guarded stop for top-level running agents;
+- a stacked layout on narrow terminals and a two-pane layout when space permits.
+
+Thin workflow helpers delegate through the same `agents.run` substrate, so workflow-launched agents appear in the same view without a second workflow state model.
+
+The command surface remains available for scripting or focused inspection:
+
+```text
+/fabric agents
+/fabric status <id>
+/fabric log <id> [--lines N]
+/fabric stop <id>
+```
 
 ### Tool capture
 
@@ -58,7 +81,8 @@ Typical catalog:
 ```yaml
 roles:
   research:
-    runner: veda
+    runner: cli
+    cli: agy
     thinking: low
     tools: [read, grep, find, ls]
 
@@ -74,8 +98,8 @@ roles:
     thinking: high
 
   review:
-    runner: pi
-    model: azure-openai-responses/gpt-5.6-sol
+    runner: cli
+    cli: droid
     thinking: high
     tools: [read, grep, find, ls]
 ```
@@ -144,9 +168,11 @@ Lean V2 does not expose or carry these product systems:
 - resident hosts
 - Component supervisor/model-guidance plane
 - trajectory handoff/session seeding/thinking transfer
-- Fabric dashboard/settings control plane
+- legacy Fabric dashboard/settings control plane
 - Fabric main-session compaction
 - advanced Full Fabric skills outside exec/subagents/workflow
+
+The Lean dashboard is intentionally not that legacy control plane: it is a thin view/controller over `AgentManager` only.
 
 The package ships only:
 
