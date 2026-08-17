@@ -30,6 +30,8 @@ global < trusted project < PI_FABRIC_CONFIG
 
 Project configuration is skipped when Pi marks the project untrusted. Changes to `fabric.json` take effect after the Lean runtime is initialized again, such as in a new Pi session. Named subagent role files are resolved per agent call.
 
+Configuration objects merge recursively. Scalar values replace earlier values. Arrays replace earlier arrays; they are not concatenated. This matters for fields such as `capture.keepVisible`, `agents.defaultTools`, and a role's `tools` list.
+
 ## `executor`
 
 | Field | Default | Meaning |
@@ -70,7 +72,7 @@ The defaults are `allow` for all five classes.
 | `cache.revalidate` | `changed` | `changed`, `all`, or `off` |
 | `cache.revalidateBudgetMs` | `60000` | Background descriptor revalidation budget |
 
-The descriptor cache is stored under the project Fabric directory when caching is enabled.
+The descriptor cache is stored under the project Fabric directory when caching is enabled. With `mcp.enabled: false`, Lean V2 does not register or warm the MCP provider, and the `mcp` guest global is omitted from that runtime's capability surface.
 
 ## `agents`
 
@@ -80,7 +82,7 @@ The descriptor cache is stored under the project Fabric directory when caching i
 | `runner` | `pi` | Default runner: `pi`, `claude`, or `veda` |
 | `transport` | `process` | Default transport |
 | `model` | unset | Default Pi child model; an unset Pi model can inherit the host model |
-| `thinking` | Fabric default | Default child reasoning level |
+| `thinking` | `medium` | Default child reasoning level |
 | `maxConcurrent` | `4` | Maximum concurrently managed children |
 | `maxPerExecution` | `100` | Maximum agent starts in one `fabric_exec` |
 | `maxDepth` | `2` | Maximum recursive Pi child depth |
@@ -88,11 +90,13 @@ The descriptor cache is stored under the project Fabric directory when caching i
 | `extensions` | `true` | Enables runner extensions for children |
 | `defaultTools` | Pi core tool set | Default portable child tool allowlist |
 | `retainRuns` | `false` | Keeps completed local run state when enabled |
-| `notifyOnComplete` | `true` | Allows detached spawned children to notify Main |
+| `notifyOnComplete` | `true` | Delivers a detached `agents.spawn` completion back to Main as a follow-up and triggers a turn |
 | `budgetUsd` | `0` | Shared child cost budget; `0` disables the budget |
 | `maxTokensPerChild` | `0` | Per-child cumulative token guard; `0` disables it |
 | `sessionExport` | `true` | Exports Pi-format usage records for child attribution |
 | `sessionExportDir` | empty | Optional explicit export directory |
+
+`agents.run` and `agents.wait` are foreground work for the current program. `agents.spawn` is detached until the program waits on its handle; when a detached run settles and `notifyOnComplete` is enabled, Lean V2 sends the bounded completion summary back to Main.
 
 ### Claude runner
 
@@ -142,7 +146,7 @@ Role precedence:
 global < trusted project < PI_FABRIC_SUBAGENTS_FILE < supported call overrides
 ```
 
-Project role files are skipped for untrusted projects. The explicit environment path is host supplied and remains eligible.
+Project role files are skipped for untrusted projects. The explicit environment path is host supplied and remains eligible. Role profiles merge field-by-field; a later `tools` array replaces the earlier role's `tools` array.
 
 ## `capture`
 
