@@ -27,7 +27,7 @@ export const createRunningRecord = (
   name: options.name,
   task,
   status: "running",
-  runner: options.runner === "veda" ? "pi" : options.runner,
+  runner: options.runner,
   ...(options.cliAdapter ? { cli: options.cliAdapter } : {}),
   transport: options.transport,
   cwd: options.cwd,
