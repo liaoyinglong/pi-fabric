@@ -1,0 +1,44 @@
+name: Lean Physical Cleanup
+
+on:
+  push:
+    branches: ["agent/code-mode-runtime-v2"]
+    paths:
+      - "scripts/lean-physical-cleanup.mjs"
+      - ".github/workflows/lean-physical-cleanup.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/code-mode-runtime-v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install ripgrep
+        run: sudo apt-get install -y ripgrep
+      - name: Apply physical cleanup
+        run: node scripts/lean-physical-cleanup.mjs
+      - name: Validate
+        run: pnpm check
+      - name: Commit cleanup
+        run: |
+          if git diff --quiet; then
+            echo "No cleanup changes"
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src tests
+          git commit -m "refactor: remove legacy QuickJS surfaces"
+          git push origin HEAD:agent/code-mode-runtime-v2
