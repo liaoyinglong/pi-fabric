@@ -5,10 +5,10 @@ A focused Programmatic Tool Calling runtime for Pi.
 Lean V2 keeps three product surfaces:
 
 1. **Code Mode (`fabric_exec`)**: one type-checked TypeScript program can call many tools, branch, loop, fan out, aggregate intermediate values, and return one bounded result to the model.
-2. **Profile-based one-shot subagents**: semantic profiles such as `research`, `explore`, `deep`, and `review` bind runner/model/thinking/tool policy in configuration instead of call sites.
+2. **Profile-based one-shot subagents**: semantic profiles such as `research`, `explore`, `deep`, and `review` keep runner/model/thinking/tool policy in configuration and keep those choices out of call sites.
 3. **Thin workflow composition**: ordinary TypeScript plus `agent`, `parallel`, `pipeline`, and phase helpers orchestrate the same one-shot substrate. If plain TypeScript is clearer, use plain TypeScript.
 
-A small `agents.recurse({ profile, task })` primitive is retained for bounded recursive Pi delegation. It is not a separate RLM provider or workflow system.
+A small `agents.recurse({ profile, task })` primitive is retained for bounded recursive Pi delegation. It is a primitive separate from the removed RLM provider and workflow systems.
 
 Lean V2 physically removes the persistent Fabric product systems outside this scope: Actor, Mesh, State, Schema runtime, Memory, RLM skills/providers, Prewalk, resident hosts, Component supervision, trajectory handoff, the Fabric dashboard, and main-session Fabric compaction.
 
@@ -53,9 +53,9 @@ Requires Node.js 24+ and Pi 0.80.6+.
 
 ## Start here
 
-- **[Usage Guide](docs/usage.md)** — installation, Code Mode, FFF/captured tools, MCP, profiles, Veda/AGY, workflow, recursion, troubleshooting.
-- **[Configuration Reference](docs/configuration.md)** — every Lean V2 configuration field and default.
-- **[Architecture](docs/lean-code-mode.md)** — implementation boundaries and removed systems.
+- **[Usage Guide](docs/usage.md)**: installation, Code Mode, FFF/captured tools, MCP, profiles, Veda/AGY, workflow, recursion, troubleshooting.
+- **[Configuration Reference](docs/configuration.md)**: every Lean V2 configuration field and default.
+- **[Architecture](docs/lean-code-mode.md)**: implementation boundaries and removed systems.
 
 ## Code Mode
 
@@ -83,7 +83,7 @@ Lean keeps the useful original Code Mode visibility without restoring the old da
 - collapsed cards show the first 8 lines; `Ctrl+O` expands the complete program;
 - running nested calls show concise tool headlines such as `pi.find`, `pi.bash`, and captured/MCP refs;
 - `write` and `edit` calls show a bounded diff preview;
-- a successful program with no returned value shows only the completion/activity summary instead of a synthetic `(no output)` result.
+- a successful program with no returned value shows only the completion/activity summary and does not create a synthetic `(no output)` result.
 
 ## Captured Pi extension tools
 
@@ -108,7 +108,7 @@ Captured tools remain registered in Pi so permission, audit, and lifecycle exten
 
 ## Semantic subagent profiles
 
-Profile definitions remain under `roles:` in configuration files for compatibility, but runtime selection uses the explicit `profile` field.
+Profile definitions remain under `roles:` in configuration files for compatibility. Runtime selection uses the explicit `profile` field.
 
 Global profiles:
 
@@ -171,9 +171,9 @@ const decision = await agents.run({
 return { catalog, decision: decision.text };
 ```
 
-`name` is now only an optional display name. Older code that used a matching `name` as the selector is accepted as a compatibility fallback, but new code should use `profile`.
+`name` is now only an optional display name. Older code that used a matching `name` as the selector is accepted as a compatibility fallback. New code should use `profile`.
 
-The public run/spawn surface intentionally does **not** expose raw `runner`, `model`, `persona`, `thinking`, `tools`, or `recursive` routing fields. Change the profile when routing policy changes.
+The public run/spawn surface intentionally excludes raw `runner`, `model`, `persona`, `thinking`, `tools`, or `recursive` routing fields. Change the profile when routing policy changes.
 
 ## Minimal recursive delegation
 
@@ -186,13 +186,13 @@ return agents.recurse({
 });
 ```
 
-The resolved profile must use the Pi runner. The child gets Lean Code Mode and may delegate again, subject to `agents.maxDepth`, per-execution agent-call limits, child timeout/token limits, and the shared cost ledger when `agents.budgetUsd` is configured. The result is compacted to the fields the parent needs rather than returning the complete internal run record.
+The resolved profile must use the Pi runner. The child gets Lean Code Mode and may delegate again, subject to `agents.maxDepth`, per-execution agent-call limits, child timeout/token limits, and the shared cost ledger when `agents.budgetUsd` is configured. The result contains only the fields the parent needs and omits the complete internal run record.
 
-This is intentionally a primitive, not a revived RLM subsystem.
+This is intentionally a primitive and does not revive the RLM subsystem.
 
 ## Thin workflow
 
-Workflow code chooses profiles, not models:
+Workflow code chooses profiles and keeps model selection in configuration:
 
 ```ts
 const findings = await parallel(
@@ -227,7 +227,7 @@ Workflow helpers exist only when they make orchestration clearer.
 
 Veda remains a one-shot runner. Configure its binary/backend defaults in `fabric.json`, then bind a semantic profile to `runner: veda`.
 
-If a Veda profile omits `model` and `persona`, the configured backend defaults are used. Fabric forwards explicit values to Veda rather than maintaining a model/persona catalog.
+If a Veda profile omits `model` and `persona`, the configured backend defaults are used. Fabric forwards explicit values to Veda and does not maintain a model/persona catalog.
 
 Portable tool mapping:
 
