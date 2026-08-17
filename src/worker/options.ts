@@ -59,11 +59,6 @@ export const parseWorkerOptions = (
     runner,
     ...(cliAdapter === "agy" || cliAdapter === "droid" ? { cliAdapter } : {}),
     ...(cliBinary ? { cliBinary } : {}),
-    // Internal defaults keep the pre-existing Pi/Claude worker's dead Veda
-    // branch type-safe. New runs never receive runner=veda from this parser.
-    vedaBinary: "veda",
-    vedaBackend: "agy",
-    vedaPersona: "navigator-chat",
     name: required(args, "name"),
     taskFile: required(args, "task-file"),
     ...(imagesFile ? { imagesFile } : {}),
