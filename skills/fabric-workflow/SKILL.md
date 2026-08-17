@@ -1,41 +1,61 @@
 ---
 name: fabric-workflow
-description: Runs a bounded Pi Fabric workflow with code-held phases, fan-out, pipelines, named subagent roles, and best-effort verification. Use for large audits, migrations, parallel research, or explicit workflow requests.
+description: Composes bounded profile-based subagents with ordinary TypeScript, parallel fan-out, pipelines, and phases. Use when explicit orchestration is clearer than a single agent call.
 disable-model-invocation: true
 ---
 
 # Fabric Workflow
 
-Put the complete loop, phases, and branches in one type-checked `fabric_exec` program. Pass the objective as `strings.task`.
+Workflow is a thin convenience layer over normal TypeScript and the same one-shot `agents.run` substrate. It is not a second agent runtime.
 
-Workflow is orchestration, not a second agent runtime. Its `agent(...)` helper ultimately delegates to the same one-shot `agents.run` substrate. A configured subagent role can therefore be selected by passing its semantic role name as `name`; if that name is not configured as a role, it remains an ordinary agent display name. Keep `label` unique for workflow progress.
+Prefer the smallest construct that makes the orchestration clearer:
 
-Core surfaces:
+- ordinary sequential `await` when one step depends on the previous result;
+- `Promise.all(...)` for a few independent calls when no workflow helper adds value;
+- `parallel(...)` when bounded concurrency or many mapped items makes the intent clearer;
+- `pipeline(...)` for repeated staged transforms over a collection;
+- `phase(...)` only when explicit progress boundaries help a long execution.
 
-- `agent(prompt, { label, name?, tools?, schema?, ... })` for a bounded worker; label every call. A matching `name` selects a configured subagent role.
-- `parallel(thunks, { concurrency })` for fan-out; pass functions, not promises.
-- `pipeline(items, ...stages)` for sequential stages per item with cross-item concurrency.
-- `workflow.configure`, `phase`, `workflow.item`, `workflow.event`, and `workflow.log` for dashboard progress.
-- `workflow.budget` plus top-level `agentBudget`/`tokenBudget` for bounded runs.
-
-Use JSON Schema when machine-readable output makes aggregation safer. A reliable shape is discover → analyze in checked batches → verify available findings. The example names evidence-gathering workers `explore` and the final verifier `review`; those names become role profiles when configured, otherwise the workflow still runs with normal agent defaults.
+A workflow worker chooses a semantic profile with `profile`. Model, runner, thinking, persona, and tool policy stay in `subagents.yaml` rather than in workflow code.
 
 ```ts
-type WorkOutcome =
-  | { item: string; status: "completed"; finding: string }
-  | { item: string; status: "failed" | "not_started"; error: string };
+const findings = await parallel(
+  ["auth", "routing", "caching"].map((topic) => () =>
+    agent(`Inspect ${topic} and return only concrete evidence.`, {
+      profile: "explore",
+      label: `explore ${topic}`,
+    })
+  ),
+  { concurrency: 3 },
+);
 
-await workflow.configure({
-  name: "Request analysis",
-  description: "Discover, analyze, and verify bounded work items",
-});
-await phase("Discover", { total: 1 });
-const inventory = await agent<{ items: string[] }>(
-  `Discover the bounded work items for this objective.\n\nObjective:\n${π.task}`,
+return await agent(
+  `Independently verify these findings and remove unsupported claims:\n${JSON.stringify(findings)}`,
   {
+    profile: "review",
+    label: "verify findings",
+  },
+);
+```
+
+For simple fan-out, direct TypeScript is preferable:
+
+```ts
+const [docs, code] = await Promise.all([
+  agents.run({ profile: "research", task: "Check the upstream docs." }),
+  agents.run({ profile: "explore", task: "Find the relevant implementation." }),
+]);
+return { docs, code };
+```
+
+Use schema output only when machine-readable aggregation materially reduces ambiguity:
+
+```ts
+const inventory = await agent<{ items: string[] }>(
+  `Find the bounded work items for this objective:\n${π.task}`,
+  {
+    profile: "explore",
     label: "inventory",
-    name: "explore",
-    tools: ["read", "grep", "find", "ls"],
     schema: {
       type: "object",
       properties: {
@@ -46,104 +66,10 @@ const inventory = await agent<{ items: string[] }>(
     },
   },
 );
-const items = [...new Set(inventory.items.map((item) => item.trim()).filter(Boolean))];
-if (items.length === 0) {
-  return {
-    status: "success",
-    coverage: { requested: 0, completed: 0 },
-    failures: [],
-    result: "No bounded work items were found.",
-  };
-}
-
-await phase("Analyze", { total: items.length });
-const outcomes: WorkOutcome[] = [];
-const batchSize = 8;
-for (let offset = 0; offset < items.length; offset += batchSize) {
-  const batch = items.slice(offset, offset + batchSize);
-  const settled = await parallel(
-    batch.map((item) => async (): Promise<WorkOutcome> => {
-      try {
-        const finding = await agent(
-          `Analyze this bounded item with evidence: ${item}\n\nObjective:\n${π.task}`,
-          {
-            label: `analyze ${item}`.slice(0, 50),
-            name: "explore",
-            tools: ["read", "grep", "find", "ls"],
-          },
-        );
-        return { item, status: "completed", finding };
-      } catch (error) {
-        return {
-          item,
-          status: "failed",
-          error: error instanceof Error ? error.message : String(error),
-        };
-      }
-    }),
-    { concurrency: batch.length },
-  );
-  outcomes.push(...settled);
-  if (settled.every((outcome) => outcome.status === "failed")) {
-    outcomes.push(...items.slice(offset + batch.length).map((item): WorkOutcome => ({
-      item,
-      status: "not_started",
-      error: "not started after an all-failed batch",
-    })));
-    break;
-  }
-}
-
-const completed = outcomes.filter(
-  (outcome): outcome is Extract<WorkOutcome, { status: "completed" }> =>
-    outcome.status === "completed",
-);
-const failures = outcomes.filter(
-  (outcome): outcome is Extract<WorkOutcome, { status: "failed" | "not_started" }> =>
-    outcome.status !== "completed",
-);
-const coverage = { requested: items.length, completed: completed.length };
-if (completed.length === 0) {
-  return {
-    status: "failed" as "success" | "partial" | "failed",
-    coverage,
-    failures,
-    result: null,
-    reason: "No worker completed successfully",
-  };
-}
-
-await phase("Verify", { total: 1 });
-try {
-  const result = await agent(
-    `Adversarially verify only these completed findings, remove unsupported claims, and do not infer anything about failed items.\n\nObjective:\n${π.task}\n\nFindings:\n${JSON.stringify(completed)}`,
-    {
-      label: "verify synthesis",
-      name: "review",
-      tools: ["read", "grep", "find", "ls"],
-    },
-  );
-  await workflow.event({ message: "Verification complete", level: "success" });
-  return {
-    status: failures.length === 0 ? "success" : "partial",
-    coverage,
-    failures,
-    result,
-  };
-} catch (error) {
-  return {
-    status: "partial",
-    coverage,
-    failures,
-    result: null,
-    verificationError: error instanceof Error ? error.message : String(error),
-    fallback: completed,
-  };
-}
 ```
 
-Adapt phases and tools to the request. For edits, partition path ownership or use `worktree: true`; never let concurrent workers edit the same files. Prefer cheap roles such as `research`/`explore` for evidence gathering and strong roles such as `deep`/`review` for difficult reasoning or verification. Explicit `model`, `thinking`, or `tools` on a one-off worker override role defaults when escalation is necessary.
+For editing workflows, avoid concurrent writes to the same files. Partition ownership, serialize dependent edits, or use a profile configured with `worktree: true` when isolation is useful.
 
-Successful verification returns compact output; raw findings return only if verification fails. `partial` is usable and must not trigger an automatic whole-workflow rerun—retry only failed items when their coverage matters.
+Use `agents.spawn` plus `status`/`steer` only for a valuable long-running Pi/Claude worker that must be observed between turns. Veda remains one-shot. Use `agents.recurse({ profile, task })` only when recursive decomposition is genuinely needed; do not turn ordinary workflow fan-out into recursion.
 
-Use `agents.spawn` plus `status`/`steer` instead of blocking `agent()` only when a valuable long-running worker must be observed and redirected between turns. Inventory is capped and checked batches stop new work after a systemic all-failed batch. Concurrent calls can still overshoot observational budgets because usage settles afterward; inspect `workflow.budget` when a workflow needs tighter accounting.
+The design rule is simple: if plain TypeScript is clearer, use plain TypeScript. Workflow helpers must reduce orchestration noise, not create a new abstraction layer.
