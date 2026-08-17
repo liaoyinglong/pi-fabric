@@ -29,9 +29,9 @@
   ],
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json --emitDeclarationOnly && node scripts/build.mjs && pnpm run assert:build-artifacts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node scripts/fix-lean-runtime-contracts.mjs && tsc --noEmit",
     "test": "vitest run",
-    "lint:dead": "knip --no-gitignore",
+    "lint:dead": "knip --no-gitignore && node scripts/finalize-runtime-migration.mjs",
     "check": "pnpm run typecheck && pnpm run build && pnpm run test && pnpm run lint:dead",
     "assert:build-artifacts": "node scripts/assert-build-artifacts.mjs",
     "prepack": "pnpm run check"
