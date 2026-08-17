@@ -49,6 +49,24 @@ pi -e /absolute/path/to/pi-fabric
 
 Requires Node.js 24+ and Pi 0.80.6+.
 
+## Start here
+
+For day-to-day setup and examples, read **[Lean V2 Usage Guide](docs/usage.md)**. It covers:
+
+- global and project `fabric.json`
+- `fabric_exec` and `pi.*`
+- captured extension tools such as FFF
+- MCP
+- named subagent role files
+- Pi / Claude / Veda runners
+- Veda + AGY routing
+- Herdr and other transports
+- workflow examples
+- migration from full Fabric
+- troubleshooting
+
+For implementation boundaries and removed systems, read **[Lean Code Mode V2 Architecture](docs/lean-code-mode.md)**.
+
 ## Code Mode
 
 The model-facing execution gateway is `fabric_exec`.
@@ -102,8 +120,8 @@ roles:
     instructions: |
       Gather concrete evidence and return only material needed by the caller.
     runner: veda
-    model: agy/gemini-flash
-    persona: researcher
+    model: agy/gemini-3.1-pro-high
+    persona: navigator-chat
     thinking: low
     tools: [read, grep, find, ls]
 
@@ -224,8 +242,6 @@ The package registers and ships only:
 - `fabric-workflow`
 
 Pi's normal skill catalog is still available. Because Full Code Mode hides the model-facing `read` tool, the extension adapts Pi's progressive skill-loading instruction to use `pi.read` inside `fabric_exec`.
-
-See [`docs/lean-code-mode.md`](docs/lean-code-mode.md) for the runtime boundary and implementation notes.
 
 ## Development
 
