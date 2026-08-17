@@ -13,6 +13,10 @@
     "./protocol": {
       "types": "./dist/protocol.d.ts",
       "import": "./dist/protocol.js"
+    },
+    "./runtime-v2": {
+      "types": "./dist/runtime-v2.d.ts",
+      "import": "./dist/runtime-v2.js"
     }
   },
   "files": [
@@ -23,6 +27,7 @@
     "docs/usage.md",
     "docs/configuration.md",
     "docs/lean-code-mode.md",
+    "docs/runtime-v2.md",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md"

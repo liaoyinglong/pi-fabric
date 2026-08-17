@@ -5,6 +5,7 @@ const result = await build({
   entryPoints: {
     "lean-index": "src/lean-index.ts",
     protocol: "src/protocol.ts",
+    "runtime-v2": "src/runtime-v2.ts",
     worker: "src/worker-dispatch.ts",
   },
   outdir: "dist",
