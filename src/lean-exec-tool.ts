@@ -19,10 +19,10 @@ const displayValue = (value: unknown): { name?: string; description?: string } |
   return name || description ? { ...(name ? { name } : {}), ...(description ? { description } : {}) } : undefined;
 };
 
-const resultText = (value: unknown, format: string | undefined): string => {
+const resultText = (value: unknown, format: string | undefined): string | undefined => {
+  if (value === undefined) return undefined;
   if (format === "text" || format === "auto" || format === undefined) {
     if (typeof value === "string") return value;
-    if (value === undefined) return "(no output)";
     return JSON.stringify(value, null, 2);
   }
   if (format === "yaml") return stringifyYaml(value).trimEnd();
@@ -71,8 +71,9 @@ export const createLeanFabricExecTool = (
   renderResult(result, { expanded, isPartial }, theme) {
     return renderLeanExecResult(result, theme, expanded, isPartial);
   },
-  async execute(toolCallId, params, signal, _onUpdate, context) {
+  async execute(toolCallId, params, signal, onUpdate, context) {
     const code = Array.isArray(params.code) ? params.code.join("\n") : String(params.code ?? "");
+    const display = displayValue(params.display);
     const result = await runtime.execute({
       code,
       ...(params.strings ? { strings: params.strings } : {}),
@@ -81,7 +82,17 @@ export const createLeanFabricExecTool = (
       context,
       ...(typeof params.tokenBudget === "number" ? { tokenBudget: params.tokenBudget } : {}),
       ...(typeof params.agentBudget === "number" ? { agentBudget: params.agentBudget } : {}),
-      ...(displayValue(params.display) ? { display: displayValue(params.display)! } : {}),
+      ...(display ? { display } : {}),
+      onPartial(snapshot) {
+        onUpdate?.({
+          content: [],
+          details: {
+            audits: snapshot.audits,
+            phases: snapshot.phases,
+            ...(snapshot.progress ? { progress: snapshot.progress } : {}),
+          },
+        } as never);
+      },
     });
 
     if (!result.success) {
@@ -89,8 +100,9 @@ export const createLeanFabricExecTool = (
       throw new Error(typeErrors.length > 0 ? typeErrors.join("\n") : result.error ?? "Code Mode execution failed");
     }
 
+    const text = resultText(result.value, params.resultFormat);
     return {
-      content: [{ type: "text", text: resultText(result.value, params.resultFormat) }],
+      content: text === undefined || text === "" ? [] : [{ type: "text", text }],
       details: {
         success: true,
         elapsedMs: result.elapsedMs,
