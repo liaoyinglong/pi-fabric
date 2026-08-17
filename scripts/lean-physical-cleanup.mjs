@@ -22,11 +22,62 @@ const removeBetween = (source, start, end, label) => {
   return source.slice(0, startIndex) + source.slice(endIndex);
 };
 
-const path = "src/runtime/quickjs-runtime.ts";
-let source = await read(path);
+const findCallEnd = (source, callStart) => {
+  let paren = 0;
+  let brace = 0;
+  let bracket = 0;
+  let quote = null;
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+  for (let i = callStart; i < source.length; i++) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (lineComment) {
+      if (ch === "\n") lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (ch === "*" && next === "/") { blockComment = false; i++; }
+      continue;
+    }
+    if (quote) {
+      if (escaped) { escaped = false; continue; }
+      if (ch === "\\") { escaped = true; continue; }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "/" && next === "/") { lineComment = true; i++; continue; }
+    if (ch === "/" && next === "*") { blockComment = true; i++; continue; }
+    if (ch === "\"" || ch === "'" || ch === "`") { quote = ch; continue; }
+    if (ch === "(") paren++;
+    else if (ch === ")") paren--;
+    else if (ch === "{") brace++;
+    else if (ch === "}") brace--;
+    else if (ch === "[") bracket++;
+    else if (ch === "]") bracket--;
+    if (paren === 0 && brace === 0 && bracket === 0 && i > callStart) {
+      let end = i + 1;
+      while (source[end] === ";" || source[end] === "\r" || source[end] === "\n") end++;
+      return end;
+    }
+  }
+  throw new Error("unterminated test call");
+};
 
-source = replaceExact(
-  source,
+const removeTest = (source, title) => {
+  const variants = [`  it(\"${title}\"`, `  test(\"${title}\"`];
+  const start = variants.map((needle) => source.indexOf(needle)).find((index) => index >= 0);
+  if (start === undefined) throw new Error(`test not found: ${title}`);
+  return source.slice(0, start) + source.slice(findCallEnd(source, start));
+};
+
+// 1) Shrink the QuickJS guest runtime to the Lean V2 surface.
+const quickjsPath = "src/runtime/quickjs-runtime.ts";
+let quickjs = await read(quickjsPath);
+
+quickjs = replaceExact(
+  quickjs,
   `const __successfulCalls = [];
 const __resolvedCallRef = (ref, args) =>
   ref === "fabric.$call" && args && typeof args.ref === "string" ? args.ref : ref;
@@ -55,8 +106,8 @@ const __call = async (ref, args) => {
   "handoff call tracking",
 );
 
-source = replaceExact(
-  source,
+quickjs = replaceExact(
+  quickjs,
   `globalThis.extensions = __providerProxy("extensions");
 globalThis.memory = __providerProxy("memory");
 globalThis.state = __providerProxy("state");
@@ -166,8 +217,8 @@ globalThis.agents = Object.freeze({
   "legacy providers and agent actions",
 );
 
-source = replaceExact(
-  source,
+quickjs = replaceExact(
+  quickjs,
   `// Budget-aware agents.run used by council.run and rlm.query so their usage is
 // counted in budget.spent() and the tokenBudget guard can preempt them, just
 // like workflow.agent(). Without this, councils bypass the budget entirely.
@@ -181,9 +232,8 @@ const __budgetedRun = async (args) => {
   "",
   "council/rlm budget helper",
 );
-
-source = removeBetween(
-  source,
+quickjs = removeBetween(
+  quickjs,
   "globalThis.rlm = Object.freeze({",
   "globalThis.console = Object.freeze({",
   "rlm/council globals",
@@ -202,10 +252,146 @@ for (const forbidden of [
   "agents.create",
   "agents.actorStatus",
 ]) {
-  if (source.includes(forbidden)) {
-    throw new Error(`legacy QuickJS surface remains: ${forbidden}`);
-  }
+  if (quickjs.includes(forbidden)) throw new Error(`legacy QuickJS surface remains: ${forbidden}`);
 }
+await write(quickjsPath, quickjs);
 
-await write(path, source);
-console.log("Lean QuickJS legacy globals removed");
+// 2) Remove the deferred handoff boundary from ExecutionService + protocol.
+const executionPath = "src/execution-service.ts";
+let execution = await read(executionPath);
+execution = replaceExact(execution, "  handoffRequest?: Record<string, unknown>;\n", "", "execution result handoff");
+execution = replaceExact(execution, "    let handoffRequest: Record<string, unknown> | undefined;\n", "", "execution handoff state");
+execution = replaceExact(
+  execution,
+  `      if (
+        ref !== "agents.run" &&
+        ref !== "agents.handoff" &&
+        ref !== "agents.spawn" &&
+        ref !== "agents.create"
+      ) return;`,
+  `      if (ref !== "agents.run" && ref !== "agents.spawn") return;`,
+  "agent budget legacy refs",
+);
+execution = replaceExact(
+  execution,
+  `        ...(ref === "agents.handoff"
+          ? {
+              deferHandoff(request: Record<string, unknown>) {
+                if (handoffRequest) {
+                  throw new Error(
+                    "Only one agents.handoff request is allowed per fabric_exec invocation",
+                  );
+                }
+                handoffRequest = structuredClone(request);
+                return {
+                  scheduled: true,
+                  status: "deferred",
+                  boundary: "fabric_exec_end",
+                };
+              },
+            }
+          : {}),
+`,
+  "",
+  "execution defer handoff hook",
+);
+execution = replaceExact(execution, "      ...(handoffRequest ? { handoffRequest } : {}),\n", "", "execution handoff return");
+if (execution.includes("handoffRequest") || execution.includes("deferHandoff")) {
+  throw new Error("ExecutionService handoff compatibility remains");
+}
+await write(executionPath, execution);
+
+const protocolPath = "src/protocol.ts";
+let protocol = await read(protocolPath);
+protocol = replaceExact(
+  protocol,
+  `  /** @internal Legacy ExecutionService test hook pending physical handoff cleanup. */
+  deferHandoff?(args: Record<string, unknown>): Record<string, unknown>;
+`,
+  "",
+  "protocol deferHandoff",
+);
+await write(protocolPath, protocol);
+
+// 3) Drop Full Fabric runtime tests and replace them with a Lean negative-surface contract.
+const quickjsTestPath = "tests/quickjs-runtime.test.ts";
+let quickjsTest = await read(quickjsTestPath);
+for (const title of [
+  "routes stable Fabric providers through first-class proxies",
+  "exposes durable mesh operations through the host bridge",
+  "counts council.run role usage toward budget.spent()",
+  "counts rlm.query usage and forces the Pi runner",
+  "preempts the council synthesizer when roles exhaust the token budget",
+  "gates handoff with a pure predicate over successful call facts",
+  "counts successful calls across Pi, extensions, MCP, and computed providers",
+  "does not call the host when the handoff predicate returns false",
+  "does not count failed mutation calls in handoff facts",
+  "rejects asynchronous handoff predicates",
+  "keeps immediate boundary scheduling available without a predicate",
+  "routes agents.main and Main steering through the agents provider",
+  "routes unified participant discovery through the agents provider",
+  "routes lifecycle subscriptions through the direct agents API",
+  "routes agents.setEvents and agents.setInstructions to the actors provider",
+]) quickjsTest = removeTest(quickjsTest, title);
+
+const negativeAnchor = `  it("does not expose Node globals", async () => {`;
+const negativeTest = `  it("does not expose removed Full Fabric globals or actor/participant actions", async () => {
+    const result = await new QuickJsRuntime().execute(
+      \`return {
+  memory: typeof memory,
+  state: typeof state,
+  schema: typeof schema,
+  components: typeof components,
+  compact: typeof compact,
+  mesh: typeof mesh,
+  rlm: typeof rlm,
+  council: typeof council,
+  handoff: typeof agents.handoff,
+  create: typeof agents.create,
+  main: typeof agents.main,
+  members: typeof agents.members,
+  subscribe: typeof agents.subscribe,
+};\`,
+      async () => undefined,
+      options,
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.value).toEqual({
+      memory: "undefined",
+      state: "undefined",
+      schema: "undefined",
+      components: "undefined",
+      compact: "undefined",
+      mesh: "undefined",
+      rlm: "undefined",
+      council: "undefined",
+      handoff: "undefined",
+      create: "undefined",
+      main: "undefined",
+      members: "undefined",
+      subscribe: "undefined",
+    });
+  });
+
+`;
+if (!quickjsTest.includes(negativeAnchor)) throw new Error("negative QuickJS test anchor not found");
+quickjsTest = quickjsTest.replace(negativeAnchor, negativeTest + negativeAnchor);
+await write(quickjsTestPath, quickjsTest);
+
+const executionTestPath = "tests/execution-service.test.ts";
+let executionTest = await read(executionTestPath);
+for (const title of [
+  "defers explicit handoff and completes every later call in the same program",
+  "applies the same deferred boundary through generic tools.call",
+]) executionTest = removeTest(executionTest, title);
+executionTest = replaceExact(
+  executionTest,
+  '    "finishes every nested call in the %s fabric_exec before handoff can be claimed",',
+  '    "finishes every nested call in the %s fabric_exec before returning the outer result",',
+  "execution test name",
+);
+executionTest = executionTest.replaceAll("pi-fabric-prewalk-", "pi-fabric-nested-calls-");
+executionTest = executionTest.replaceAll('parentToolCallId: "prewalk-complete-program"', 'parentToolCallId: "nested-calls-complete-program"');
+await write(executionTestPath, executionTest);
+
+console.log("Lean QuickJS and ExecutionService handoff surfaces removed");
