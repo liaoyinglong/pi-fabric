@@ -1,13 +1,6 @@
 import type { ImageContent } from "@earendil-works/pi-ai";
-import type {
-  SessionEntry,
-  SessionMessageEntry,
-} from "@earendil-works/pi-coding-agent";
 import type { FabricAgentRunner, FabricAgentTransport } from "../config.js";
-import type { ThinkingTransferInput } from "./thinking-transfer.js";
 import type { FabricThinking } from "../thinking.js";
-
-export type FabricParticipantResidency = "session" | "durable";
 
 export type AgentRunStatus =
   | "queued"
@@ -16,27 +9,6 @@ export type AgentRunStatus =
   | "failed"
   | "stopped"
   | "timed_out";
-
-export type AgentToolResultMessage = Extract<
-  SessionMessageEntry["message"],
-  { role: "toolResult" }
->;
-
-/** Legacy trajectory seed retained for child-worker compatibility. */
-export interface HandoffCompactionRequest {
-  instructions?: string;
-  preserve?: string[];
-}
-
-export interface AgentSessionSeed {
-  sourceSessionId: string;
-  sourceSessionFile?: string;
-  sourceBranchLeafId: string;
-  sourceBranch?: SessionEntry[];
-  sourceModel?: { provider: string; modelId: string };
-  sourceThinkingLevel?: string;
-  outerToolResult: AgentToolResultMessage;
-}
 
 export interface AgentRunRequest {
   task: string;
@@ -52,19 +24,10 @@ export interface AgentRunRequest {
   extensions?: boolean;
   recursive?: boolean;
   worktree?: boolean;
-  residency?: FabricParticipantResidency;
   schema?: Record<string, unknown>;
   systemPrompt?: string;
   sessionFile?: string;
-  actorId?: string;
-  actorName?: string;
-  capabilityRequirements?: string[];
-  capabilityDigest?: string;
-  meshRoot?: string;
   runnerSessionId?: string;
-  sessionSeed?: AgentSessionSeed;
-  thinkingTransfer?: ThinkingTransferInput | undefined;
-  handoffCompact?: HandoffCompactionRequest;
 }
 
 export interface AgentUsage {
@@ -104,12 +67,7 @@ export interface AgentRunRecord {
   cwd: string;
   model?: string;
   thinking?: FabricThinking;
-  actorId?: string;
-  actorName?: string;
-  capabilityRequirements?: string[];
-  capabilityDigest?: string;
   recursive?: boolean;
-  residency?: FabricParticipantResidency;
   startedAt: number;
   updatedAt: number;
   finishedAt?: number;
@@ -147,12 +105,7 @@ export interface AgentHandleInfo {
   cwd: string;
   model?: string;
   thinking?: FabricThinking;
-  actorId?: string;
-  actorName?: string;
-  capabilityRequirements?: string[];
-  capabilityDigest?: string;
   recursive?: boolean;
-  residency?: FabricParticipantResidency;
   sessionId?: string;
   runnerSessionId?: string;
   attachCommand?: string;
@@ -190,14 +143,7 @@ export interface AgentWorkerOptions {
   systemPrompt?: string;
   sessionFile?: string;
   sessionExportFile?: string;
-  actorId?: string;
-  actorName?: string;
-  capabilityRequirements?: string[];
-  capabilityDigest?: string;
-  meshRoot?: string;
   projectRoot?: string;
-  ownerHostId?: string;
-  ownerIdentityId?: string;
   runnerSessionId?: string;
   runRoot?: string;
   steerFile?: string;

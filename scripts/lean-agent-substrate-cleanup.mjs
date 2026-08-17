@@ -114,7 +114,7 @@ manager = removeBetween(
   `        ...(request.actorId ? ["--actor-id", request.actorId] : []),\n`,
   `        ...(request.runnerSessionId\n`,
   "worker actor/mesh arguments",
-  `        ...(request.runnerSessionId\n`,
+  "",
 );
 manager = manager.replaceAll(`        ...(request.actorId ? { actorId: request.actorId } : {}),\n`, "");
 manager = manager.replaceAll(`        ...(request.actorName ? { actorName: request.actorName } : {}),\n`, "");
@@ -139,7 +139,7 @@ workerOptions = removeBetween(
   `  const actorId = optional(args, "actor-id");\n`,
   `  const projectRoot = optional(args, "project-root");\n`,
   "worker option legacy parse",
-  `  const projectRoot = optional(args, "project-root");\n`,
+  "",
 );
 workerOptions = workerOptions.replace(`  const ownerHostId = optional(args, "owner-host-id");\n`, "");
 workerOptions = workerOptions.replace(`  const ownerIdentityId = optional(args, "owner-identity-id");\n`, "");
@@ -148,7 +148,7 @@ workerOptions = removeBetween(
   `    ...(actorId ? { actorId } : {}),\n`,
   `    ...(runnerSessionId ? { runnerSessionId } : {}),\n`,
   "worker option legacy result",
-  `    ...(projectRoot ? { projectRoot } : {}),\n    ...(runnerSessionId ? { runnerSessionId } : {}),\n`,
+  `    ...(projectRoot ? { projectRoot } : {}),\n`,
 );
 await write(optionsPath, workerOptions);
 
@@ -159,7 +159,7 @@ worker = removeBetween(
   `      ...(options.actorId ? { PI_FABRIC_ACTOR_ID: options.actorId } : {}),\n`,
   `      ...(options.projectRoot ? { PI_FABRIC_PROJECT_ROOT: options.projectRoot } : {}),\n`,
   "worker legacy environment prelude",
-  `      ...(options.projectRoot ? { PI_FABRIC_PROJECT_ROOT: options.projectRoot } : {}),\n`,
+  "",
 );
 worker = worker.replace(`      ...(options.ownerHostId ? { PI_FABRIC_OWNER_HOST_ID: options.ownerHostId } : {}),\n`, "");
 worker = worker.replace(`      ...(options.ownerIdentityId\n        ? { PI_FABRIC_OWNER_IDENTITY_ID: options.ownerIdentityId }\n        : {}),\n`, "");

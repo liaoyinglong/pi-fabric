@@ -6,7 +6,6 @@ import {
   FABRIC_RUN_ROOT_PREFIX,
   markRunRootActive,
   markRunRootClosed,
-  pruneActorRunArchives,
   sweepTempRunRoots,
 } from "../src/storage/retention.js";
 
@@ -84,10 +83,8 @@ describe("temporal retention", () => {
     markRunRootActive(runRoot, 1);
     const expired = path.join(runRoot, "expired");
     const fresh = path.join(runRoot, "fresh");
-    const actorTemp = path.join(runRoot, "actor-temp");
     writeStatus(expired, { status: "completed", finishedAt: DAY });
     writeStatus(fresh, { status: "completed", finishedAt: 2 * DAY });
-    writeStatus(actorTemp, { status: "failed", actorId: "actor-1", finishedAt: DAY });
     markRunRootClosed(runRoot, 2 * DAY);
 
     const result = sweepTempRunRoots({
@@ -97,32 +94,9 @@ describe("temporal retention", () => {
       now: 2 * DAY + 1,
     });
 
-    expect(result.removedRuns.sort()).toEqual([actorTemp, expired].sort());
+    expect(result.removedRuns).toEqual([expired]);
     expect(fs.existsSync(expired)).toBe(false);
-    expect(fs.existsSync(actorTemp)).toBe(false);
     expect(fs.existsSync(fresh)).toBe(true);
   });
 
-  it("expires actor archives after seven days while preserving the latest run", () => {
-    const root = temporaryDirectory();
-    const runsDirectory = path.join(root, "runs");
-    const expired = path.join(runsDirectory, "expired");
-    const latest = path.join(runsDirectory, "latest");
-    const fresh = path.join(runsDirectory, "fresh");
-    writeStatus(expired, { status: "completed", finishedAt: DAY });
-    writeStatus(latest, { status: "completed", finishedAt: DAY });
-    writeStatus(fresh, { status: "completed", finishedAt: 8 * DAY });
-
-    const removed = pruneActorRunArchives({
-      runsDirectory,
-      latestRunId: "latest",
-      retentionMs: 7 * DAY,
-      now: 8 * DAY + 1,
-    });
-
-    expect(removed).toEqual([expired]);
-    expect(fs.existsSync(expired)).toBe(false);
-    expect(fs.existsSync(latest)).toBe(true);
-    expect(fs.existsSync(fresh)).toBe(true);
-  });
 });

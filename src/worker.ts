@@ -362,18 +362,7 @@ const main = async (): Promise<void> => {
       ...(options.mainAgentId ? { PI_FABRIC_MAIN_AGENT_ID: options.mainAgentId } : {}),
       PI_FABRIC_GRANTED_RISKS: options.grantedRisks.join(","),
       PI_FABRIC_FULL_CODE_MODE: String(options.fullCodeMode),
-      ...(options.actorId ? { PI_FABRIC_ACTOR_ID: options.actorId } : {}),
-      ...(options.actorName ? { PI_FABRIC_ACTOR_NAME: options.actorName } : {}),
-      PI_FABRIC_CAPABILITY_REQUIREMENTS: JSON.stringify(
-        options.capabilityRequirements ?? [],
-      ),
-      PI_FABRIC_CAPABILITY_DIGEST: options.capabilityDigest ?? "",
-      ...(options.meshRoot ? { PI_FABRIC_MESH_ROOT: options.meshRoot } : {}),
       ...(options.projectRoot ? { PI_FABRIC_PROJECT_ROOT: options.projectRoot } : {}),
-      ...(options.ownerHostId ? { PI_FABRIC_OWNER_HOST_ID: options.ownerHostId } : {}),
-      ...(options.ownerIdentityId
-        ? { PI_FABRIC_OWNER_IDENTITY_ID: options.ownerIdentityId }
-        : {}),
       ...(options.runRoot ? { PI_FABRIC_RUN_ROOT: options.runRoot } : {}),
     },
     stdio: ["pipe", "pipe", "pipe"],
@@ -424,8 +413,6 @@ const main = async (): Promise<void> => {
       name: options.name,
       runner: options.runner,
       depth: options.depth,
-      ...(options.actorId ? { actorId: options.actorId } : {}),
-      ...(options.actorName ? { actorName: options.actorName } : {}),
       cumulativeTokens:
         snapshot.input + snapshot.output + snapshot.cacheRead + snapshot.cacheWrite,
       input: delta?.input ?? 0,

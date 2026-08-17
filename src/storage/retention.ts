@@ -16,7 +16,6 @@ interface RunRootOwner {
 
 interface RunRecordSummary {
   status?: string;
-  actorId?: string;
   finishedAt?: number;
   updatedAt?: number;
 }
@@ -82,7 +81,6 @@ const recordAgeReference = (record: RunRecordSummary, fallback: number): number 
 
 const pruneClosedRunRoot = (
   root: string,
-  orphanedTempRunRetentionMs: number,
   oneShotRunRetentionMs: number,
   now: number,
 ): string[] => {
@@ -100,9 +98,7 @@ const pruneClosedRunRoot = (
     if (!record?.status || !TERMINAL_STATUSES.has(record.status)) continue;
     let fallback = now;
     try { fallback = fs.statSync(runDirectory).mtimeMs; } catch {}
-    const retentionMs = record.actorId
-      ? orphanedTempRunRetentionMs
-      : oneShotRunRetentionMs;
+    const retentionMs = oneShotRunRetentionMs;
     if (now - recordAgeReference(record, fallback) < retentionMs) continue;
     fs.rmSync(runDirectory, { recursive: true, force: true });
     removed.push(runDirectory);
@@ -157,7 +153,6 @@ export const sweepTempRunRoots = (options: {
       result.removedRuns.push(
         ...pruneClosedRunRoot(
           root,
-          options.orphanedTempRunRetentionMs,
           options.oneShotRunRetentionMs,
           now,
         ),
@@ -175,32 +170,4 @@ export const sweepTempRunRoots = (options: {
     result.removedRoots.push(root);
   }
   return result;
-};
-
-export const pruneActorRunArchives = (options: {
-  runsDirectory: string;
-  latestRunId?: string;
-  retentionMs: number;
-  now?: number;
-}): string[] => {
-  const now = options.now ?? Date.now();
-  const removed: string[] = [];
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(options.runsDirectory, { withFileTypes: true });
-  } catch {
-    return removed;
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name === options.latestRunId) continue;
-    const runDirectory = path.join(options.runsDirectory, entry.name);
-    const record = readJson<RunRecordSummary>(path.join(runDirectory, "status.json"));
-    if (!record?.status || !TERMINAL_STATUSES.has(record.status)) continue;
-    let fallback = now;
-    try { fallback = fs.statSync(runDirectory).mtimeMs; } catch {}
-    if (now - recordAgeReference(record, fallback) < options.retentionMs) continue;
-    fs.rmSync(runDirectory, { recursive: true, force: true });
-    removed.push(runDirectory);
-  }
-  return removed;
 };

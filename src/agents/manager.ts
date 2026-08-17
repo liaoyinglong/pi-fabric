@@ -44,7 +44,6 @@ import type {
   AgentTransportLaunch,
 } from "./types.js";
 import { WorktreeManager } from "./worktree-manager.js";
-import { writeHandoffSession } from "./handoff.js";
 import {
   activeBudgetState,
   appendBudgetLedger,
@@ -117,7 +116,6 @@ interface ManagedAgent {
   task: string;
   runner: FabricAgentRunner;
   recursive: boolean;
-  residency: "session" | "durable";
   cwd: string;
   statusFile: string;
   lifecycleFile: string;
@@ -138,10 +136,6 @@ interface ManagedAgent {
   abortHandler: (() => void) | undefined;
   model?: string;
   thinking?: AgentRunRequest["thinking"];
-  actorId?: string;
-  actorName?: string;
-  capabilityRequirements?: string[];
-  capabilityDigest?: string;
   runnerSessionId?: string;
   branch?: string;
   worktree?: string;
@@ -312,7 +306,6 @@ const failedRecord = (
     runner: managed.runner,
     transport: managed.transport.kind,
     cwd: managed.cwd,
-    ...(managed.residency === "durable" ? { residency: "durable" as const } : {}),
     startedAt: now,
     updatedAt: now,
     finishedAt: now,
@@ -323,8 +316,6 @@ const failedRecord = (
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 },
     ...(managed.model ? { model: managed.model } : {}),
     ...(managed.thinking ? { thinking: managed.thinking } : {}),
-    ...(managed.actorId ? { actorId: managed.actorId } : {}),
-    ...(managed.actorName ? { actorName: managed.actorName } : {}),
     ...(managed.runnerSessionId ? { runnerSessionId: managed.runnerSessionId } : {}),
     ...(managed.transport.sessionId ? { sessionId: managed.transport.sessionId } : {}),
     ...(managed.transport.attachCommand ? { attachCommand: managed.transport.attachCommand } : {}),
@@ -348,10 +339,7 @@ export class AgentManager {
   readonly #currentDepth: number;
   readonly #fullCodeMode: boolean;
   readonly #mainAgentId: string | undefined;
-  readonly #meshRoot: string | undefined;
   readonly #projectRoot: string;
-  readonly #hostId: string | undefined;
-  readonly #identityId: string | undefined;
   readonly #transports: Map<FabricAgentTransport, AgentTransportAdapter>;
   readonly #onBackgroundComplete: ((result: AgentRunResult) => void) | undefined;
   readonly #onLifecycle: ((event: FabricLifecyclePublishRequest) => void) | undefined;
@@ -383,10 +371,7 @@ export class AgentManager {
       runRoot?: string;
       fullCodeMode?: boolean;
       mainAgentId?: string;
-      meshRoot?: string;
       projectRoot?: string;
-      hostId?: string;
-      identityId?: string;
       retention?: FabricRetentionConfig;
       onBackgroundComplete?: (result: AgentRunResult) => void;
       onLifecycle?: (event: FabricLifecyclePublishRequest) => void;
@@ -416,11 +401,8 @@ export class AgentManager {
     this.#fullCodeMode = options.fullCodeMode ?? true;
     this.#mainAgentId =
       options.mainAgentId ?? process.env.PI_FABRIC_MAIN_AGENT_ID;
-    this.#meshRoot = options.meshRoot ?? process.env.PI_FABRIC_MESH_ROOT;
     this.#projectRoot =
       options.projectRoot ?? process.env.PI_FABRIC_PROJECT_ROOT ?? cwd;
-    this.#hostId = options.hostId ?? process.env.PI_FABRIC_HOST_ID;
-    this.#identityId = options.identityId ?? process.env.PI_FABRIC_IDENTITY_ID;
     const inheritedBudget = activeBudgetState();
     this.#budget =
       inheritedBudget ??
@@ -481,10 +463,6 @@ export class AgentManager {
       throw new Error(`Fabric agent depth limit reached (${this.config.maxDepth})`);
     }
     if (!request.task.trim()) throw new Error("Agent task must not be empty");
-    const residency = request.residency ?? "session";
-    if (residency !== "session" && residency !== "durable") {
-      throw new Error(`Invalid Fabric agent residency: ${String(request.residency)}`);
-    }
     const runner = request.runner ?? this.config.runner;
     if (runner !== "pi" && runner !== "claude" && runner !== "veda") {
       throw new Error(`Unsupported Fabric agent runner: ${String(runner)}`);
@@ -501,12 +479,6 @@ export class AgentManager {
       throw new Error(
         "Veda runner does not support recursive Fabric. Use a Pi runner for recursive: true — Veda executes one headless prompt per invocation.",
       );
-    }
-    if (request.sessionSeed && runner !== "pi") {
-      throw new Error("Trajectory handoff sessions are only supported by the Pi runner");
-    }
-    if (request.sessionSeed && request.sessionFile) {
-      throw new Error("A agent request cannot combine sessionSeed with sessionFile");
     }
     const tools = this.#childTools(request, runner);
     if (runner === "claude") mapClaudeTools(tools);
@@ -573,15 +545,7 @@ export class AgentManager {
     }
 
     try {
-      const sessionFile = request.sessionSeed
-        ? writeHandoffSession(
-            request.sessionSeed,
-            agentCwd,
-            path.join(runDirectory, "handoff-session"),
-            request.thinkingTransfer,
-            request.handoffCompact,
-          )
-        : request.sessionFile;
+      const sessionFile = request.sessionFile;
       const adapter = await this.#resolveTransport(request.transport ?? this.config.transport);
       const timeoutMs = effectiveAgentTimeoutMs(
         this.config.timeoutMs,
@@ -652,21 +616,6 @@ export class AgentManager {
         ...(systemPrompt ? ["--system-prompt", systemPrompt] : []),
         ...(sessionFile ? ["--session-file", sessionFile] : []),
         ...(sessionExportFile ? ["--session-export-file", sessionExportFile] : []),
-        ...(request.actorId ? ["--actor-id", request.actorId] : []),
-        ...(request.actorName ? ["--actor-name", request.actorName] : []),
-        ...(request.capabilityRequirements
-          ? ["--capability-requirements", JSON.stringify(request.capabilityRequirements)]
-          : []),
-        ...(request.capabilityDigest
-          ? ["--capability-digest", request.capabilityDigest]
-          : []),
-        ...(request.meshRoot ?? this.#meshRoot
-          ? ["--mesh-root", request.meshRoot ?? this.#meshRoot!]
-          : []),
-        "--project-root",
-        this.#projectRoot,
-        ...(this.#hostId ? ["--owner-host-id", this.#hostId] : []),
-        ...(this.#identityId ? ["--owner-identity-id", this.#identityId] : []),
         ...(request.runnerSessionId
           ? ["--runner-session-id", request.runnerSessionId]
           : []),
@@ -701,7 +650,6 @@ export class AgentManager {
         task: request.task,
         runner,
         recursive,
-        residency,
         cwd: agentCwd,
         statusFile,
         lifecycleFile,
@@ -719,12 +667,6 @@ export class AgentManager {
         abortHandler: undefined,
         ...(model ? { model } : {}),
         ...(thinking ? { thinking } : {}),
-        ...(request.actorId ? { actorId: request.actorId } : {}),
-        ...(request.actorName ? { actorName: request.actorName } : {}),
-        ...(request.capabilityRequirements
-          ? { capabilityRequirements: [...request.capabilityRequirements] }
-          : {}),
-        ...(request.capabilityDigest ? { capabilityDigest: request.capabilityDigest } : {}),
         ...(request.runnerSessionId ? { runnerSessionId: request.runnerSessionId } : {}),
         ...(branch ? { branch } : {}),
         ...(worktree ? { worktree } : {}),
@@ -1000,7 +942,7 @@ export class AgentManager {
       });
     }
     const expired = [...this.#runs.values()].filter((managed) => {
-      if (!managed.settled || managed.actorId) return false;
+      if (!managed.settled) return false;
       const record = readRecord(managed.statusFile) ?? managed.latestRecord;
       const finishedAt = record?.finishedAt ?? record?.updatedAt;
       return typeof finishedAt === "number" && now - finishedAt >= this.#retention.oneShotRunMs;
@@ -1283,9 +1225,7 @@ export class AgentManager {
       id: managed.id,
       depth: this.#currentDepth + 1,
       runner: managed.runner,
-      ...(managed.actorId ? { actorId: managed.actorId } : {}),
-      ...(managed.actorName ? { actorName: managed.actorName } : {}),
-      cost,
+          cost,
       tokens,
       ts: Date.now(),
     });
@@ -1330,13 +1270,11 @@ export class AgentManager {
     try {
       this.#onLifecycle({
         source: {
-          id: managed.actorId ?? managed.id,
-          name: managed.actorName ?? managed.name,
-          kind: managed.actorId ? "actor" : "agent",
+          id: managed.id,
+          name: managed.name,
+          kind: "agent",
           rootId: this.#mainAgentId ?? managed.id,
           runner: managed.runner,
-          ...(this.#hostId ? { ownerHostId: this.#hostId } : {}),
-          ...(this.#identityId ? { ownerIdentityId: this.#identityId } : {}),
         },
         event,
         occurredAt,
@@ -1429,16 +1367,9 @@ export class AgentManager {
       runner: managed.runner,
       transport: managed.transport.kind,
       cwd: managed.cwd,
-      ...(managed.residency === "durable" ? { residency: "durable" as const } : {}),
-      ...(managed.model ? { model: managed.model } : {}),
+        ...(managed.model ? { model: managed.model } : {}),
       ...(managed.thinking ? { thinking: managed.thinking } : {}),
-      ...(managed.actorId ? { actorId: managed.actorId } : {}),
-      ...(managed.actorName ? { actorName: managed.actorName } : {}),
-      ...(managed.capabilityRequirements
-        ? { capabilityRequirements: [...managed.capabilityRequirements] }
-        : {}),
-      ...(managed.capabilityDigest ? { capabilityDigest: managed.capabilityDigest } : {}),
-      ...(managed.recursive ? { recursive: true } : {}),
+        ...(managed.recursive ? { recursive: true } : {}),
       ...(managed.runnerSessionId ? { runnerSessionId: managed.runnerSessionId } : {}),
       ...(managed.transport.sessionId ? { sessionId: managed.transport.sessionId } : {}),
       ...(managed.transport.attachCommand
@@ -1484,19 +1415,12 @@ export class AgentManager {
     return {
       ...safeRecord,
       runner: managed.runner,
-      ...(managed.residency === "durable" ? { residency: "durable" as const } : {}),
-      logFile: path.join(managed.runDirectory, "events.jsonl"),
+        logFile: path.join(managed.runDirectory, "events.jsonl"),
       ...(nestedAgents.length > 0 ? { nestedAgents } : {}),
       ...(budget ? { budget } : {}),
       ...(managed.model ? { model: managed.model } : {}),
       ...(managed.thinking ? { thinking: managed.thinking } : {}),
-      ...(managed.actorId ? { actorId: managed.actorId } : {}),
-      ...(managed.actorName ? { actorName: managed.actorName } : {}),
-      ...(managed.capabilityRequirements
-        ? { capabilityRequirements: [...managed.capabilityRequirements] }
-        : {}),
-      ...(managed.capabilityDigest ? { capabilityDigest: managed.capabilityDigest } : {}),
-      ...(managed.recursive ? { recursive: true } : {}),
+        ...(managed.recursive ? { recursive: true } : {}),
       ...(managed.runnerSessionId ? { runnerSessionId: managed.runnerSessionId } : {}),
       ...(managed.transport.sessionId ? { sessionId: managed.transport.sessionId } : {}),
       ...(managed.transport.attachCommand

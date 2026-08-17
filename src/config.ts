@@ -86,7 +86,6 @@ export interface FabricToolCaptureConfig {
 export interface FabricRetentionConfig {
   orphanedTempRunMs: number;
   oneShotRunMs: number;
-  actorRunArchiveMs: number;
 }
 
 /**
@@ -188,7 +187,6 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
   retention: {
     orphanedTempRunMs: 6 * 60 * 60 * 1_000,
     oneShotRunMs: 24 * 60 * 60 * 1_000,
-    actorRunArchiveMs: 7 * 24 * 60 * 60 * 1_000,
   },
   ui: { updateDebounceMs: 100 },
   schema: { mode: "off" },
@@ -350,7 +348,6 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
     retention: {
       orphanedTempRunMs: numberValue(retention.orphanedTempRunMs, DEFAULT_FABRIC_CONFIG.retention.orphanedTempRunMs, 0),
       oneShotRunMs: numberValue(retention.oneShotRunMs, DEFAULT_FABRIC_CONFIG.retention.oneShotRunMs, 0),
-      actorRunArchiveMs: numberValue(retention.actorRunArchiveMs, DEFAULT_FABRIC_CONFIG.retention.actorRunArchiveMs, 0),
     },
     ui: { updateDebounceMs: 100 },
     schema: { mode: "off" },
