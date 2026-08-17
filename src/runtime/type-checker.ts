@@ -207,7 +207,8 @@ class FabricTypeChecker {
   }
 
   check(code: string): FabricTypeCheckResult {
-    this.#sourceText = wrapFabricGuestCode(code);
+    const loweredCode = lowerGuestRuntimeAliases(code);
+    this.#sourceText = wrapFabricGuestCode(loweredCode);
     this.#sourceFile = ts.createSourceFile(
       this.#guestFile,
       this.#sourceText,
