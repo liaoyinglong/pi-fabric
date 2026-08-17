@@ -102,7 +102,7 @@ With `mcp.enabled: false`, Lean does not register/warm the MCP provider and omit
 
 These values are defaults and safety ceilings. Ordinary Code Mode calls should select a semantic `profile`; model/runner/tool policy belongs in the profile file and stays out of the `agents.run` call.
 
-If a one-shot profile omits `tools`, it inherits the read-only `read`, `grep`, `find`, and `ls` allowlist. Shell execution and writes (`bash`, `edit`, `write`) are opt-in through profile or host configuration. Extension discovery stays enabled by default so provider extensions such as dynamically registered model providers remain available in the child. When an ordinary child discovers Pi Fabric itself, Lean detects that it is a non-recursive Fabric child and stays inert instead of capturing the child's core tools again. The Pi `--tools` allowlist remains the model-facing tool boundary.
+If a one-shot profile omits `tools`, it inherits the read-only `read`, `grep`, `find`, and `ls` allowlist. Shell execution and writes (`bash`, `edit`, `write`) are opt-in through profile or host configuration. Extension discovery stays enabled by default so provider extensions such as dynamically registered model providers remain available in the child. When an ordinary child discovers Pi Fabric itself, Lean detects that it is a non-recursive Fabric child, stays inert, and leaves the child's core tools untouched. The Pi `--tools` allowlist remains the model-facing tool boundary.
 
 `agents.run` and `agents.wait` are foreground work. `agents.spawn` is detached until waited; when detached work settles and `notifyOnComplete` is enabled, Lean sends a bounded follow-up to Main.
 
