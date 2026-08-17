@@ -5,6 +5,7 @@ import {
   formatLeanFabricAgentList,
   formatLeanFabricLogLine,
 } from "../src/commands/lean-fabric.js";
+import { flattenLeanDashboardAgents } from "../src/ui/lean-dashboard.js";
 
 const run = (overrides: Partial<AgentRunRecord> = {}): AgentRunRecord => ({
   id: "1234567890abcdef",
@@ -41,6 +42,21 @@ describe("lean /fabric command formatting", () => {
     const output = formatLeanFabricAgentList([root]);
     expect(output).toContain("12345678 · running");
     expect(output).toContain("↳ abcdef12 · running");
+  });
+
+  it("flattens recursive agents for dashboard selection without a second runtime model", () => {
+    const grandchild = run({ id: "fedcba9876543210", name: "deep child" });
+    const child = run({
+      id: "abcdef1234567890",
+      name: "nested check",
+      nestedAgents: [grandchild],
+    });
+    const rows = flattenLeanDashboardAgents([run({ nestedAgents: [child] })]);
+    expect(rows.map((row) => [row.run.id.slice(0, 8), row.depth])).toEqual([
+      ["12345678", 0],
+      ["abcdef12", 1],
+      ["fedcba98", 2],
+    ]);
   });
 
   it("renders structured worker messages instead of raw JSONL", () => {
