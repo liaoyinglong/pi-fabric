@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { CapturedToolCatalog } from "./capture/catalog.js";
 import { loadFabricConfig, type FabricConfig } from "./config.js";
 import { ActionRegistry } from "./core/action-registry.js";
+import { PI_CORE_TOOL_NAME_SET } from "./core/pi-tools.js";
 import { FabricExecutionService, type FabricExecutionResult } from "./execution-service.js";
 import { AgentManager } from "./agents/manager.js";
 import { LeanAgentsProvider } from "./lean-agents-provider.js";
@@ -11,6 +12,7 @@ import { CapturedToolsProvider } from "./providers/captured-tools-provider.js";
 import { McpDescriptorCacheStore } from "./providers/mcp-descriptor-cache.js";
 import { McpProvider } from "./providers/mcp-provider.js";
 import { PiToolsProvider } from "./providers/pi-tools-provider.js";
+import { RestrictedFabricProvider } from "./providers/restricted-provider.js";
 
 const BACKGROUND_COMPLETION_MAX_CHARS = 8_000;
 
@@ -54,6 +56,28 @@ export const leanMcpCachePath = (
 ): string => projectTrusted
   ? path.join(projectRoot, ".pi", "fabric", "mcp-descriptors.json")
   : path.join(agentDir, "fabric", "mcp-descriptors.json");
+
+export interface RecursiveChildToolGrants {
+  piTools: string[];
+  extensionTools: string[];
+}
+
+/**
+ * A recursive Pi child is launched with its profile's original tool allowlist
+ * plus fabric_exec. Lean removes those direct tools from the child model, but
+ * keeps the original allowlist as a hard capability boundary inside Code Mode.
+ */
+export const recursiveChildToolGrants = (
+  activeTools: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+): RecursiveChildToolGrants | undefined => {
+  if (!env.PI_FABRIC_PARENT_RUN || env.PI_FABRIC_FULL_CODE_MODE !== "true") return undefined;
+  const granted = [...new Set(activeTools.filter((name) => name !== "fabric_exec"))];
+  return {
+    piTools: granted.filter((name) => PI_CORE_TOOL_NAME_SET.has(name)),
+    extensionTools: granted.filter((name) => !PI_CORE_TOOL_NAME_SET.has(name)),
+  };
+};
 
 const leanConfig = (
   context: ExtensionContext,
@@ -109,9 +133,19 @@ export class LeanCodeModeRuntime {
     const projectTrusted = context.isProjectTrusted();
     const config = leanConfig(context, agentDir, projectTrusted);
     const registry = new ActionRegistry();
+    const grants = recursiveChildToolGrants(this.pi.getActiveTools());
     const capturedProvider = new CapturedToolsProvider(this.capturedTools);
-    registry.register(new PiToolsProvider(context.cwd, this.capturedTools, capturedProvider));
-    registry.register(capturedProvider);
+    const piProvider = new PiToolsProvider(context.cwd, this.capturedTools, capturedProvider);
+    registry.register(
+      grants
+        ? new RestrictedFabricProvider(piProvider, grants.piTools)
+        : piProvider,
+    );
+    registry.register(
+      grants
+        ? new RestrictedFabricProvider(capturedProvider, grants.extensionTools)
+        : capturedProvider,
+    );
 
     const projectRoot = process.env.PI_FABRIC_PROJECT_ROOT ?? context.cwd;
     let mcp: McpProvider | undefined;
