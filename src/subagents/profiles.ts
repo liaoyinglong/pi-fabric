@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 
-type SubagentRoleRunner = "pi" | "claude" | "veda";
+type SubagentRoleRunner = "pi" | "claude" | "cli";
+type SubagentCliAdapter = "agy" | "droid";
 type SubagentRoleTransport = "auto" | "process" | "tmux" | "screen" | "localterm" | "herdr";
 type SubagentRoleThinking = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -11,9 +12,9 @@ interface SubagentRoleProfile {
   description?: string;
   instructions?: string;
   runner?: SubagentRoleRunner;
+  cli?: SubagentCliAdapter;
   transport?: SubagentRoleTransport;
   model?: string;
-  persona?: string;
   thinking?: SubagentRoleThinking;
   tools?: string[];
   timeoutMs?: number;
@@ -37,7 +38,8 @@ export interface SubagentRoleLoadOptions {
 }
 
 const ROLE_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
-const RUNNERS = new Set<SubagentRoleRunner>(["pi", "claude", "veda"]);
+const RUNNERS = new Set<SubagentRoleRunner>(["pi", "claude", "cli"]);
+const CLI_ADAPTERS = new Set<SubagentCliAdapter>(["agy", "droid"]);
 const TRANSPORTS = new Set<SubagentRoleTransport>([
   "auto",
   "process",
@@ -79,6 +81,9 @@ const roleProfile = (value: unknown): SubagentRoleProfile | undefined => {
   const runner = RUNNERS.has(input.runner as SubagentRoleRunner)
     ? input.runner as SubagentRoleRunner
     : undefined;
+  const cli = CLI_ADAPTERS.has(input.cli as SubagentCliAdapter)
+    ? input.cli as SubagentCliAdapter
+    : undefined;
   const transport = TRANSPORTS.has(input.transport as SubagentRoleTransport)
     ? input.transport as SubagentRoleTransport
     : undefined;
@@ -92,14 +97,13 @@ const roleProfile = (value: unknown): SubagentRoleProfile | undefined => {
   const description = nonEmptyString(input.description);
   const instructions = nonEmptyString(input.instructions);
   const model = nonEmptyString(input.model);
-  const persona = nonEmptyString(input.persona);
   return {
     ...(description ? { description } : {}),
     ...(instructions ? { instructions } : {}),
     ...(runner ? { runner } : {}),
+    ...(cli ? { cli } : {}),
     ...(transport ? { transport } : {}),
     ...(model ? { model } : {}),
-    ...(persona ? { persona } : {}),
     ...(thinking ? { thinking } : {}),
     ...(tools !== undefined ? { tools } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
@@ -174,9 +178,9 @@ const loadSubagentRoles = (
 
 const profileArgs = (profile: SubagentRoleProfile): Record<string, unknown> => ({
   ...(profile.runner ? { runner: profile.runner } : {}),
+  ...(profile.cli ? { cli: profile.cli } : {}),
   ...(profile.transport ? { transport: profile.transport } : {}),
   ...(profile.model ? { model: profile.model } : {}),
-  ...(profile.persona ? { persona: profile.persona } : {}),
   ...(profile.thinking ? { thinking: profile.thinking } : {}),
   ...(profile.tools !== undefined ? { tools: profile.tools } : {}),
   ...(profile.timeoutMs !== undefined ? { timeoutMs: profile.timeoutMs } : {}),
@@ -226,8 +230,8 @@ export const describeSubagentRoles = (
       name,
       ...(profile.description ? { description: profile.description } : {}),
       ...(profile.runner ? { runner: profile.runner } : {}),
+      ...(profile.cli ? { cli: profile.cli } : {}),
       ...(profile.model ? { model: profile.model } : {}),
-      ...(profile.persona ? { persona: profile.persona } : {}),
       ...(profile.thinking ? { thinking: profile.thinking } : {}),
       ...(profile.tools !== undefined ? { tools: profile.tools } : {}),
     })),
