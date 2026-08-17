@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 describe("subagent role profiles", () => {
-  it("applies role defaults while preserving explicit call overrides", () => {
+  it("applies profile defaults while preserving internal explicit overrides", () => {
     const root = project(`
 roles:
   research:
@@ -45,7 +45,7 @@ roles:
 `);
 
     const resolved = resolveSubagentRole({
-      role: "research",
+      profile: "research",
       task: "Inspect the authentication flow",
       model: "provider/strong",
     }, root);
@@ -56,13 +56,13 @@ roles:
     expect(resolved.args.thinking).toBe("low");
     expect(resolved.args.tools).toEqual(["read", "grep", "find", "ls"]);
     expect(resolved.args.name).toBe("research");
-    expect(String(resolved.args.task)).toContain("configured subagent role \"research\"");
+    expect(String(resolved.args.task)).toContain("configured subagent profile \"research\"");
     expect(String(resolved.args.task)).toContain("Gather evidence and cite concrete files.");
     expect(String(resolved.args.task)).toContain("Inspect the authentication flow");
-    expect(resolved.args.role).toBeUndefined();
+    expect(resolved.args.profile).toBeUndefined();
   });
 
-  it("accepts a matching name as a backwards-compatible role selector", () => {
+  it("keeps a matching name as a backwards-compatible selector only", () => {
     const root = project(`
 roles:
   review:
@@ -76,13 +76,13 @@ roles:
     expect(resolved.args.thinking).toBe("high");
   });
 
-  it("rejects an explicitly requested unknown role", () => {
+  it("rejects an explicitly requested unknown profile", () => {
     const root = project("roles: {}\n");
-    expect(() => resolveSubagentRole({ role: "missing", task: "x" }, root))
-      .toThrow("Unknown subagent role: missing");
+    expect(() => resolveSubagentRole({ profile: "missing", task: "x" }, root))
+      .toThrow("Unknown subagent profile: missing");
   });
 
-  it("does not load project role files for an untrusted project", () => {
+  it("does not load project profile files for an untrusted project", () => {
     const root = project(`
 roles:
   unsafe_project_role_9f31:
@@ -104,7 +104,7 @@ roles:
     expect(result.sources.some((source) => source.startsWith(root))).toBe(false);
   });
 
-  it("lists role metadata without returning role instructions", () => {
+  it("lists profile metadata without returning profile instructions", () => {
     const root = project(`
 roles:
   explore:
@@ -115,9 +115,9 @@ roles:
 `);
 
     const result = describeSubagentRoles(root) as {
-      roles: Array<Record<string, unknown>>;
+      profiles: Array<Record<string, unknown>>;
     };
-    expect(result.roles).toEqual([
+    expect(result.profiles).toEqual([
       {
         name: "explore",
         description: "Repository evidence gathering",
@@ -125,6 +125,6 @@ roles:
         thinking: "low",
       },
     ]);
-    expect(result.roles[0]?.instructions).toBeUndefined();
+    expect(result.profiles[0]?.instructions).toBeUndefined();
   });
 });
