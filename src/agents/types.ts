@@ -115,11 +115,19 @@ export interface AgentHandleInfo {
   worktree?: string;
 }
 
+/**
+ * Worker transport options. `veda` and its fields are retained only so the
+ * pre-existing Pi/Claude worker can still compile while the public Veda runner
+ * is removed. The dispatcher never routes new runs to that legacy branch.
+ */
 export interface AgentWorkerOptions {
   id: string;
-  runner: FabricAgentRunner;
+  runner: FabricAgentRunner | "veda";
   cliAdapter?: FabricCliAdapter;
   cliBinary?: string;
+  vedaBinary: string;
+  vedaBackend: string;
+  vedaPersona: string;
   name: string;
   taskFile: string;
   imagesFile?: string;
