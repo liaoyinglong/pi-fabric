@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Fabric Named Subagents
 
-Use named roles instead of choosing raw models in every prompt. Roles are configured globally in `~/.pi/agent/fabric/subagents.yaml` or per project in `.pi/fabric/subagents.yaml`. Project roles override global roles field-by-field.
+Use named roles instead of choosing raw models in every prompt. Roles are configured globally in `~/.pi/agent/fabric/subagents.yaml` or per project in `.pi/fabric/subagents.yaml`. Project roles override global roles field-by-field when Pi trusts the project.
 
 Discover the active role catalog through the generic Code Mode action surface:
 
@@ -70,8 +70,10 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-Role defaults include `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, `recursive`, and `worktree`. Explicit call arguments override role defaults. Role `instructions` are prepended to the child task.
+Role defaults include `runner`, `transport`, `model`, `persona`, `thinking`, `tools`, `timeoutMs`, `extensions`, `recursive`, and `worktree`. Explicit supported call arguments override role defaults. Role `instructions` are prepended to the child task.
 
-The lean runtime accepts both an explicit low-level `role` field and the compatibility form shown above. When `role` is omitted and `name` exactly matches a configured role, that profile is selected automatically. The compatibility form is preferred in Code Mode today because it already fits Fabric's existing static guest types; `name` remains an ordinary display name when it does not match a role.
+When `name` exactly matches a configured role, that profile is selected automatically. A `name` with no matching role remains an ordinary worker display name. Use this `name` form as the public Code Mode role selector.
 
-Prefer semantic roles (`research`, `explore`, `deep`, `review`) over model names. This keeps model routing in configuration and lets the main agent decide what kind of worker it needs rather than which provider implementation to call.
+Project role files are skipped when Pi marks the project untrusted. Global roles and an explicit host-supplied `PI_FABRIC_SUBAGENTS_FILE` remain available.
+
+Prefer semantic roles (`research`, `explore`, `deep`, `review`) over model names. This keeps model routing in configuration and lets the main agent decide what kind of worker it needs without binding workflow code to one provider implementation.
