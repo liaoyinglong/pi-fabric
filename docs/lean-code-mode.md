@@ -28,7 +28,7 @@ The Lean TUI renderer is deliberately small but observable: it shows generated T
 
 ### Lean dashboard
 
-`/fabric` opens a lightweight TUI overlay for runtime observability. It reads the existing `AgentManager` directly rather than recreating the removed Fabric state/control plane.
+`/fabric` opens a lightweight TUI overlay for runtime observability. It reads the existing `AgentManager` directly and does not recreate the removed Fabric state/control plane.
 
 The dashboard provides:
 
@@ -38,7 +38,7 @@ The dashboard provides:
 - keyboard navigation and guarded stop for top-level running agents;
 - a stacked layout on narrow terminals and a two-pane layout when space permits.
 
-Thin workflow helpers ultimately delegate through the same `agents.run` substrate, so workflow-launched agents appear in the same view without a second workflow state model.
+Thin workflow helpers delegate through the same `agents.run` substrate, so workflow-launched agents appear in the same view without a second workflow state model.
 
 The command surface remains available for scripting or focused inspection:
 
@@ -81,7 +81,8 @@ Typical catalog:
 ```yaml
 roles:
   research:
-    runner: veda
+    runner: cli
+    cli: agy
     thinking: low
     tools: [read, grep, find, ls]
 
@@ -97,8 +98,8 @@ roles:
     thinking: high
 
   review:
-    runner: pi
-    model: azure-openai-responses/gpt-5.6-sol
+    runner: cli
+    cli: droid
     thinking: high
     tools: [read, grep, find, ls]
 ```
