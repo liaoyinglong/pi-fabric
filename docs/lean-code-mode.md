@@ -1,6 +1,6 @@
 # Lean Code Mode V2 Architecture
 
-Pi Fabric Lean V2 is a Programmatic Tool Calling runtime for Pi. Its public runtime boundary is intentionally small:
+Pi Fabric Lean V2 is a Programmatic Tool Calling runtime for Pi. Its runtime boundary is intentionally small:
 
 ```text
 lean-index
@@ -13,45 +13,47 @@ lean-index
         -> agents.* when enabled
      -> FabricExecutionService
         -> QuickJS / node-process executor
-        -> workflow helpers
+        -> thin workflow helpers
 ```
 
-Only the value returned by the TypeScript program is intended to return to the main model. Intermediate tool results, loops, filtering, branching, and fan-out remain inside the execution runtime.
+Only the bounded program return is intended to reach Main. Intermediate tool results, loops, filtering, branching, and fan-out stay inside the execution runtime.
 
 ## Retained product systems
 
 ### Code Mode
 
-`fabric_exec` is the model-facing execution gateway. It provides typed TypeScript orchestration over Pi core tools, captured Pi extension tools, optional MCP, and optional one-shot agents.
+`fabric_exec` is the model-facing execution gateway over Pi core tools, captured Pi extension tools, optional MCP, and optional profile-based one-shot agents.
+
+The Lean TUI renderer is deliberately small but observable: it shows generated TypeScript, live nested tool headlines/progress, bounded write/edit diffs, and a concise completion result. It does not depend on the removed Fabric dashboard/control plane.
 
 ### Tool capture
 
-The capture layer observes Pi's internal `ExtensionRunner` registered-tool catalog. For each captured extension tool it keeps the real `RegisteredTool`, source metadata, owning runner, and wrapped executable tool. Calls made from Code Mode replay Pi's normal tool lifecycle so permission, audit, and other extension hooks can still participate.
+The capture layer observes Pi's internal `ExtensionRunner` registered-tool catalog. For each captured tool it keeps the real `RegisteredTool`, source metadata, owning runner, and executable wrapper. Code Mode calls replay Pi's normal tool lifecycle so permission/audit extensions can still participate.
 
-This is why ordinary Pi extension tools can remain installed normally and still be invoked through `extensions.*` without a custom adapter.
+This is why ordinary Pi extension tools can remain installed normally and still be invoked through `extensions.*` without a separate adapter.
 
 ### MCP
 
-When `mcp.enabled` is true, `McpProvider` is an ActionRegistry provider. Known tools can be called directly as `mcp.<server>.<tool>(args)` and dynamic refs can be discovered through `tools.search` / `tools.describe`.
+When enabled, `McpProvider` is an ActionRegistry provider. Known refs use `mcp.<server>.<tool>(args)` and unknown refs use `tools.search` / `tools.describe` / `tools.call`.
 
-When MCP is disabled, Lean V2 does not register or warm the provider and omits the `mcp` guest global from the active capability surface.
+When disabled, Lean does not register/warm MCP and omits the `mcp` guest global.
 
-For trusted projects, MCP discovery uses the project as its root. For untrusted projects, Lean V2 uses the user Agent directory as the mcporter discovery root and keeps the descriptor cache outside the repository, preventing project-local MCP/import configuration from being loaded through Fabric.
+For trusted projects, discovery can use the project root. For untrusted projects, Lean uses the user Agent directory as mcporter discovery root and keeps descriptor cache state outside the repository.
 
-### Named one-shot subagents
+### Profile-based one-shot subagents
 
-`LeanAgentsProvider` wraps the one-shot portion of `AgentManager`; the old persistent AgentsProvider is not part of the Lean public surface. When `agents.enabled` is false, Lean V2 does not create or register the agents provider and system guidance does not advertise semantic delegation.
+`LeanAgentsProvider` wraps the one-shot portion of `AgentManager`. There is no persistent Actor/participant layer.
 
-Role files:
+Configuration definitions remain under the historical `roles:` key:
 
 ```text
 ~/.pi/agent/fabric/subagents.yaml
 .pi/fabric/subagents.yaml
 ```
 
-Project role files are loaded only for projects Pi marks trusted. A role can bind its semantic name to runner, transport, model, persona, thinking, tools, instructions, timeout, extension policy, recursion, and worktree behavior. Trusted project fields override global fields, and explicit supported call arguments override role defaults.
+Project definitions are loaded only for trusted projects. A profile binds semantic purpose to runner, transport, model, persona, thinking, tools, instructions, timeout, extension policy, recursion capability, and worktree policy.
 
-Typical roles:
+Typical catalog:
 
 ```yaml
 roles:
@@ -78,46 +80,75 @@ roles:
     tools: [read, grep, find, ls]
 ```
 
-A Veda role can omit `model` and `persona` to inherit the installed backend defaults. Fabric forwards explicit selections to Veda and does not maintain its own Veda model/persona catalog.
+The public selector is explicit `profile`:
 
-Normal system guidance tells Main to discover `agents.roles({})` and prefer semantic roles over raw model ids when delegation is useful.
-
-### Workflow
-
-Workflow is orchestration only. It does not own a second agent runtime or model router.
-
-```text
-workflow
-  -> agent(..., { name: "explore" })
-  -> parallel(...)
-  -> pipeline(...)
-  -> agent(..., { name: "review" })
-        -> agents.run(...)
-        -> LeanAgentsProvider
-        -> AgentManager
+```ts
+agents.run({ profile: "explore", task: "..." })
 ```
 
-The workflow helper forwards its supported worker options, including `name`, to `agents.run`, so role selection follows the same resolver as a direct one-shot call.
+`name` is display-only in the public schema. Matching old `name` values remain an internal compatibility fallback. Raw runner/model/thinking/tool policy is intentionally absent from the model-facing run/spawn schema.
 
-## Physically removed product systems
+Main guidance discovers `agents.profiles({})` and selects semantic profiles rather than provider/model ids.
 
-Lean V2 does not expose these as user-facing providers, globals, skills, commands, or dashboard surfaces:
+### Thin workflow
 
-- Actors and mailboxes
-- Mesh and participant topology
+Workflow is syntax/concurrency convenience over ordinary TypeScript and the same `agents.run` substrate. It does not own a second agent runtime or router.
+
+```text
+plain await / Promise.all
+        |
+        +-- optional parallel / pipeline / phase helpers
+        |
+        `-- agent(..., { profile: "explore" })
+                    -> agents.run(...)
+                    -> LeanAgentsProvider
+                    -> AgentManager
+```
+
+The design rule is that helpers must reduce code/noise compared with plain TypeScript. For a few independent child calls, `Promise.all` is preferable to a workflow abstraction.
+
+### Minimal recursive delegation
+
+Lean retains one explicit recursive primitive:
+
+```ts
+agents.recurse({ profile: "deep", task: "..." })
+```
+
+This is not the removed RLM provider. It resolves the same semantic profile, requires the Pi runner, enables recursive Lean Code Mode for that child, and returns a compact result instead of the full internal run record.
+
+Existing guards provide bounded execution:
+
+```text
+maxDepth            recursive Pi depth
+maxPerExecution     run/spawn/recurse starts in one fabric_exec
+maxTokensPerChild   optional per-child token ceiling
+agents.timeoutMs    child deadline
+agents.budgetUsd    optional shared cost ledger across recursive Pi descendants
+```
+
+No recursive Actor tree, Mesh, scheduler, state layer, or separate workflow engine is introduced.
+
+## Physically removed systems
+
+Lean V2 does not expose or carry these product systems:
+
+- Actors/mailboxes and participant topology
+- Mesh
 - State
-- Schema runtime
+- Schema product runtime
 - Fabric Memory
-- RLM skill/provider surface
+- standalone RLM provider/skill
+- Councils and Swarms
 - Prewalk
 - resident hosts
-- Component supervisor and model-guidance plane
-- trajectory handoff
-- Fabric dashboard and settings command surface
+- Component supervisor/model-guidance plane
+- trajectory handoff/session seeding/thinking transfer
+- Fabric dashboard/settings control plane
 - Fabric main-session compaction
-- advanced Fabric skills outside exec/subagents/workflow
+- advanced Full Fabric skills outside exec/subagents/workflow
 
-The package ships only these Fabric skills:
+The package ships only:
 
 ```text
 fabric-exec
@@ -125,32 +156,29 @@ fabric-subagents
 fabric-workflow
 ```
 
-Pi's normal external/user skill catalog is still restored in Full Code Mode, with the progressive loading instruction adapted to use `pi.read` inside `fabric_exec`.
+Pi's normal external/user skill catalog remains available in Full Code Mode, with progressive loading adapted to `pi.read` inside `fabric_exec`.
 
 ## Physical cleanup status
 
-The Full Fabric product paths listed above are no longer merely hidden from the Lean public API:
+The systems above are not merely hidden:
 
-- QuickJS no longer creates Memory, State, Schema, Components, Mesh, Council, RLM, Actor, participant, or trajectory-handoff globals/helpers.
-- `FabricExecutionService` and `FabricInvocationContext` no longer carry deferred handoff state or hooks.
-- `AgentManager`, worker arguments, worker environment propagation, lifecycle records, and retention no longer carry Actor/Mesh identity, capability-digest ownership, durable residency, session-seed, or thinking-transfer fields.
-- Lifecycle and budget telemetry identify one-shot runs and runner attribution only; there is no Actor identity or Actor-specific rollup path.
-- trajectory handoff/session-seed source files and Actor archive retention have been removed.
+- QuickJS does not create Memory, State, Schema, Components, Mesh, Council, RLM, Actor, participant, or trajectory-handoff globals/helpers.
+- `FabricExecutionService` and invocation contexts carry no deferred handoff state.
+- `AgentManager`, worker args/environment, lifecycle records, and retention carry no Actor/Mesh identity, durable residency, capability ownership, session-seed, or thinking-transfer chain.
+- lifecycle/budget telemetry describes one-shot runs and runner attribution only.
 
-Lean intentionally retains one-shot child features that are useful independently of those systems: runner sessions for steering/follow-up, child compaction for running Pi workers, session export, worktrees, budgets, transports, and bounded recursive Pi children.
-
-`schema.mode` and `fullCodeMode` remain broad TypeScript fields only for low-level ExecutionService test coverage; the live Lean loader normalizes them to Full Code Mode with Schema off. They do not reconnect the removed Schema product runtime.
+Lean intentionally keeps standalone one-shot features that remain useful: runner sessions for steering/follow-up, child compaction, session export, worktrees, budgets, transports, and bounded recursive Pi children.
 
 ## Configuration boundary
 
-V2 keeps the established Fabric config locations for migration convenience:
+V2 keeps established Fabric config paths for migration convenience:
 
 ```text
 ~/.pi/agent/fabric.json
 .pi/fabric.json
 ```
 
-The lean product consumes these groups:
+Active groups:
 
 - `executor`
 - `approvals`
@@ -159,11 +187,13 @@ The lean product consumes these groups:
 - `capture`
 - `retention`
 
-Historical persistent-runtime keys do not activate removed providers. See [configuration.md](configuration.md) for the exact active fields and defaults.
+Historical persistent-runtime keys do not activate removed providers. See [configuration.md](configuration.md).
+
+`schema.mode` and `fullCodeMode` remain broad TypeScript fields only for low-level ExecutionService test compatibility; the live Lean loader normalizes to Full Code Mode with Schema off.
 
 ## Build boundary
 
-The distributable graph has three roots:
+Distributable roots:
 
 ```text
 src/lean-index.ts
@@ -171,6 +201,4 @@ src/protocol.ts
 src/worker.ts
 ```
 
-Both esbuild and declaration generation follow those roots. The build assertion rejects direct reachability of several heavyweight Full Fabric modules, including Actor manager, Mesh store, Schema controller, State store, Memory provider, resident host, and Prewalk modules.
-
-That assertion guards against accidentally reconnecting removed product runtimes. The shared QuickJS, ExecutionService, AgentManager, worker, and retention paths are also covered by Lean-specific tests and source-level contracts so the removed Actor/Mesh/trajectory surfaces do not silently return.
+esbuild and declaration generation follow those roots. Build assertions reject reachability of removed heavyweight product modules. Lean-specific runtime/type tests additionally lock the absence of removed guest globals and the profile-only model-facing agent contract.
