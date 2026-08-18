@@ -35,6 +35,27 @@ describe("FabricExecutionService", () => {
     }
   });
 
+  it("keeps explicit progress updates on the lightweight partial-result path", async () => {
+    const registry = new ActionRegistry();
+    const config = structuredClone(DEFAULT_FABRIC_CONFIG);
+    config.ui.updateDebounceMs = 0;
+    const partials: Array<{ progress?: string }> = [];
+
+    const result = await new FabricExecutionService(registry, config).execute({
+      code: 'await tools.progress({ message: "Halfway" }); return "done";',
+      signal: undefined,
+      parentToolCallId: "progress-test",
+      context: context(),
+      onPartial(snapshot) {
+        partials.push(snapshot);
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.value).toBe("done");
+    expect(partials).toContainEqual(expect.objectContaining({ progress: "Halfway" }));
+  });
+
   it.each(["quickjs", "node-process"] as const)(
     "waits for every nested write in the %s executor",
     async (runtime) => {
