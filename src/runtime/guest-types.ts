@@ -26,9 +26,6 @@ export const PI_CORE_NUMERIC_FIELDS = {
 export const GUEST_TYPE_DECLARATIONS = `
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
-type FabricTransport = "auto" | "process" | "tmux" | "screen" | "localterm" | "herdr";
-type FabricAgentRunner = "pi" | "claude" | "veda";
-type FabricThinking = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 interface FabricActionEffect {
   kind: "none" | "scoped" | "transactional" | "emission";
   resources?: string[];
@@ -46,20 +43,10 @@ interface FabricAction {
   effect?: FabricActionEffect;
 }
 interface FabricModelInfo {
-  runner?: FabricAgentRunner;
   provider: string;
   id: string;
   name: string;
   key: string;
-  value?: string;
-  resolvedModel?: string;
-  displayName?: string;
-  description?: string;
-  supportsEffort?: boolean;
-  supportedEffortLevels?: string[];
-  supportsAdaptiveThinking?: boolean;
-  supportsFastMode?: boolean;
-  supportsAutoMode?: boolean;
 }
 interface FabricCapabilityActionHead {
   key: string;
@@ -290,149 +277,10 @@ interface FabricMcpManagement {
 }
 type FabricMcpApi = Record<string, FabricMcpServer> & FabricMcpManagement;
 
-interface FabricAgentRequest {
-  task: string;
-  profile?: string;
-  name?: string;
-  timeoutMs?: number;
-  worktree?: boolean;
-  schema?: Record<string, unknown>;
-}
-interface FabricAgentHandle {
-  id: string;
-  name: string;
-  status: "queued" | "running" | "completed" | "failed" | "stopped" | "timed_out";
-  runner: FabricAgentRunner;
-  transport: FabricTransport;
-  cwd: string;
-  model?: string;
-  thinking?: FabricThinking;
-  sessionId?: string;
-  runnerSessionId?: string;
-  attachCommand?: string;
-  branch?: string;
-  worktree?: string;
-}
-interface FabricAgentUsage {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cost: number;
-}
-interface FabricAgentResult extends FabricAgentHandle {
-  task: string;
-  startedAt: number;
-  updatedAt: number;
-  finishedAt?: number;
-  turns: number;
-  toolCalls: number;
-  text: string;
-  value?: unknown;
-  error?: string;
-  stderr?: string;
-  exitCode?: number | null;
-  usage: FabricAgentUsage;
-  pendingMessages?: { steering: string[]; followUp: string[] };
-}
-interface FabricSubagentRoleInfo {
-  name: string;
-  description?: string;
-  runner?: FabricAgentRunner;
-  model?: string;
-  persona?: string;
-  thinking?: FabricThinking;
-  tools?: string[];
-}
-interface FabricSubagentProfileCatalog {
-  profiles: FabricSubagentRoleInfo[];
-  sources: string[];
-}
-type FabricAgentTargetArgs = { id: string };
-interface FabricAgentsApi {
-  run(args: FabricAgentRequest): Promise<FabricAgentResult>;
-  spawn(args: FabricAgentRequest): Promise<FabricAgentHandle>;
-  wait(args: FabricAgentTargetArgs): Promise<FabricAgentResult>;
-  status(args: FabricAgentTargetArgs): Promise<FabricAgentResult | FabricAgentHandle>;
-  list(args?: Record<string, never>): Promise<Array<FabricAgentResult | FabricAgentHandle>>;
-  profiles(args?: Record<string, never>): Promise<FabricSubagentProfileCatalog>;
-  recurse(args: FabricAgentRequest & { profile: string }): Promise<{
-    id: string;
-    name: string;
-    status: FabricAgentResult["status"];
-    text: string;
-    value?: unknown;
-    error?: string;
-    turns: number;
-    toolCalls: number;
-    usage: FabricAgentUsage;
-  }>;
-  stop(args: FabricAgentTargetArgs): Promise<FabricAgentResult>;
-  cleanup(args: FabricAgentTargetArgs & { deleteBranch?: boolean }): Promise<{ cleaned: boolean }>;
-  steer(args: FabricAgentTargetArgs & { message: string; data?: unknown }): Promise<{ queued: true; messageId: string }>;
-  followUp(args: FabricAgentTargetArgs & { message: string; data?: unknown }): Promise<{ queued: true; messageId: string }>;
-  setSteeringMode(args: FabricAgentTargetArgs & { mode: "all" | "one-at-a-time" }): Promise<{ queued: true; messageId: string }>;
-  setFollowUpMode(args: FabricAgentTargetArgs & { mode: "all" | "one-at-a-time" }): Promise<{ queued: true; messageId: string }>;
-  compact(args: FabricAgentTargetArgs & { instructions?: string }): Promise<unknown>;
-}
-
-interface FabricWorkflowAgentOptions extends Omit<FabricAgentRequest, "task"> {
-  label?: string;
-}
-type FabricActivityStatus = "pending" | "running" | "completed" | "failed" | "blocked" | "stopped";
-type FabricActivityKind = "agent" | "tool" | "extension" | "mcp" | "task" | "custom";
-interface FabricWorkflowDisplay {
-  name?: string;
-  description?: string;
-}
-interface FabricWorkflowPhaseOptions {
-  id?: string;
-  description?: string;
-  total?: number;
-}
-interface FabricWorkflowPhaseInput extends FabricWorkflowPhaseOptions {
-  name: string;
-}
-interface FabricWorkflowItem {
-  id: string;
-  label: string;
-  status?: FabricActivityStatus;
-  phase?: string;
-  detail?: string;
-  kind?: FabricActivityKind;
-  current?: string;
-  total?: number;
-  completed?: number;
-  data?: unknown;
-}
-interface FabricWorkflowApi {
-  agent<T = string>(prompt: string, options?: FabricWorkflowAgentOptions): Promise<T>;
-  parallel<T, R>(items: T[], mapper: (item: T, index: number) => Promise<R> | R, concurrency?: number | { concurrency?: number }): Promise<R[]>;
-  parallel<T>(thunks: Array<() => Promise<T> | T>, concurrency?: number | { concurrency?: number }): Promise<T[]>;
-  pipeline<T>(items: T[], ...stages: Array<(value: unknown, original: T, index: number) => Promise<unknown> | unknown>): Promise<unknown[]>;
-  configure(display: FabricWorkflowDisplay): Promise<FabricWorkflowDisplay>;
-  phase(name: string, options?: FabricWorkflowPhaseOptions): Promise<{ name: string; index: number; id?: string }>;
-  phase(input: FabricWorkflowPhaseInput): Promise<{ name: string; index: number; id?: string }>;
-  item(item: FabricWorkflowItem): Promise<FabricWorkflowItem>;
-  event(event: { message: string; level?: "info" | "success" | "warning" | "error"; data?: unknown }): Promise<void>;
-  log(...values: unknown[]): void;
-  budget: { total: number; spent(): number; remaining(): number };
-}
-
 declare const tools: FabricToolsApi;
 declare const pi: PiToolsApi;
 declare const extensions: FabricExtensionsApi;
-declare const agents: FabricAgentsApi;
 declare const mcp: FabricMcpApi;
-declare const workflow: FabricWorkflowApi;
-declare function agent<T = string>(prompt: string, options?: FabricWorkflowAgentOptions): Promise<T>;
-declare function parallel<T, R>(items: T[], mapper: (item: T, index: number) => Promise<R> | R, concurrency?: number | { concurrency?: number }): Promise<R[]>;
-declare function parallel<T>(thunks: Array<() => Promise<T> | T>, concurrency?: number | { concurrency?: number }): Promise<T[]>;
-declare function pipeline<T>(items: T[], ...stages: Array<(value: unknown, original: T, index: number) => Promise<unknown> | unknown>): Promise<unknown[]>;
-declare function phase(name: string, options?: FabricWorkflowPhaseOptions): Promise<{ name: string; index: number; id?: string }>;
-declare function phase(input: FabricWorkflowPhaseInput): Promise<{ name: string; index: number; id?: string }>;
-declare function log(...values: unknown[]): void;
-declare const budget: FabricWorkflowApi["budget"];
 interface FabricConsole {
   log(...args: unknown[]): void;
   info(...args: unknown[]): void;
@@ -442,6 +290,11 @@ interface FabricConsole {
 declare const console: FabricConsole;
 declare const π: Readonly<Record<string, string>>;
 declare function print(...args: unknown[]): void;
+declare function all<T extends Record<string, unknown>>(
+  tasks: T & ThisType<{
+    readonly $: { readonly [K in keyof T]: Promise<T[K] extends (...args: any[]) => infer R ? Awaited<R> : Awaited<T[K]>> };
+  }>,
+): Promise<{ [K in keyof T]: T[K] extends (...args: any[]) => infer R ? Awaited<R> : Awaited<T[K]> }>;
 declare function setTimeout(handler: (...args: any[]) => void, timeout?: number): number;
 declare function clearTimeout(handle: number): void;
 declare function setInterval(handler: (...args: any[]) => void, timeout?: number): number;
