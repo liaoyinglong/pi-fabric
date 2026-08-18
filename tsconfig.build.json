@@ -10,8 +10,7 @@
   },
   "include": [
     "src/lean-index.ts",
-    "src/protocol.ts",
-    "src/worker.ts"
+    "src/protocol.ts"
   ],
   "exclude": ["tests/**"]
 }
