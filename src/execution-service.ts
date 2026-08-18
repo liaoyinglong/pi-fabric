@@ -6,9 +6,7 @@ import {
   type FabricExecutionFailureStageV1,
   type FabricExecutionTraceV1,
 } from "./audit/trace.js";
-import { FabricActivityStore } from "./activity/store.js";
 import type { CapturedToolCatalog } from "./capture/catalog.js";
-import type { FabricRunDisplay } from "./activity/types.js";
 import {
   MAX_HOST_CALL_TIMEOUT_MS,
   type FabricConfig,
@@ -23,7 +21,6 @@ import {
   FabricSessionApprovals,
 } from "./core/approval-controller.js";
 import type { FabricCommittedCapabilityView } from "./protocol.js";
-import { fabricExecTitleHintCached } from "./ui/fabric-title-hint.js";
 import type {
   QuickJsRuntime,
   FabricSandboxResult,
@@ -104,7 +101,6 @@ export interface FabricExecutionOptions {
   parentToolCallId: string;
   context: ExtensionContext;
   tokenBudget?: number;
-  display?: FabricRunDisplay;
   onPartial(snapshot: FabricExecutionPartial): void;
 }
 
@@ -116,7 +112,6 @@ export class FabricExecutionService {
   constructor(
     readonly registry: ActionRegistry,
     readonly config: FabricConfig,
-    readonly activity?: FabricActivityStore,
     readonly authorizer?: FabricExecutionAuthorizer,
     readonly sessionApprovals = new FabricSessionApprovals(),
     readonly capturedTools?: CapturedToolCatalog,
@@ -129,11 +124,6 @@ export class FabricExecutionService {
   async execute(options: FabricExecutionOptions): Promise<FabricExecutionResult> {
     const startedAt = performance.now();
     const traceRecorder = new FabricExecutionTraceRecorder();
-    this.activity?.start(
-      options.parentToolCallId,
-      options.display,
-      options.display?.name?.trim() ? undefined : fabricExecTitleHintCached(options.code),
-    );
 
     const dependencies = await loadRuntimeDependencies();
     const effectiveFullCodeMode =
@@ -175,7 +165,6 @@ export class FabricExecutionService {
           error.message = `${error.message} Fabric provider "${missing[1]}" is unavailable: ${reason}`;
         }
       }
-      this.activity?.finish(options.parentToolCallId, false, "Type checking failed");
       return {
         success: false,
         value: undefined,
@@ -249,17 +238,6 @@ export class FabricExecutionService {
       emit();
     };
     const observeInvocation = (event: FabricRegistryActivityEvent): void => {
-      if (this.activity) {
-        if (event.type === "call_start") {
-          this.activity.beginCall(options.parentToolCallId, event);
-        } else if (event.type === "call_update") {
-          this.activity.updateCall(options.parentToolCallId, event.callId, event.update);
-        } else if (event.type === "call_args") {
-          this.activity.updateCallArgs(options.parentToolCallId, event.callId, event.args);
-        } else {
-          this.activity.finishCall(options.parentToolCallId, event.callId, event);
-        }
-      }
       if (event.type === "call_end") emit();
     };
     const baseContext = {
@@ -484,10 +462,6 @@ export class FabricExecutionService {
           ...(options.signal ? { signal: options.signal } : {}),
         },
       );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.activity?.finish(options.parentToolCallId, false, message);
-      throw error;
     } finally {
       await this.registry.endInvocation(options.parentToolCallId);
       flushEmit();
@@ -495,7 +469,6 @@ export class FabricExecutionService {
 
     const runOutcome = executionOutcomeFromTermination(sandboxResult.terminationReason);
     const succeeded = runOutcome === "succeeded";
-    this.activity?.finish(options.parentToolCallId, succeeded, sandboxResult.error);
     return {
       success: succeeded,
       value: sandboxResult.value,
