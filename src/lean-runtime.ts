@@ -13,6 +13,9 @@ import { McpDescriptorCacheStore } from "./providers/mcp-descriptor-cache.js";
 import { McpProvider } from "./providers/mcp-provider.js";
 import { PiToolsProvider } from "./providers/pi-tools-provider.js";
 import { RestrictedFabricProvider } from "./providers/restricted-provider.js";
+import { TodoProvider } from "./providers/todo-provider.js";
+import { injectTodoGuest } from "./todo-guest.js";
+import { TodoStore, type TodoItem } from "./todo-store.js";
 
 const BACKGROUND_COMPLETION_MAX_CHARS = 8_000;
 
@@ -28,6 +31,7 @@ export interface LeanExecutionRequest {
   onPartial?: (snapshot: {
     audits: unknown[];
     phases: string[];
+    todos: TodoItem[];
     progress?: string | undefined;
   }) => void;
 }
@@ -104,6 +108,7 @@ export class LeanCodeModeRuntime {
   #agents: AgentManager | undefined;
   #mcp: McpProvider | undefined;
   #cwd: string | undefined;
+  readonly #todoStore = new TodoStore();
 
   constructor(
     readonly pi: ExtensionAPI,
@@ -129,6 +134,14 @@ export class LeanCodeModeRuntime {
     return this.#agents;
   }
 
+  todoSnapshot(): TodoItem[] {
+    return this.#todoStore.snapshot();
+  }
+
+  resetSessionState(): void {
+    this.#todoStore.reset();
+  }
+
   async initialize(context: ExtensionContext): Promise<void> {
     if (this.#cwd === context.cwd && this.#execution) return;
     await this.close();
@@ -150,6 +163,7 @@ export class LeanCodeModeRuntime {
         ? new RestrictedFabricProvider(capturedProvider, grants.extensionTools)
         : capturedProvider,
     );
+    registry.register(new TodoProvider(this.#todoStore));
 
     const projectRoot = process.env.PI_FABRIC_PROJECT_ROOT ?? context.cwd;
     let mcp: McpProvider | undefined;
@@ -229,7 +243,7 @@ export class LeanCodeModeRuntime {
   async execute(request: LeanExecutionRequest): Promise<FabricExecutionResult> {
     await this.initialize(request.context);
     return this.#execution!.execute({
-      code: request.code,
+      code: injectTodoGuest(request.code),
       ...(request.strings ? { strings: request.strings } : {}),
       signal: request.signal,
       parentToolCallId: request.parentToolCallId,
@@ -237,7 +251,10 @@ export class LeanCodeModeRuntime {
       ...(request.tokenBudget !== undefined ? { tokenBudget: request.tokenBudget } : {}),
       ...(request.agentBudget !== undefined ? { maxAgentCalls: request.agentBudget } : {}),
       ...(request.display ? { display: request.display } : {}),
-      onPartial: (snapshot) => request.onPartial?.(snapshot),
+      onPartial: (snapshot) => request.onPartial?.({
+        ...snapshot,
+        todos: this.#todoStore.snapshot(),
+      }),
     });
   }
 

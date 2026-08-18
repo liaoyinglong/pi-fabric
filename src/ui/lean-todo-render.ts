@@ -1,17 +1,21 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Text, type Component } from "@earendil-works/pi-tui";
-import type { TodoItem, TodoStatus } from "../todo-tool.js";
-import { safeExecDisplayText } from "./lean-exec-render.js";
+import type { TodoItem, TodoStatus } from "../todo-store.js";
 
 const COLLAPSED_TODO_ITEMS = 8;
 const TODO_STATUS_SET = new Set<TodoStatus>(["pending", "in_progress", "completed"]);
+
+const safeText = (value: unknown): string =>
+  String(value ?? "")
+    .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, "")
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
 
-const normalizedTodos = (value: unknown): TodoItem[] => {
+export const normalizedTodos = (value: unknown): TodoItem[] => {
   if (!Array.isArray(value)) return [];
   const todos: TodoItem[] = [];
   for (const entry of value) {
@@ -39,50 +43,33 @@ const counts = (todos: readonly TodoItem[]): { completed: number; active: number
 const todoLine = (todo: TodoItem, theme: Theme): string => {
   const activeLabel = todo.activeForm ?? todo.content;
   if (todo.status === "completed") {
-    return `${theme.fg("success", "✓")} ${theme.fg("dim", safeExecDisplayText(todo.content))}`;
+    return `${theme.fg("success", "✓")} ${theme.fg("dim", safeText(todo.content))}`;
   }
   if (todo.status === "in_progress") {
-    return `${theme.fg("warning", "◆")} ${theme.fg("accent", safeExecDisplayText(activeLabel))}`;
+    return `${theme.fg("warning", "◆")} ${theme.fg("accent", safeText(activeLabel))}`;
   }
-  return `${theme.fg("dim", "○")} ${theme.fg("muted", safeExecDisplayText(todo.content))}`;
+  return `${theme.fg("dim", "○")} ${theme.fg("muted", safeText(todo.content))}`;
 };
 
-const todoLines = (todos: readonly TodoItem[], theme: Theme, expanded: boolean): string[] => {
-  const limit = expanded ? todos.length : Math.min(todos.length, COLLAPSED_TODO_ITEMS);
-  const lines = todos.slice(0, limit).map((todo) => todoLine(todo, theme));
-  if (!expanded && todos.length > limit) {
-    lines.push(theme.fg("dim", `… ${todos.length - limit} more · Ctrl+O to expand`));
-  }
-  return lines;
-};
-
-const summary = (todos: readonly TodoItem[]): string => {
+export const todoSummary = (todos: readonly TodoItem[]): string => {
   if (todos.length === 0) return "empty";
   const { completed, active } = counts(todos);
   return `${completed}/${todos.length} done${active > 0 ? ` · ${active} active` : ""}`;
 };
 
-export const renderLeanTodoCall = (
-  params: { todos?: unknown },
+export const renderLeanTodoLines = (
+  todos: readonly TodoItem[],
   theme: Theme,
   expanded: boolean,
-): Component => {
-  const todos = normalizedTodos(params.todos);
-  const header = `${theme.fg("toolTitle", theme.bold("todo"))} ${theme.fg("dim", `· ${summary(todos)}`)}`;
-  const lines = todoLines(todos, theme, expanded);
-  return new Text(lines.length > 0 ? `${header}\n${lines.join("\n")}` : header, 0, 0);
-};
-
-export const renderLeanTodoResult = (
-  result: { content?: unknown; details?: unknown },
-  theme: Theme,
-  expanded: boolean,
-): Component => {
-  const details = asRecord(result.details);
-  const todos = normalizedTodos(details?.todos);
-  const header = todos.length === 0
-    ? theme.fg("success", "✓ Todo list cleared")
-    : `${theme.fg("success", "✓ Todo updated")} ${theme.fg("dim", `· ${summary(todos)}`)}`;
-  if (!expanded || todos.length === 0) return new Text(header, 0, 0);
-  return new Text(`${header}\n${todoLines(todos, theme, true).join("\n")}`, 0, 0);
+): string[] => {
+  if (todos.length === 0) return [];
+  const limit = expanded ? todos.length : Math.min(todos.length, COLLAPSED_TODO_ITEMS);
+  const lines = [
+    `${theme.fg("dim", `todo · ${todoSummary(todos)}`)}`,
+    ...todos.slice(0, limit).map((todo) => todoLine(todo, theme)),
+  ];
+  if (!expanded && todos.length > limit) {
+    lines.push(theme.fg("dim", `… ${todos.length - limit} more · Ctrl+O to expand`));
+  }
+  return lines;
 };

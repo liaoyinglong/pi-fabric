@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text, type Component } from "@earendil-works/pi-tui";
 import { diffLines } from "diff";
 import { headlineArg } from "../core/call-preview.js";
+import { normalizedTodos, renderLeanTodoLines } from "./lean-todo-render.js";
 
 const COLLAPSED_CODE_LINES = 15;
 const COLLAPSED_AUDIT_LINES = 5;
@@ -278,27 +279,39 @@ export const renderLeanExecResult = (
 ): Component => {
   const details = asRecord(result.details) ?? {};
   const audits = normalizedAudits(details.audits);
+  const visibleAudits = audits.filter((audit) => auditRef(audit) !== "todo.replace");
+  const todos = normalizedTodos(details.todos);
   const elapsed = elapsedLabel(details.elapsedMs);
   const progress = typeof details.progress === "string"
     ? safeExecDisplayText(details.progress).replace(/\s+/g, " ").slice(0, 180)
     : undefined;
+  const todoLines = renderLeanTodoLines(todos, theme, expanded);
 
   if (isPartial) {
     const header = `${theme.fg("warning", "◆ Fabric running")}${theme.fg(
       "dim",
-      `${audits.length > 0 ? ` · ${countLabel(audits.length, "call")}` : ""}${progress ? ` · ${progress}` : ""}`,
+      `${visibleAudits.length > 0 ? ` · ${countLabel(visibleAudits.length, "call")}` : ""}${progress ? ` · ${progress}` : ""}`,
     )}`;
-    const activity = renderAudits(audits, theme, expanded);
-    return new Text(activity.length > 0 ? `${header}\n${activity.join("\n")}` : header, 0, 0);
+    const activity = renderAudits(visibleAudits, theme, expanded);
+    const sections = [
+      header,
+      ...(todoLines.length > 0 ? [todoLines.join("\n")] : []),
+      ...(activity.length > 0 ? [activity.join("\n")] : []),
+    ];
+    return new Text(sections.join("\n"), 0, 0);
   }
 
   const header = `${theme.fg("success", "✓ Fabric complete")}${theme.fg(
     "dim",
-    `${audits.length > 0 ? ` · ${countLabel(audits.length, "call")}` : ""}${elapsed ? ` · ${elapsed}` : ""}`,
+    `${visibleAudits.length > 0 ? ` · ${countLabel(visibleAudits.length, "call")}` : ""}${elapsed ? ` · ${elapsed}` : ""}`,
   )}`;
-  const activity = renderAudits(audits, theme, expanded);
+  const activity = renderAudits(visibleAudits, theme, expanded);
   const output = safeExecDisplayText(textContent(result.content)).trimEnd();
-  const sections = [header, ...(activity.length > 0 ? [activity.join("\n")] : [])];
+  const sections = [
+    header,
+    ...(todoLines.length > 0 ? [todoLines.join("\n")] : []),
+    ...(activity.length > 0 ? [activity.join("\n")] : []),
+  ];
   const resultBody = renderResultBody(output, theme, expanded);
   if (resultBody.length > 0) sections.push(resultBody.join("\n"));
   return new Text(sections.join("\n"), 0, 0);

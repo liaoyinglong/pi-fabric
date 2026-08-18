@@ -60,9 +60,12 @@ describe("lean Fabric skill surface", () => {
     for (const name of legacySkills) {
       expect(entry).not.toContain(`path.join(skillsRoot, \"${name}\")`);
     }
+    expect(entry).toContain('LEAN_MODEL_FACING_TOOL_NAMES = ["fabric_exec"]');
+    expect(entry).not.toContain("createLeanTodoTool");
+    expect(entry).not.toContain("registerTool(todo");
   });
 
-  it("advertises autonomous tier and policy routing without profile selectors", () => {
+  it("advertises autonomous routing and the built-in todo guest API", () => {
     const guidance = [
       fabricExecutionKernelGuidance(true),
       defaultFabricExecutionGuidance(true),
@@ -74,6 +77,8 @@ describe("lean Fabric skill surface", () => {
     expect(guidance).toContain("mcp.<server>.<tool>");
     expect(guidance).toContain("agents.*");
     expect(guidance).toContain("workflow");
+    expect(guidance).toContain("todo([...])");
+    expect(guidance).toContain("await todo([])");
     expect(guidance).toContain("Main owns delegation");
     expect(guidance).toContain("fast");
     expect(guidance).toContain("balance");
@@ -104,12 +109,16 @@ describe("lean Fabric skill surface", () => {
     expect(guidance).not.toContain("Main owns delegation");
     expect(guidance).not.toContain("agents.routing({})");
     expect(guidance).not.toContain("agents.run({tier,policy,role,task})");
+    expect(guidance).toContain("todo([...])");
     expect(guidance).toContain("agents and agent-backed workflow delegation are disabled");
   });
 
   it("keeps the progressive exec skill focused on the lean product surface", () => {
     const skill = fs.readFileSync("skills/fabric-exec/SKILL.md", "utf8");
     expect(skill).toContain("Pi Code Mode");
+    expect(skill).toContain("Built-in Todo");
+    expect(skill).toContain("await todo([");
+    expect(skill).toContain("Main does not receive a separate Pi `todo` tool");
     expect(skill).toContain("Captured extension tools");
     expect(skill).toContain("Tier/policy subagents");
     expect(skill).toContain("Thin workflow composition");
