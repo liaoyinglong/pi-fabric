@@ -35,6 +35,12 @@ const shippedDocs = [
   "docs/subagents-and-workflows.md",
 ] as const;
 
+const internalPolicyAgents = [
+  "fabric-inspect",
+  "fabric-execute",
+  "fabric-modify",
+] as const;
+
 const tarString = (block: Buffer, start: number, length: number): string => {
   const raw = block.subarray(start, start + length).toString("utf8");
   return raw.slice(0, raw.indexOf("\0") >= 0 ? raw.indexOf("\0") : raw.length).trim();
@@ -83,12 +89,16 @@ describe("lean Fabric skill surface", () => {
     const manifest = JSON.parse(fs.readFileSync("package.json", "utf8")) as {
       files: string[];
       pi: { skills: string[] };
+      "pi-subagents": { agents: string[] };
     };
 
     expect(manifest.pi.skills).toEqual(
       shippedSkills.map((name) => `./skills/${name}`),
     );
     expect(manifest.files).not.toContain("skills/");
+    expect(manifest.files).not.toContain("agents/");
+    expect(manifest.files).toContain("internal/pi-subagents/agents/");
+    expect(manifest["pi-subagents"].agents).toEqual(["./internal/pi-subagents/agents"]);
     for (const name of shippedSkills) {
       expect(manifest.files).toContain(`skills/${name}/`);
     }
@@ -187,6 +197,10 @@ describe("lean Fabric skill surface", () => {
     }
     for (const name of legacySkills) {
       expect(files).not.toContain(`package/skills/${name}/SKILL.md`);
+    }
+    for (const name of internalPolicyAgents) {
+      expect(files).toContain(`package/internal/pi-subagents/agents/${name}.md`);
+      expect(files).not.toContain(`package/agents/${name}.md`);
     }
     expect(files).toContain("package/node_modules/pi-subagents/package.json");
     expect(files).toContain("package/node_modules/pi-subagents/index.ts");
