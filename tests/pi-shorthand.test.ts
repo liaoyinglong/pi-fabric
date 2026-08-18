@@ -65,7 +65,7 @@ return "done";
   });
 
   it("normalizes aliases inside batched edits", async () => {
-    const hostCall = vi.fn(async () => ({ ok: true, output: "edited", details: null }));
+    const hostCall = vi.fn(async (_ref: string, _args: Record<string, unknown>) => ({ ok: true, output: "edited", details: null }));
     const result = await new QuickJsRuntime().execute(
       'return pi.edit({ path: "/x", edits: [{ old: "a", replacement: "b", all: true }] });',
       hostCall,
@@ -79,7 +79,7 @@ return "done";
   });
 
   it("maps positional arguments to canonical object form", async () => {
-    const hostCall = vi.fn(async (ref: string) =>
+    const hostCall = vi.fn(async (ref: string, _args: Record<string, unknown>) =>
       ref === "pi.write" || ref === "pi.edit"
         ? { ok: true, output: "ok", details: null }
         : "ok",
@@ -99,7 +99,7 @@ return "done";
   });
 
   it("merges a string primary argument with an options object", async () => {
-    const hostCall = vi.fn(async (ref: string) =>
+    const hostCall = vi.fn(async (ref: string, _args: Record<string, unknown>) =>
       ref === "pi.bash" ? { ok: true, output: "ok", details: null } : "ok",
     );
     const result = await new QuickJsRuntime().execute(
@@ -113,7 +113,7 @@ return "done";
   });
 
   it("coerces numeric string options before host validation", async () => {
-    const hostCall = vi.fn(async (ref: string) =>
+    const hostCall = vi.fn(async (ref: string, _args: Record<string, unknown>) =>
       ref === "pi.bash" ? { ok: true, output: "ok", details: null } : "ok",
     );
     const result = await new QuickJsRuntime().execute(
@@ -127,7 +127,7 @@ return "done";
   });
 
   it("settles nonzero bash exits only when requested", async () => {
-    const hostCall = vi.fn(async () => {
+    const hostCall = vi.fn(async (_ref: string, _args: Record<string, unknown>) => {
       throw new Error("before\n\nCommand exited with code 7");
     });
     const result = await new QuickJsRuntime().execute(
