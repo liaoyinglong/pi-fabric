@@ -22,18 +22,6 @@ export interface LeanExecutionRequest {
   }) => void;
 }
 
-const REMOVED_LEAN_PROVIDERS = [
-  "agents",
-  "mesh",
-  "memory",
-  "state",
-  "schema",
-  "components",
-  "compact",
-  "council",
-  "rlm",
-] as const;
-
 export const leanMcpDiscoveryRoot = (
   cwd: string,
   agentDir: string,
@@ -68,7 +56,6 @@ export class LeanCodeModeRuntime {
   #config: FabricConfig | undefined;
   #registry: ActionRegistry | undefined;
   #execution: FabricExecutionService | undefined;
-  #mcp: McpProvider | undefined;
   #cwd: string | undefined;
 
   constructor(
@@ -104,10 +91,9 @@ export class LeanCodeModeRuntime {
     registry.register(capturedProvider);
 
     const projectRoot = process.env.PI_FABRIC_PROJECT_ROOT ?? context.cwd;
-    let mcp: McpProvider | undefined;
     if (config.mcp.enabled) {
       const mcpRoot = leanMcpDiscoveryRoot(context.cwd, agentDir, projectTrusted);
-      mcp = new McpProvider(mcpRoot, config.mcp, {
+      const mcp = new McpProvider(mcpRoot, config.mcp, {
         ...(config.mcp.cache.enabled
           ? {
               cache: new McpDescriptorCacheStore(
@@ -122,13 +108,8 @@ export class LeanCodeModeRuntime {
       registry.markUnavailable("mcp", "MCP support is disabled in Fabric configuration");
     }
 
-    for (const provider of REMOVED_LEAN_PROVIDERS) {
-      registry.markUnavailable(provider, `${provider} is not part of the Lean V2 runtime`);
-    }
-
     this.#config = config;
     this.#registry = registry;
-    this.#mcp = mcp;
     this.#cwd = context.cwd;
     this.#execution = new FabricExecutionService(
       registry,
@@ -151,12 +132,11 @@ export class LeanCodeModeRuntime {
   }
 
   async close(): Promise<void> {
-    const mcp = this.#mcp;
+    const registry = this.#registry;
     this.#execution = undefined;
     this.#registry = undefined;
-    this.#mcp = undefined;
     this.#config = undefined;
     this.#cwd = undefined;
-    await (mcp?.close() ?? Promise.resolve());
+    await (registry?.close() ?? Promise.resolve());
   }
 }

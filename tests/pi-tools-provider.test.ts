@@ -102,7 +102,6 @@ describe("PiToolsProvider lifecycle", () => {
     });
     const registry = registerWithRunner(runner);
     const audits: FabricCallAudit[] = [];
-    const events: unknown[] = [];
     const trace = new FabricExecutionTraceRecorder();
 
     const result = await registry.invoke(
@@ -112,7 +111,6 @@ describe("PiToolsProvider lifecycle", () => {
         ...baseContext,
         audits,
         trace,
-        observeInvocation: (event) => events.push(event),
       },
     ) as { output: string };
 
@@ -120,10 +118,6 @@ describe("PiToolsProvider lifecycle", () => {
     expect(result.output).toBe("executed:true\n");
     expect(audits[0]?.args).toEqual({ command: executedCommand });
     expect(audits[0]?.preview).toMatchObject({ bashCommand: executedCommand });
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "call_args",
-      args: { command: executedCommand },
-    }));
     expect(trace.seal("succeeded", []).operations[0]?.args).toEqual({
       command: executedCommand,
     });
@@ -423,7 +417,7 @@ describe("extension hijack contract for nested core tools", () => {
               ? {
                   content: [
                     ...event.content,
-                    { type: "text", text: 'fovea graph "GetUserHandler" \u00b7 anchor context' },
+                    { type: "text", text: 'fovea graph "GetUserHandler" · anchor context' },
                   ],
                 }
               : undefined,
