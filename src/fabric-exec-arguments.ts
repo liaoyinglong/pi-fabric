@@ -4,7 +4,6 @@ const OPTIONAL_FABRIC_EXEC_KEYS = [
   "strings",
   "resultFormat",
   "tokenBudget",
-  "agentBudget",
   "display",
 ] as const;
 
