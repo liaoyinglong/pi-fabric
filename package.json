@@ -17,6 +17,10 @@
     "./runtime-v2": {
       "types": "./dist/runtime-v2.d.ts",
       "import": "./dist/runtime-v2.js"
+    },
+    "./runtime-v2/fabric": {
+      "types": "./dist/fabric-runtime-v2.d.ts",
+      "import": "./dist/fabric-runtime-v2.js"
     }
   },
   "files": [
