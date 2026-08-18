@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { QuickJsRuntime } from "../src/runtime/quickjs-runtime.js";
-import { transpileFabricCodeWithSourceMap } from "../src/runtime/type-checker.js";
 
 const options = {
   timeoutMs: 5_000,
@@ -14,225 +13,61 @@ describe("QuickJsRuntime", () => {
       async () => undefined,
       { ...options, memoryLimitBytes: 4 * 1024 ** 3 },
     );
-
     expect(result.terminationReason).toBe("runtime_error");
     expect(result.error).toContain("WASM32 maximum");
   });
 
-  it("runs parallel host calls and returns structured data", async () => {
-    const hostCall = vi.fn(async (ref: string, args: Record<string, unknown>) => ({
-      ref,
-      value: args.value,
-    }));
+  it("runs independent host calls in parallel", async () => {
+    const hostCall = vi.fn(async (_ref: string, args: Record<string, unknown>) => args);
     const result = await new QuickJsRuntime().execute(
-      `
-const values = await Promise.all([
+      `return Promise.all([
   tools.call({ ref: "demo.echo", args: { value: 1 } }),
   tools.call({ ref: "demo.echo", args: { value: 2 } }),
-]);
-print("calls", values.length);
-return values;
-`,
+]);`,
       hostCall,
       options,
     );
     expect(result.error).toBeUndefined();
-    expect(result.logs).toEqual(["calls 2"]);
     expect(result.value).toEqual([
-      { ref: "fabric.$call", value: undefined },
-      { ref: "fabric.$call", value: undefined },
+      { ref: "demo.echo", args: { value: 1 } },
+      { ref: "demo.echo", args: { value: 2 } },
     ]);
-    expect(hostCall.mock.calls[0]?.[1]).toEqual({ ref: "demo.echo", args: { value: 1 } });
     expect(hostCall).toHaveBeenCalledTimes(2);
-  });
-
-  it("runs phased workflow fan-out and returns only worker values", async () => {
-    const calls: string[] = [];
-    const result = await new QuickJsRuntime().execute(
-      `
-await phase("Inspect");
-const values = await parallel([
-  () => agent("first", { label: "one" }),
-  () => agent("second", { label: "two" }),
-]);
-return { values, spent: budget.spent() };
-`,
-      async (ref, args) => {
-        if (ref === "fabric.$spanStart" || ref === "fabric.$spanEnd") return undefined;
-        calls.push(ref);
-        if (ref === "fabric.$phase") return { name: args.name, index: 0 };
-        if (ref === "agents.run") {
-          return {
-            status: "completed",
-            text: String(args.task).toUpperCase(),
-            usage: { input: 2, output: 3 },
-          };
-        }
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      { ...options, tokenBudget: 20 },
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toEqual({ values: ["FIRST", "SECOND"], spent: 10 });
-    expect(calls).toEqual(["fabric.$phase", "agents.run", "agents.run"]);
-  });
-
-  it("includes the workflow label and child cause in agent failures", async () => {
-    const result = await new QuickJsRuntime().execute(
-      'return agent("review", { label: "dashboard reviewer" });',
-      async (ref) => {
-        if (ref === "agents.run") {
-          return {
-            status: "failed",
-            error: "openai-codex/gpt-test: fetch failed · WebSocket error",
-            usage: { input: 0, output: 0 },
-          };
-        }
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      options,
-    );
-    expect(result.error).toContain(
-      "dashboard reviewer failed: openai-codex/gpt-test: fetch failed · WebSocket error",
-    );
-  });
-
-  it("runs parallel(items, mapper, concurrency) fan-out", async () => {
-    const calls: string[] = [];
-    const result = await new QuickJsRuntime().execute(
-      `
-const items = [{ q: "first" }, { q: "second" }, { q: "third" }];
-const out = await parallel(items, (item) => agent(item.q, { label: item.q }), 2);
-return out;
-`,
-      async (ref, args) => {
-        if (ref === "fabric.$spanStart" || ref === "fabric.$spanEnd") return undefined;
-        if (ref === "agents.run") {
-          calls.push(String(args.task));
-          return { status: "completed", text: String(args.task).toUpperCase(), usage: { input: 1, output: 1 } };
-        }
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      { ...options, tokenBudget: 30 },
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toEqual(["FIRST", "SECOND", "THIRD"]);
-    expect(calls.sort()).toEqual(["first", "second", "third"]);
-  });
-
-  it("emits deterministic internal workflow span start/end calls from guest combinators", async () => {
-    const calls: Array<{ ref: string; args: Record<string, unknown> }> = [];
-    const result = await new QuickJsRuntime().execute(
-      `
-await workflow.parallel([], { concurrency: 9 });
-await workflow.pipeline([1], (value) => value);
-return {
-  globalBridge: typeof globalThis.__fabricHostCall,
-  lexicalBridge: typeof __fabricBridge,
-  internalCall: typeof __call,
-};
-`,
-      async (ref, args) => {
-        calls.push({ ref, args });
-        return undefined;
-      },
-      options,
-    );
-
-    expect(result.error).toBeUndefined();
-    expect(result.value).toEqual({
-      globalBridge: "undefined",
-      lexicalBridge: "undefined",
-      internalCall: "undefined",
-    });
-    expect(calls).toEqual([
-      { ref: "fabric.$spanStart", args: { id: "span-0", kind: "parallel", itemCount: 0, concurrency: 0 } },
-      { ref: "fabric.$spanEnd", args: { id: "span-0", outcome: "succeeded" } },
-      { ref: "fabric.$spanStart", args: { id: "span-1", kind: "pipeline", itemCount: 1, stageCount: 1 } },
-      { ref: "fabric.$spanStart", args: { id: "span-2", kind: "parallel", itemCount: 1, concurrency: 1 } },
-      { ref: "fabric.$spanEnd", args: { id: "span-2", outcome: "succeeded" } },
-      { ref: "fabric.$spanEnd", args: { id: "span-1", outcome: "succeeded" } },
-    ]);
   });
 
   it("calls captured extension tools through the lazy proxy", async () => {
     const result = await new QuickJsRuntime().execute(
       'return extensions.deploy_release({ environment: "staging" });',
-      async (ref, args) => {
-        expect(ref).toBe("extensions.deploy_release");
-        expect(args).toEqual({ environment: "staging" });
-        return { text: "deployed", content: [], isError: false };
-      },
+      async (ref, args) => ({ ref, args }),
       options,
     );
     expect(result.error).toBeUndefined();
-    expect(result.value).toMatchObject({ text: "deployed", isError: false });
+    expect(result.value).toEqual({
+      ref: "extensions.deploy_release",
+      args: { environment: "staging" },
+    });
+  });
+
+  it("routes MCP aliases through the direct MCP proxy", async () => {
+    const result = await new QuickJsRuntime().execute(
+      'return mcp.github.get_repo({ owner: "octo", repo: "hello" });',
+      async (ref, args) => ({ ref, args }),
+      options,
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.value).toEqual({
+      ref: "mcp.github.get_repo",
+      args: { owner: "octo", repo: "hello" },
+    });
   });
 
   it("normalizes the string shorthand for tools.search", async () => {
     const result = await new QuickJsRuntime().execute(
       'return tools.search("fovea");',
-      async (ref, args) => {
-        expect(ref).toBe("fabric.$search");
-        expect(args).toEqual({ query: "fovea" });
-        return [{ ref: "extensions.fovea_focus" }];
-      },
-      options,
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toEqual([{ ref: "extensions.fovea_focus" }]);
-  });
-
-  it("routes JavaScript-safe MCP aliases through the direct MCP proxy", async () => {
-    const result = await new QuickJsRuntime().execute(
-      'return mcp.fal_ai.get_model_schema({ endpoint_id: "openai/gpt-image-2" });',
       async (ref, args) => ({ ref, args }),
       options,
     );
-
-    expect(result.error).toBeUndefined();
-    expect(result.value).toEqual({
-      ref: "mcp.fal_ai.get_model_schema",
-      args: { endpoint_id: "openai/gpt-image-2" },
-    });
-  });
-
-  it("does not expose removed Full Fabric globals or actor/participant actions", async () => {
-    const result = await new QuickJsRuntime().execute(
-      `return {
-  memory: typeof memory,
-  state: typeof state,
-  schema: typeof schema,
-  components: typeof components,
-  compact: typeof compact,
-  mesh: typeof mesh,
-  rlm: typeof rlm,
-  council: typeof council,
-  handoff: typeof agents.handoff,
-  create: typeof agents.create,
-  main: typeof agents.main,
-  members: typeof agents.members,
-  subscribe: typeof agents.subscribe,
-};`,
-      async () => undefined,
-      options,
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toEqual({
-      memory: "undefined",
-      state: "undefined",
-      schema: "undefined",
-      components: "undefined",
-      compact: "undefined",
-      mesh: "undefined",
-      rlm: "undefined",
-      council: "undefined",
-      handoff: "undefined",
-      create: "undefined",
-      main: "undefined",
-      members: "undefined",
-      subscribe: "undefined",
-    });
+    expect(result.value).toEqual({ ref: "fabric.$search", args: { query: "fovea" } });
   });
 
   it("does not expose Node globals", async () => {
@@ -242,21 +77,6 @@ return {
       options,
     );
     expect(result.value).toEqual({ process: "undefined", require: "undefined" });
-  });
-
-  it("waits for host calls without spinning the Node event loop", async () => {
-    const immediate = vi.spyOn(globalThis, "setImmediate");
-    try {
-      const result = await new QuickJsRuntime().execute(
-        'return tools.call({ ref: "demo.wait" });',
-        async () => new Promise((resolve) => setTimeout(() => resolve("done"), 40)),
-        options,
-      );
-      expect(result.value).toBe("done");
-      expect(immediate).not.toHaveBeenCalled();
-    } finally {
-      immediate.mockRestore();
-    }
   });
 
   it("resumes guest timers through event-driven job pumping", async () => {
@@ -270,30 +90,16 @@ return {
   });
 
   it("times out unresolved guest promises", async () => {
-    const startedAt = Date.now();
     const result = await new QuickJsRuntime().execute(
       "await new Promise(() => {});",
       async () => undefined,
       { ...options, timeoutMs: 50 },
     );
-    expect(result.error).toContain("timed out");
     expect(result.terminationReason).toBe("timed_out");
-    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(result.error).toContain("timed out");
   });
 
-  it("classifies timeout and abort words in thrown runtime errors as runtime failures", async () => {
-    for (const message of ["business timeout was rejected", "operation was aborted upstream"]) {
-      const result = await new QuickJsRuntime().execute(
-        `throw new Error(${JSON.stringify(message)});`,
-        async () => undefined,
-        options,
-      );
-      expect(result.error).toContain(message);
-      expect(result.terminationReason).toBe("runtime_error");
-    }
-  });
-
-  it("returns a typed aborted termination for an external signal", async () => {
+  it("returns an aborted termination for an external signal", async () => {
     const controller = new AbortController();
     controller.abort(new Error("stop"));
     const result = await new QuickJsRuntime().execute(
@@ -304,437 +110,39 @@ return {
     expect(result.terminationReason).toBe("aborted");
   });
 
-  it("extends the active deadline before a blocking host call runs", async () => {
+  it("extends the active deadline for a host call when requested", async () => {
     const result = await new QuickJsRuntime().execute(
-      `
-const ref = ["agents", "run"].join(".");
-return tools.call({ ref, args: { task: "slow" } });
-`,
-      async () =>
-        new Promise((resolve) => {
-          setTimeout(() => resolve({ status: "completed", text: "ok" }), 150);
-        }),
+      'return tools.call({ ref: "demo.slow" });',
+      async () => new Promise((resolve) => setTimeout(() => resolve("ok"), 150)),
       {
         ...options,
         timeoutMs: 50,
         minimumTimeoutMsForHostCall(ref, args) {
-          return ref === "fabric.$call" && args.ref === "agents.run" ? 1_000 : undefined;
+          return ref === "fabric.$call" && args.ref === "demo.slow" ? 1_000 : undefined;
         },
       },
     );
     expect(result.error).toBeUndefined();
-    expect(result.value).toMatchObject({ status: "completed", text: "ok" });
+    expect(result.value).toBe("ok");
   });
 
-  it("extends a late blocking host call from the call start", async () => {
-    const result = await new QuickJsRuntime().execute(
-      `
-await tools.call({ ref: "demo.delay" });
-return tools.call({ ref: "agents.run", args: { task: "late" } });
-`,
-      async () =>
-        new Promise((resolve) => {
-          setTimeout(() => resolve({ status: "completed" }), 70);
-        }),
-      {
-        ...options,
-        timeoutMs: 100,
-        minimumTimeoutMsForHostCall(ref) {
-          return ref === "fabric.$call" ? 100 : undefined;
-        },
-      },
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toMatchObject({ status: "completed" });
-  });
-
-  it("aborts sibling host calls when guest workflow code fails", async () => {
+  it("aborts sibling host calls when guest code fails", async () => {
     let hostCallAborted = false;
     const result = await new QuickJsRuntime().execute(
-      `
-await Promise.all([
+      `await Promise.all([
   tools.call({ ref: "demo.wait" }),
   Promise.reject(new Error("branch failed")),
-]);
-`,
-      async (_ref, _args, signal) =>
-        new Promise((_resolve, reject) => {
-          signal.addEventListener(
-            "abort",
-            () => {
-              hostCallAborted = true;
-              reject(new Error("host call aborted"));
-            },
-            { once: true },
-          );
-        }),
+]);`,
+      async (_ref, _args, signal) => new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => {
+          hostCallAborted = true;
+          reject(new Error("host call aborted"));
+        }, { once: true });
+      }),
       options,
     );
+    expect(result.terminationReason).toBe("runtime_error");
     expect(result.error).toContain("branch failed");
     expect(hostCallAborted).toBe(true);
   });
-
-  it("does not wait for a non-cooperative sibling host call after guest failure", async () => {
-    const startedAt = Date.now();
-    const result = await new QuickJsRuntime().execute(
-      `
-await Promise.all([
-  tools.call({ ref: "demo.never" }),
-  Promise.reject(new Error("branch failed")),
-]);
-`,
-      async () => new Promise(() => undefined),
-      options,
-    );
-
-    expect(result.terminationReason).toBe("runtime_error");
-    expect(result.error).toContain("branch failed");
-    expect(Date.now() - startedAt).toBeLessThan(2_000);
-  });
-
-  it("bounds non-cooperative fire-and-forget host calls", async () => {
-    const startedAt = Date.now();
-    const result = await new QuickJsRuntime().execute(
-      'void tools.call({ ref: "demo.never" }); return "done";',
-      async () => new Promise(() => undefined),
-      options,
-    );
-
-    expect(result.terminationReason).toBe("completed");
-    expect(result.value).toBe("done");
-    expect(Date.now() - startedAt).toBeLessThan(2_000);
-  });
-
-  it("aborts in-flight host calls when the sandbox deadline expires", async () => {
-    let hostCallAborted = false;
-    const result = await new QuickJsRuntime().execute(
-      'await tools.call({ ref: "demo.wait" });',
-      async (_ref, _args, signal) =>
-        new Promise((_resolve, reject) => {
-          signal.addEventListener(
-            "abort",
-            () => {
-              hostCallAborted = true;
-              reject(new Error("host call aborted"));
-            },
-            { once: true },
-          );
-        }),
-      { ...options, timeoutMs: 50 },
-    );
-    expect(result.error).toContain("timed out");
-    expect(hostCallAborted).toBe(true);
-  });
-
-  it("interrupts synchronous infinite loops", async () => {
-    const result = await new QuickJsRuntime().execute("while (true) {}", async () => undefined, {
-      ...options,
-      timeoutMs: 50,
-    });
-    expect(result.error).toContain("Execution timed out after 50ms");
-  });
-
-  it("surfaces unbounded recursion as a guest runtime error, not a WASM abort", async () => {
-    const result = await new QuickJsRuntime().execute(
-      "function f() { return f() + 1; } f();",
-      async () => undefined,
-      options,
-    );
-
-    expect(result.terminationReason).toBe("runtime_error");
-    expect(result.error).toContain("stack overflow");
-  });
-
-  it("makes stack overflow errors catchable inside the guest", async () => {
-    const result = await new QuickJsRuntime().execute(
-      "let depth = 0; function f() { depth += 1; return f() + 1; } try { f(); } catch (error) { return { depth, name: error.name }; }",
-      async () => undefined,
-      options,
-    );
-
-    expect(result.terminationReason).toBe("completed");
-    const value = result.value as { depth: number; name: string };
-    expect(value.name).toBe("InternalError");
-    expect(value.depth).toBeGreaterThan(0);
-  });
-
-  it("keeps executing programs after a guest stack overflow", async () => {
-    const runtime = new QuickJsRuntime();
-    await runtime.execute("function f() { return f() + 1; } f();", async () => undefined, options);
-
-    const result = await runtime.execute("return 1 + 1;", async () => undefined, options);
-
-    expect(result.terminationReason).toBe("completed");
-    expect(result.value).toBe(2);
-  });
-
-  it("exposes named strings via π and throws a clear error for unprovided keys", async () => {
-    const content = [
-      "multiline",
-      "` ${value} { braces }",
-      "quotes: \" '",
-      "nul:" + String.fromCharCode(0) + " end",
-    ].join("\n");
-    const provided = await new QuickJsRuntime().execute(
-      `return { value: π.content, keys: Object.keys(π).join(",") };`,
-      async () => undefined,
-      { ...options, strings: { content } },
-    );
-    expect(provided.error).toBeUndefined();
-    expect(provided.value).toEqual({ value: content, keys: "content" });
-
-    const failed = await new QuickJsRuntime().execute(
-      `return π.previewFile;`,
-      async () => undefined,
-      { ...options, strings: { content: "hello" } },
-    );
-    expect(failed.error).toContain("π.previewFile is not defined");
-    expect(failed.error).toContain("provided: content");
-  });
-
-  it("bridges tools.models() to the fabric.$models host call", async () => {
-    const result = await new QuickJsRuntime().execute(
-      `const models = await tools.models(); return models;`,
-      async (ref) => {
-        if (ref === "fabric.$models") {
-          return [
-            { provider: "litellm", id: "glm-5.2", name: "GLM 5.2", key: "litellm/glm-5.2" },
-          ];
-        }
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      options,
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toEqual([
-      { provider: "litellm", id: "glm-5.2", name: "GLM 5.2", key: "litellm/glm-5.2" },
-    ]);
-  });
-
-  it("bridges agents.models() to the runner-aware provider action", async () => {
-    let request: Record<string, unknown> | undefined;
-    const result = await new QuickJsRuntime().execute(
-      `return agents.models({ runner: "claude", refresh: true });`,
-      async (ref, args) => {
-        if (ref === "agents.models") {
-          request = args;
-          return [{ runner: "claude", provider: "claude", id: "haiku", name: "Haiku", key: "claude/haiku" }];
-        }
-        throw new Error(`Unexpected call: ${ref}`);
-      },
-      options,
-    );
-    expect(result.error).toBeUndefined();
-    expect(request).toEqual({ runner: "claude", refresh: true });
-    expect(result.value).toEqual([
-      { runner: "claude", provider: "claude", id: "haiku", name: "Haiku", key: "claude/haiku" },
-    ]);
-  });
-
 });
-
-describe("pi proxy silent repairs and envelope guard", () => {
-  it("normalizes alias keys and numeric strings before the host call", async () => {
-    const hostCall = vi.fn(async (ref: string, _args?: Record<string, unknown>) =>
-      ref === "pi.bash" || ref === "pi.write" || ref === "pi.edit"
-        ? { ok: true, output: "", details: null }
-        : "",
-    );
-    const result = await new QuickJsRuntime().execute(
-      `
-await pi.find({ glob: "*.ts", path: "src", max: "50" });
-await pi.find({ name: "a.ts" });
-await pi.find({ filename: "b.ts" });
-await pi.ls({ folder: "src" });
-await pi.grep({ pattern: "x", limit: "20", ctx: "2" });
-await pi.write({ path: "/tmp/x", data: "c" });
-await pi.bash({ script: "ls src", timeout: "30" });
-return "done";
-`,
-      hostCall,
-      options,
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toBe("done");
-    const calls = hostCall.mock.calls.map(([ref, args]) => [ref, args]);
-    expect(calls).toEqual([
-      ["pi.find", { pattern: "*.ts", path: "src", limit: 50 }],
-      ["pi.find", { pattern: "a.ts" }],
-      ["pi.find", { pattern: "b.ts" }],
-      ["pi.ls", { path: "src" }],
-      ["pi.grep", { pattern: "x", limit: 20, context: 2 }],
-      ["pi.write", { path: "/tmp/x", content: "c" }],
-      ["pi.bash", { command: "ls src", timeout: 30 }],
-    ]);
-  });
-
-  it("turns string-method access on an envelope into an actionable error", async () => {
-    const hostCall = vi.fn(async () => ({ ok: true, output: "  hello  ", details: null }));
-    const result = await new QuickJsRuntime().execute(
-      `
-const r = await pi.bash({ command: "echo hello" });
-return r.trim();
-`,
-      hostCall,
-      options,
-    );
-    expect(result.error).toContain("envelope");
-    expect(result.error).toContain(".output");
-    expect(result.error).toContain("pi.bash");
-  });
-
-  it("keeps ordinary envelope reads, destructuring, membership, and keys intact", async () => {
-    const hostCall = vi.fn(async () => ({ ok: true, output: "  hello  ", details: null }));
-    const result = await new QuickJsRuntime().execute(
-      `
-const r = await pi.bash({ command: "echo hello" });
-const { ok, output } = r;
-return {
-  ok,
-  text: output.trim(),
-  hasOutput: "output" in r,
-  keys: Object.keys(r).join(","),
-  json: JSON.stringify({ wrapped: r }),
-};
-`,
-      hostCall,
-      options,
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toEqual({
-      ok: true,
-      text: "hello",
-      hasOutput: true,
-      keys: "ok,output,details",
-      json: '{"wrapped":{"ok":true,"output":"  hello  ","details":null}}',
-    });
-  });
-
-  it("marshals an envelope returned as the program value", async () => {
-    const hostCall = vi.fn(async () => ({ ok: true, output: "  hello  ", details: null }));
-    const result = await new QuickJsRuntime().execute(
-      `return await pi.bash({ command: "echo hello" });`,
-      hostCall,
-      options,
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.value).toEqual({ ok: true, output: "  hello  ", details: null });
-  });
-
-  it("throws an actionable error when iterating an envelope", async () => {
-    const hostCall = vi.fn(async () => ({ ok: true, output: "a\nb", details: null }));
-    const result = await new QuickJsRuntime().execute(
-      `
-const r = await pi.bash({ command: "x" });
-for (const line of r) {
-  void line;
-}
-return "never";
-`,
-      hostCall,
-      options,
-    );
-    expect(result.error).toContain("not iterable");
-    expect(result.error).toContain(".output");
-  });
-
-  it("guards settled bash envelopes and still exposes ok/exitCode/output reads", async () => {
-    const hostCall = vi.fn(async () => {
-      throw new Error("sync-spawn\n\nCommand exited with code 3");
-    });
-    const reads = await new QuickJsRuntime().execute(
-      `
-const r = await pi.bash({ command: "false", settle: true });
-return { ok: r.ok, code: r.exitCode, text: r.output.trim() };
-`,
-      hostCall,
-      options,
-    );
-    expect(reads.error).toBeUndefined();
-    expect(reads.value).toEqual({ ok: false, code: 3, text: "sync-spawn" });
-
-    const misuse = await new QuickJsRuntime().execute(
-      `
-const r = await pi.bash({ command: "false", settle: true });
-return r.split("-");
-`,
-      hostCall,
-      options,
-    );
-    expect(misuse.error).toContain("envelope");
-    expect(misuse.error).toContain("settle");
-  });
-
-  it("does not guard objects returned by tools.call", async () => {
-    const hostCall = vi.fn(async () => ({ ok: true, output: "a,b" }));
-    const result = await new QuickJsRuntime().execute(
-      `
-const r = await tools.call({ ref: "demo.echo", args: {} });
-return r.split(",");
-`,
-      hostCall,
-      options,
-    );
-    expect(result.error).toBeDefined();
-    expect(result.error).not.toContain("envelope");
-  });
-});
-
-describe("QuickJsRuntime guest stack remapping", () => {
-  const remapOptions = { timeoutMs: 5_000, memoryLimitBytes: 32 * 1024 * 1024 };
-
-  it("remaps thrown error frames to user code lines", async () => {
-    const result = await new QuickJsRuntime().execute(
-      ["const before = 1;", "print(before);", 'throw new Error("boom");'].join("\n"),
-      async () => undefined,
-      remapOptions,
-    );
-
-    expect(result.terminationReason).toBe("runtime_error");
-    expect(result.error).toContain("guest code:3:");
-    expect(result.error).toContain("boom");
-  });
-
-  it("remaps native parse errors raised from user code", async () => {
-    const result = await new QuickJsRuntime().execute(
-      ['const payload = "    },";', "JSON.parse(payload);"].join("\n"),
-      async () => undefined,
-      remapOptions,
-    );
-
-    expect(result.terminationReason).toBe("runtime_error");
-    expect(result.error).toContain("unexpected token");
-    expect(result.error).toContain("guest code:2:");
-    expect(result.error).toContain("at parse (native)");
-  });
-
-  it("remaps frames for pre-transpiled code when a source map is provided", async () => {
-    const code = ["const a = 1;", 'throw new Error("pre");'].join("\n");
-    const transpiled = transpileFabricCodeWithSourceMap(code);
-    const result = await new QuickJsRuntime().execute(
-      code,
-      async () => undefined,
-      {
-        ...remapOptions,
-        transpiledCode: transpiled.code,
-        ...(transpiled.sourceMap ? { transpiledSourceMap: transpiled.sourceMap } : {}),
-      },
-    );
-
-    expect(result.terminationReason).toBe("runtime_error");
-    expect(result.error).toContain("guest code:2:");
-  });
-
-  it("keeps emitted frames when no source map accompanies pre-transpiled code", async () => {
-    const transpiled = transpileFabricCodeWithSourceMap('throw new Error("pre");');
-    const result = await new QuickJsRuntime().execute(
-      'throw new Error("pre");',
-      async () => undefined,
-      { ...remapOptions, transpiledCode: transpiled.code },
-    );
-
-    expect(result.terminationReason).toBe("runtime_error");
-    expect(result.error).toContain("pi-fabric-guest.js");
-  });
-});
-

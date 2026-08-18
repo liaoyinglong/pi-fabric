@@ -15,7 +15,6 @@ export interface LeanExecutionRequest {
   signal: AbortSignal | undefined;
   parentToolCallId: string;
   context: ExtensionContext;
-  tokenBudget?: number;
   display?: { name?: string; description?: string };
   onPartial?: (snapshot: {
     audits: unknown[];
@@ -153,7 +152,6 @@ export class LeanCodeModeRuntime {
       signal: request.signal,
       parentToolCallId: request.parentToolCallId,
       context: request.context,
-      ...(request.tokenBudget !== undefined ? { tokenBudget: request.tokenBudget } : {}),
       ...(request.display ? { display: request.display } : {}),
       onPartial: (snapshot) => request.onPartial?.(snapshot),
     });

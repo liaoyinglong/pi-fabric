@@ -19,7 +19,6 @@ describe("lean system prompt stability", () => {
       systemPrompt: "Core prompt\nCurrent working directory: /workspace",
       skills: [skill],
       capturedTools,
-      agentsEnabled: true,
       mcpEnabled: true,
     });
 

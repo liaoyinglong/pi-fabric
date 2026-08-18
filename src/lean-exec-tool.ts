@@ -50,7 +50,6 @@ export const createLeanFabricExecTool = (
       }),
     ),
     resultFormat: Type.Optional(Type.Union(RESULT_FORMATS.map((value) => Type.Literal(value)))),
-    tokenBudget: Type.Optional(Type.Number({ minimum: 1 })),
     display: Type.Optional(
       Type.Union([
         Type.String(),
@@ -79,7 +78,6 @@ export const createLeanFabricExecTool = (
       signal,
       parentToolCallId: toolCallId,
       context,
-      ...(typeof params.tokenBudget === "number" ? { tokenBudget: params.tokenBudget } : {}),
       ...(display ? { display } : {}),
       onPartial(snapshot) {
         onUpdate?.({

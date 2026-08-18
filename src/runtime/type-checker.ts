@@ -44,13 +44,24 @@ const shouldKeepSemanticDiagnostic = (diagnostic: ts.Diagnostic): boolean => {
   if (!TYPE_CORRECTNESS_CODES.has(diagnostic.code)) return true;
   if (diagnostic.code !== 2339 && diagnostic.code !== 2551) return false;
   const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
-  // Dynamic provider result shapes intentionally remain wide. Stable Pi string
-  // contracts do not, so property mistakes on those should still fail early.
   return /does not exist on type 'string'/.test(message);
 };
 
 const PI_CORE_ACTIONS = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 const PI_CORE_ACTION_LIST = [...PI_CORE_ACTIONS].map((action) => `pi.${action}`).join(", ");
+const REMOVED_ORCHESTRATION_GLOBALS = [
+  "agents",
+  "workflow",
+  "agent",
+  "parallel",
+  "pipeline",
+  "phase",
+  "log",
+  "budget",
+  "__fabricTokenBudget",
+] as const;
+const GUEST_BOUNDARY_CLEANUP =
+  `for (const __name of ${JSON.stringify(REMOVED_ORCHESTRATION_GLOBALS)}) Reflect.deleteProperty(globalThis, __name);`;
 
 const memberName = (
   node: ts.Node,
@@ -96,12 +107,12 @@ export const normalizeTypeScriptPath = (fileName: string): string =>
   fileName.replaceAll("\\", "/");
 
 /**
- * Guest programs execute inside this wrapper; user code starts on wrapped line 2.
- * Generated dependency helpers are appended after author code so source-map and
- * diagnostic coordinates for user statements remain stable.
+ * The first wrapper line removes orchestration globals left by the historical
+ * bootstrap. User code still starts on wrapped line 2 so diagnostics and source
+ * maps keep their existing coordinate contract.
  */
 export const wrapFabricGuestCode = (code: string): string =>
-  `async function __piFabricMain() {\n${withBetterAllGuestEpilogue(code)}\n}\n`;
+  `async function __piFabricMain() { ${GUEST_BOUNDARY_CLEANUP}\n${withBetterAllGuestEpilogue(code)}\n}\n`;
 
 class FabricTypeChecker {
   readonly #guestFile: string;
@@ -117,15 +128,8 @@ class FabricTypeChecker {
   constructor(readonly declarations: string) {
     const id = ++nextCheckerId;
     this.#guestFile = normalizeTypeScriptPath(path.resolve(`/__pi_fabric_guest_${id}.ts`));
-    this.#declarationFile = normalizeTypeScriptPath(
-      path.resolve(`/__pi_fabric_globals_${id}.d.ts`),
-    );
-    this.#sourceFile = ts.createSourceFile(
-      this.#guestFile,
-      "",
-      ts.ScriptTarget.ES2022,
-      true,
-    );
+    this.#declarationFile = normalizeTypeScriptPath(path.resolve(`/__pi_fabric_globals_${id}.d.ts`));
+    this.#sourceFile = ts.createSourceFile(this.#guestFile, "", ts.ScriptTarget.ES2022, true);
     this.#declarationSource = ts.createSourceFile(
       this.#declarationFile,
       declarations,
@@ -141,9 +145,7 @@ class FabricTypeChecker {
     this.#host = {
       ...this.#baseHost,
       fileExists: (fileName) =>
-        isGuestFile(fileName) ||
-        isDeclarationFile(fileName) ||
-        this.#baseHost.fileExists(fileName),
+        isGuestFile(fileName) || isDeclarationFile(fileName) || this.#baseHost.fileExists(fileName),
       readFile: (fileName) => {
         if (isGuestFile(fileName)) return this.#sourceText;
         if (isDeclarationFile(fileName)) return this.declarations;
@@ -168,12 +170,7 @@ class FabricTypeChecker {
 
   check(code: string): FabricTypeCheckResult {
     this.#sourceText = wrapFabricGuestCode(code);
-    this.#sourceFile = ts.createSourceFile(
-      this.#guestFile,
-      this.#sourceText,
-      ts.ScriptTarget.ES2022,
-      true,
-    );
+    this.#sourceFile = ts.createSourceFile(this.#guestFile, this.#sourceText, ts.ScriptTarget.ES2022, true);
     const program = ts.createProgram({
       rootNames: [this.#declarationFile, this.#guestFile],
       options: compilerOptions,
@@ -183,21 +180,13 @@ class FabricTypeChecker {
     this.#program = program;
     const diagnostics = [
       ...program.getSyntacticDiagnostics(this.#sourceFile),
-      ...program
-        .getSemanticDiagnostics(this.#sourceFile)
-        .filter(shouldKeepSemanticDiagnostic),
+      ...program.getSemanticDiagnostics(this.#sourceFile).filter(shouldKeepSemanticDiagnostic),
     ];
     const errors = diagnostics.map((diagnostic) => {
       const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
-      if (!diagnostic.file || diagnostic.start === undefined) {
-        return { line: 0, column: 0, message };
-      }
+      if (!diagnostic.file || diagnostic.start === undefined) return { line: 0, column: 0, message };
       const position = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
-      return {
-        line: Math.max(1, position.line),
-        column: position.character + 1,
-        message,
-      };
+      return { line: Math.max(1, position.line), column: position.character + 1, message };
     });
     errors.push(...unknownPiCoreActionErrors(this.#sourceFile));
     if (errors.length > 0) return { errors };

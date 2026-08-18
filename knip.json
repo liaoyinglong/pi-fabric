@@ -8,6 +8,10 @@
   "project": [
     "src/**/*.ts"
   ],
+  "ignoreDependencies": [
+    "cross-spawn",
+    "@types/cross-spawn"
+  ],
   "include": [
     "files",
     "dependencies",

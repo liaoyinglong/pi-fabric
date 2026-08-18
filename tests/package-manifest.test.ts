@@ -1,35 +1,27 @@
 import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-interface PackageManifest {
-  dependencies?: Record<string, string>;
-}
-
-const packageName = (specifier: string): string =>
-  specifier.startsWith("@")
-    ? specifier.split("/").slice(0, 2).join("/")
-    : (specifier.split("/")[0] ?? specifier);
-
 describe("package manifest", () => {
-  it("installs every standalone worker import as a runtime dependency", () => {
-    const root = path.resolve(import.meta.dirname, "..");
-    const manifest = JSON.parse(
-      fs.readFileSync(path.join(root, "package.json"), "utf8"),
-    ) as PackageManifest;
-    const worker = fs.readFileSync(path.join(root, "src", "worker.ts"), "utf8");
-    const imports = [...worker.matchAll(/\bfrom\s+["']([^"']+)["']/g)]
-      .map((match) => match[1])
-      .filter((specifier): specifier is string =>
-        Boolean(specifier && !specifier.startsWith(".") && !specifier.startsWith("node:")),
-      )
-      .map(packageName);
+  it("ships one Lean extension and one progressive skill", () => {
+    const manifest = JSON.parse(fs.readFileSync("package.json", "utf8")) as {
+      files: string[];
+      pi: { extensions: string[]; skills: string[] };
+    };
 
-    for (const dependency of new Set(imports)) {
-      expect(
-        manifest.dependencies?.[dependency],
-        `${dependency} is imported by the standalone worker but is not installed at runtime`,
-      ).toBeDefined();
-    }
+    expect(manifest.pi.extensions).toEqual(["./dist/lean-index.js"]);
+    expect(manifest.pi.skills).toEqual(["./skills/fabric-exec"]);
+    expect(manifest.files).toContain("skills/fabric-exec/");
+    expect(manifest.files).not.toContain("skills/fabric-subagents/");
+    expect(manifest.files).not.toContain("skills/fabric-workflow/");
+    expect(manifest.files).not.toContain("internal/pi-subagents/");
+  });
+
+  it("does not publish worker or orchestration entrypoints", () => {
+    const manifest = JSON.parse(fs.readFileSync("package.json", "utf8")) as {
+      exports?: Record<string, unknown>;
+      files: string[];
+    };
+    expect(Object.keys(manifest.exports ?? {})).toEqual([".", "./protocol"]);
+    expect(manifest.files.some((file) => /worker|subagent|workflow/i.test(file))).toBe(false);
   });
 });
