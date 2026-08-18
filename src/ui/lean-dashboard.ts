@@ -15,6 +15,8 @@ import { formatLeanFabricLogLine } from "../commands/lean-fabric.js";
 
 const DASHBOARD_REFRESH_MS = 250;
 const DASHBOARD_HEIGHT_PERCENT = 90;
+const DASHBOARD_LOG_EVENTS = 200;
+const OUTPUT_SCROLL_STEP = 6;
 const MIN_TWO_PANE_WIDTH = 76;
 const MIN_AGENT_PANE_WIDTH = 28;
 const MAX_AGENT_PANE_WIDTH = 46;
@@ -56,6 +58,61 @@ const fit = (value: string, width: number): string => {
 
 const compact = (value: string, width: number): string =>
   truncateToWidth(value.replace(/\s+/g, " ").trim(), Math.max(1, width));
+
+const contentText = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((part) => {
+      if (typeof part !== "object" || part === null) return "";
+      const record = part as Record<string, unknown>;
+      return typeof record.text === "string" ? record.text : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+};
+
+export const formatLeanDashboardLogLine = (line: FabricLogLine): string => {
+  const value = line.parsed;
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    const type = typeof record.type === "string" ? record.type : undefined;
+    const message = record.message;
+    if ((type === "message_end" || type === "assistant") &&
+        typeof message === "object" && message !== null && !Array.isArray(message)) {
+      const msg = message as Record<string, unknown>;
+      const role = typeof msg.role === "string" ? msg.role : "message";
+      if (role === "assistant") {
+        const model = typeof msg.model === "string" ? ` [${msg.model}]` : "";
+        const text = contentText(msg.content).trim();
+        if (text) return `${role}${model}: ${text}`;
+      }
+    }
+  }
+  return formatLeanFabricLogLine(line);
+};
+
+export const wrapLeanDashboardText = (value: string, width: number): string[] => {
+  if (width <= 0) return [];
+  const wrapped: string[] = [];
+  for (const sourceLine of value.replace(/\r\n?/g, "\n").split("\n")) {
+    if (sourceLine.length === 0) {
+      wrapped.push("");
+      continue;
+    }
+    let current = "";
+    for (const char of sourceLine) {
+      if (current && visibleWidth(current + char) > width) {
+        wrapped.push(current);
+        current = char;
+      } else {
+        current += char;
+      }
+    }
+    wrapped.push(current);
+  }
+  return wrapped;
+};
 
 const statusGlyph = (status: AgentRunRecord["status"]): string => {
   switch (status) {
@@ -145,6 +202,7 @@ export class LeanFabricDashboard implements Component, Focusable {
   focused = true;
   #selection = 0;
   #listOffset = 0;
+  #outputOffset = 0;
   #feedback: string | undefined;
   #pendingStop: { id: string; expiresAt: number } | undefined;
   #unsubscribe: (() => void) | undefined;
@@ -186,6 +244,7 @@ export class LeanFabricDashboard implements Component, Focusable {
     if (rows.length === 0) {
       this.#selection = 0;
       this.#listOffset = 0;
+      this.#outputOffset = 0;
       return;
     }
     this.#selection = Math.max(0, Math.min(this.#selection, rows.length - 1));
@@ -195,8 +254,16 @@ export class LeanFabricDashboard implements Component, Focusable {
     const rows = this.#rows();
     this.#syncSelection(rows);
     if (rows.length === 0) return;
-    this.#selection = Math.max(0, Math.min(rows.length - 1, this.#selection + delta));
+    const nextSelection = Math.max(0, Math.min(rows.length - 1, this.#selection + delta));
+    if (nextSelection !== this.#selection) this.#outputOffset = 0;
+    this.#selection = nextSelection;
     this.#pendingStop = undefined;
+    this.#feedback = undefined;
+    this.tui.requestRender();
+  }
+
+  #scrollOutput(delta: number): void {
+    this.#outputOffset = Math.max(0, this.#outputOffset + delta);
     this.#feedback = undefined;
     this.tui.requestRender();
   }
@@ -254,9 +321,18 @@ export class LeanFabricDashboard implements Component, Focusable {
       this.#move(1);
       return;
     }
+    if (data === "u") {
+      this.#scrollOutput(OUTPUT_SCROLL_STEP);
+      return;
+    }
+    if (data === "d") {
+      this.#scrollOutput(-OUTPUT_SCROLL_STEP);
+      return;
+    }
     if (matchesKey(data, Key.home) || data === "g") {
       this.#selection = 0;
       this.#listOffset = 0;
+      this.#outputOffset = 0;
       this.#pendingStop = undefined;
       this.tui.requestRender();
       return;
@@ -264,6 +340,7 @@ export class LeanFabricDashboard implements Component, Focusable {
     if (matchesKey(data, Key.end) || data === "G") {
       const rows = this.#rows();
       this.#selection = Math.max(0, rows.length - 1);
+      this.#outputOffset = 0;
       this.#pendingStop = undefined;
       this.tui.requestRender();
       return;
@@ -273,6 +350,7 @@ export class LeanFabricDashboard implements Component, Focusable {
       return;
     }
     if (data === "r") {
+      this.#outputOffset = 0;
       this.#feedback = undefined;
       this.tui.requestRender();
     }
@@ -282,8 +360,7 @@ export class LeanFabricDashboard implements Component, Focusable {
     const marker = selected ? this.theme.fg("accent", "›") : " ";
     const branch = row.depth > 0 ? `${"  ".repeat(Math.max(0, row.depth - 1))}↳ ` : "";
     const glyph = colorStatus(this.theme, row.run.status, statusGlyph(row.run.status));
-    const id = this.theme.fg("muted", row.run.id.slice(0, 8));
-    const prefix = `${marker} ${branch}${glyph} ${id} `;
+    const prefix = `${marker} ${branch}${glyph} `;
     const remaining = Math.max(1, width - visibleWidth(prefix));
     const summary = agentSummary(row.run, remaining);
     return fit(`${prefix}${selected ? this.theme.fg("accent", summary) : summary}`, width);
@@ -298,25 +375,30 @@ export class LeanFabricDashboard implements Component, Focusable {
     ];
     if (row.run.model) parts.push(row.run.model);
     if (isRunRecord(row.run) && row.run.currentTool) parts.push(`tool:${row.run.currentTool}`);
+    if (this.#outputOffset > 0) parts.push(`history:+${this.#outputOffset}`);
     return fit(this.theme.fg("accent", compact(parts.join(" · "), width)), width);
   }
 
   #outputLines(row: LeanDashboardAgentRow | undefined, height: number, width: number): string[] {
     if (height <= 0) return [];
     if (!row) return [fit(this.theme.fg("muted", "Nothing to inspect yet."), width)];
-    const log = logLinesFor(this.manager, row, Math.max(1, height));
-    const formatted = log.events
-      .map(formatLeanFabricLogLine)
-      .filter(Boolean)
-      .map((line) => compact(line, width));
+    const log = logLinesFor(this.manager, row, DASHBOARD_LOG_EVENTS);
+    const formatted = log.events.flatMap((event) => {
+      const text = formatLeanDashboardLogLine(event);
+      return text ? wrapLeanDashboardText(text, width) : [];
+    });
     if (formatted.length === 0 && isRunRecord(row.run)) {
-      if (row.run.error) formatted.push(`error: ${compact(row.run.error, Math.max(1, width - 7))}`);
-      else if (row.run.text) formatted.push(`output: ${compact(row.run.text, Math.max(1, width - 8))}`);
+      if (row.run.error) formatted.push(...wrapLeanDashboardText(`error: ${row.run.error}`, width));
+      else if (row.run.text) formatted.push(...wrapLeanDashboardText(`output: ${row.run.text}`, width));
       else if (row.run.currentTool) formatted.push(`working: ${row.run.currentTool}`);
     }
     if (formatted.length === 0) formatted.push("No output recorded yet.");
-    if (log.hasMore && formatted.length > 0) formatted[0] = `… ${formatted[0]}`;
-    return formatted.slice(-height).map((line) => fit(line, width));
+    if (log.hasMore) formatted.unshift("… older log events omitted");
+    const maxOffset = Math.max(0, formatted.length - height);
+    this.#outputOffset = Math.min(this.#outputOffset, maxOffset);
+    const end = Math.max(0, formatted.length - this.#outputOffset);
+    const start = Math.max(0, end - height);
+    return formatted.slice(start, end).map((line) => fit(line, width));
   }
 
   #renderTwoPane(width: number, rows: LeanDashboardAgentRow[], contentRows: number): string[] {
@@ -362,6 +444,7 @@ export class LeanFabricDashboard implements Component, Focusable {
     const maxOffset = Math.max(0, rows.length - listRows);
     this.#listOffset = Math.max(0, Math.min(this.#listOffset, maxOffset));
     const selected = rows[this.#selection];
+    const output = this.#outputLines(selected, outputRows, inner);
     const lines = [`├${"─".repeat(inner)}┤`, `│${fit(this.theme.fg("muted", " Agents / Workflow"), inner)}│`];
     const agentRows = rows.slice(this.#listOffset, this.#listOffset + listRows);
     for (let index = 0; index < listRows; index++) {
@@ -371,7 +454,7 @@ export class LeanFabricDashboard implements Component, Focusable {
     }
     lines.push(`├${"─".repeat(inner)}┤`);
     lines.push(`│${this.#selectedHeader(selected, inner)}│`);
-    for (const line of this.#outputLines(selected, outputRows, inner)) lines.push(`│${line}│`);
+    for (const line of output) lines.push(`│${line}│`);
     while (lines.length < contentRows) lines.push(`│${fit("", inner)}│`);
     return lines.slice(0, contentRows);
   }
@@ -392,7 +475,7 @@ export class LeanFabricDashboard implements Component, Focusable {
     else lines.push(...this.#renderStacked(width, rows, contentRows));
     const footer = this.#feedback
       ? this.theme.fg(this.#feedback.startsWith("Press x again") ? "warning" : "muted", this.#feedback)
-      : this.theme.fg("muted", "↑↓/jk select · x stop · s settings · r refresh · Esc close");
+      : this.theme.fg("muted", "↑↓/jk agents · u/d output · r latest · x stop · s settings · Esc close");
     lines.push(`├${"─".repeat(inner)}┤`);
     lines.push(`│${fit(footer, inner)}│`);
     lines.push(`└${"─".repeat(inner)}┘`);
