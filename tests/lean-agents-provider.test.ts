@@ -89,7 +89,7 @@ describe("LeanAgentsProvider tier/policy contract", () => {
 
     const request = run.mock.calls[0]?.[0];
     expect(request?.runner).toBe("pi");
-    expect(request?.model).toBe("azure-openai-responses/gpt-5.6-sol");
+    expect(request?.model).toBe("cliproxyapi/gpt-5.6-sol");
     expect(request?.thinking).toBe("medium");
     expect(request?.tools).toEqual(["read", "grep", "find", "ls"]);
     expect(request?.worktree).toBe(false);

@@ -64,7 +64,7 @@ strong   -> gpt-5.6-sol
 
 ```text
 runner: pi
-model: azure-openai-responses/gpt-5.6-luna
+model: cliproxyapi/gpt-5.6-luna
 thinking: medium
 ```
 
@@ -84,7 +84,7 @@ Main 应该优先把机械式、边界清楚的工作交给 `fast`，而不是�
 
 ```text
 runner: pi
-model: azure-openai-responses/gpt-5.6-terra
+model: cliproxyapi/gpt-5.6-terra
 thinking: medium
 ```
 
@@ -104,7 +104,7 @@ thinking: medium
 
 ```text
 runner: pi
-model: azure-openai-responses/gpt-5.6-sol
+model: cliproxyapi/gpt-5.6-sol
 thinking: medium
 ```
 
@@ -311,17 +311,17 @@ Main 不应该并发：
 tiers:
   fast:
     runner: pi
-    model: azure-openai-responses/gpt-5.6-luna
+    model: cliproxyapi/gpt-5.6-luna
     thinking: medium
 
   balance:
     runner: pi
-    model: azure-openai-responses/gpt-5.6-terra
+    model: cliproxyapi/gpt-5.6-terra
     thinking: medium
 
   strong:
     runner: pi
-    model: azure-openai-responses/gpt-5.6-sol
+    model: cliproxyapi/gpt-5.6-sol
     thinking: medium
 
 policies:

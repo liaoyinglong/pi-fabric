@@ -200,17 +200,17 @@ Only two top-level keys are recognized: `tiers` and `policies`. There is no `rol
 tiers:
   fast:
     runner: pi
-    model: azure-openai-responses/gpt-5.6-luna
+    model: cliproxyapi/gpt-5.6-luna
     thinking: medium
 
   balance:
     runner: pi
-    model: azure-openai-responses/gpt-5.6-terra
+    model: cliproxyapi/gpt-5.6-terra
     thinking: medium
 
   strong:
     runner: pi
-    model: azure-openai-responses/gpt-5.6-sol
+    model: cliproxyapi/gpt-5.6-sol
     thinking: medium
     # transport: herdr
 

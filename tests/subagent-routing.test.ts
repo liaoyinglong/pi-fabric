@@ -52,7 +52,7 @@ describe("subagent tier and policy routing", () => {
     expect(fast.tier).toBe("fast");
     expect(fast.policy).toBe("inspect");
     expect(fast.args.runner).toBe("pi");
-    expect(fast.args.model).toBe("azure-openai-responses/gpt-5.6-luna");
+    expect(fast.args.model).toBe("cliproxyapi/gpt-5.6-luna");
     expect(fast.args.thinking).toBe("medium");
     expect(fast.args.tools).toEqual(["read", "grep", "find", "ls"]);
     expect(fast.args.worktree).toBe(false);
@@ -64,14 +64,14 @@ describe("subagent tier and policy routing", () => {
 
     const balance = resolveSubagentRouting({ tier: "balance", policy: "execute", task: "Run tests" }, root);
     expect(balance.args.runner).toBe("pi");
-    expect(balance.args.model).toBe("azure-openai-responses/gpt-5.6-terra");
+    expect(balance.args.model).toBe("cliproxyapi/gpt-5.6-terra");
     expect(balance.args.thinking).toBe("medium");
     expect(balance.args.tools).toContain("bash");
     expect(balance.args.tools).not.toContain("edit");
 
     const strong = resolveSubagentRouting({ tier: "strong", policy: "inspect", task: "Review architecture" }, root);
     expect(strong.args.runner).toBe("pi");
-    expect(strong.args.model).toBe("azure-openai-responses/gpt-5.6-sol");
+    expect(strong.args.model).toBe("cliproxyapi/gpt-5.6-sol");
     expect(strong.args.thinking).toBe("medium");
   });
 
@@ -131,7 +131,7 @@ roles:
     }, root);
 
     expect(resolved.args.runner).toBe("pi");
-    expect(resolved.args.model).toBe("azure-openai-responses/gpt-5.6-terra");
+    expect(resolved.args.model).toBe("cliproxyapi/gpt-5.6-terra");
     expect(resolved.args.thinking).toBe("medium");
   });
 
@@ -150,7 +150,7 @@ policies:
       root,
       { projectTrusted: false },
     );
-    expect(resolved.args.model).toBe("azure-openai-responses/gpt-5.6-sol");
+    expect(resolved.args.model).toBe("cliproxyapi/gpt-5.6-sol");
     expect(resolved.args.tools).toEqual(["read", "grep", "find", "ls"]);
 
     const result = describeSubagentRouting(root, { projectTrusted: false }) as {
