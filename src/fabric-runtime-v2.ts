@@ -338,7 +338,10 @@ export class FabricRuntimeV2HostAdapter {
       return this.#registry.invoke(ref, args, {
         ...invocationContext(signal),
         ...(this.#options.authorize
-          ? { authorize: (action: ResolvedFabricAction) => this.#options.authorize!(action, options.parentToolCallId) }
+          ? {
+              authorize: (action: ResolvedFabricAction) =>
+                Promise.resolve(this.#options.authorize!(action, options.parentToolCallId)),
+            }
           : {}),
         approve: (action: ResolvedFabricAction, preparedArgs: Record<string, unknown>) =>
           Promise.resolve(this.#options.approve?.(action, preparedArgs)),
