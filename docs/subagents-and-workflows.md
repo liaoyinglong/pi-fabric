@@ -1,202 +1,403 @@
-# Pi Fabric 子代理（Subagents）与工作流（Workflows）使用指南
+# Pi Fabric 子代理与工作流：Main 自主调度
 
-在 Pi Fabric Lean V2 中，Subagent 委派与 Workflow 编排不再是独立的 CLI 命令或重量级的后台常驻服务，而是作为 **Lean Code Mode (`fabric_exec`)** 环境中的 TypeScript 原生 API 运行。
+Lean V2 的目标不是让用户先配置一组固定角色，再在聊天里手动指定 `research`、`review` 等 profile。
 
-本文档详细说明 Subagents 与 Workflows 的实际运行机制、在对话中如何触发（包括**模型自主触发**与**用户显式提示触发**）、生命周期与常用使用模式。
-
----
-
-## 1. 运行机制概述
-
-当在 Pi 中加载 Pi Fabric 扩展后，主 Agent（Main LLM）拥有 Code Mode 能力，并默认加载 `fabric-subagents` 与 `fabric-workflow` 技能。
+新的模型是：**Main Agent 自己决定是否需要委派，并在每次委派时临时定义角色、任务边界、执行档位和能力权限。**
 
 ```text
-               ┌─────────────────────────────────┐
-               │         用户在对话中发送任务     │
-               └────────────────┬────────────────┘
-                                │
-                                ▼
-               ┌─────────────────────────────────┐
-               │    Pi 主 Agent (Main LLM)       │
-               └────────────────┬────────────────┘
-                                │ 编写 TypeScript 并调用 `fabric_exec`
-                                ▼
- ┌─────────────────────────────────────────────────────────────┐
- │ fabric_exec 运行时环境 (QuickJS / Node)                      │
- │                                                             │
- │   // 子代理 (Subagents)                                     │
- │   await agents.run({ profile: "research", task: "..." })    │
- │   await agents.spawn({ profile: "review", task: "..." })   │
- │   await agents.recurse({ profile: "deep", task: "..." })   │
- │                                                             │
- │   // 工作流 (Workflows)                                     │
- │   await Promise.all([...])                                  │
- │   await parallel(items.map(...), { concurrency: 3 })        │
- │   await pipeline(steps)                                     │
- └──────────────────────────────┬──────────────────────────────┘
-                                │ 返回提炼后的精简结果
-                                ▼
-               ┌─────────────────────────────────┐
-               │    主 Agent 回复给用户           │
-               └─────────────────────────────────┘
+用户任务
+   |
+   v
+Main Agent
+   |
+   |-- 简单、强耦合任务 ------------------> Main 自己完成
+   |
+   `-- 值得隔离 / 并行 / 降成本 / 独立验证
+          |
+          |  Main 临时定义 role + instructions
+          |  Main 选择 tier
+          |  Main 选择 policy
+          v
+      agents.run / spawn / recurse
+          |
+          v
+      bounded child result
+          |
+          v
+      Main 综合、决策、集成
 ```
 
----
+## 1. Main 负责什么
 
-## 2. 触发机制：何时与如何触发？
+Main 在调用子代理前自主决定四件事：
 
-### 一、模型自主触发（Autonomous Delegation）
+1. **是否值得委派**：并不是任务一复杂就必须拆。
+2. **临时角色**：例如 repository scout、API verifier、test analyst、focused implementer、architecture critic。
+3. **执行 tier**：`fast`、`balance`、`strong`。
+4. **能力 policy**：`inspect`、`execute`、`modify`、`isolated`。
 
-主 Agent（Main LLM）在加载技能后，会根据以下场景**自动决策**何时发起子代理或工作流，无需用户手动编写调用代码：
+角色不是配置项，也不决定模型或工具权限。它只描述当前子任务的职责和输出边界。
 
-1. **上下文保护与证据收集（Context Preservation）**：
-   * **痛点**：若在主对话中连续读取数十个文件、大规模 grep 或长日志，会导致上下文急剧膨胀，破坏主模型的逻辑推理能力。
-   * **自主行为**：主 Agent 会自动派出 `research` 或 `explore` profile 的子代理在独立的子上下文里阅读、检索与过滤，仅返回提炼后的结论给主 Agent。
+## 2. 第一版的三个 tier
 
-2. **异构模型路由与成本优化（Cost & Capability Efficiency）**：
-   * **痛点**：使用昂贵的高思考模型做简单的文件扫视或日志检索很不划算，而轻量模型又难以处理复杂的架构决策。
-   * **自主行为**：主 Agent 可以把机械式检索派发给 `runner: cli` 的轻量 profile，例如 `cli: agy`，也可以把复杂逻辑交给高 thinking 的 Pi profile；路由策略全部放在 profile 配置中。
+第一版默认三档都走 Pi，模型按能力/成本逐级提升：
 
-3. **独立审查与双盲验证（Independent Verification）**：
-   * **痛点**：同一个 LLM 在刚写完一段复杂代码后，进行自我审查时容易产生确认偏误（Confirmation Bias）。
-   * **自主行为**：主 Agent 在完成关键重构或修复后，可唤起 `review` profile，例如通过 `cli: droid` 在独立进程中重新审阅 diff。
-
-4. **多模块并发探查（Multi-Domain Parallel Exploration）**：
-   * **痛点**：需要同时调研多个不相关的子模块（如 `auth/`、`database/`、`router/`）时，串行处理耗时较长。
-   * **自主行为**：主 Agent 自动编写 `parallel(...)` 或 `Promise.all(...)` 脚本，并发派发多个探查任务。
-
-5. **深度递归解题（Recursive Decomposition）**：
-   * **痛点**：复杂的大型跨系统重构需要多层级的规划、分发与验证。
-   * **自主行为**：主 Agent 自动调用 `agents.recurse({ profile: "deep", task: "..." })`，赋予子 Pi 实例继续使用 Code Mode 并二次分发的能力。
-
----
-
-### 二、对话中显式触发（User-Prompted Triggering）
-
-用户可以直接在日常自然语言对话中指示 Pi 调用指定的 profile 或执行并发工作流：
-
-#### 1. 指定 Profile 进行委派
-
-* **调研与资料检索（Research / Exploration）**：
-  > “用 research profile 查一下 upstream 仓库关于 connection retry 的改动和文档说明，只要结论。”  
-  > “使用 explore profile 快速梳理一下 `src/router` 的入口和导出方法。”
-
-* **独立代码审查（Independent Code Review）**：
-  > “修复 session 管理中的竞态条件，并在完成前使用 review profile 独立审查 diff。”
-
-* **深度推理与决策（Deep Reasoning）**：
-  > “用 deep profile 评估一下当前 schema 迁移到 PostgreSQL 的风险与步骤。”
-
-#### 2. 触发并发工作流（Workflow Fan-Out）
-
-* **多模块并发检查**：
-  > “并发排查 `src/auth`、`src/billing` 和 `src/notifications` 中是否有遗留的废弃 user ID 引用。”  
-  > “跑一个工作流并发测试这 5 个外部 API 的联通性，汇总失败的端点。”
-
-* **分阶段流水线（Pipeline / Phased）**：
-  > “建立一个流水线：第一步提取所有数据库 migration 脚本，第二步校验语法，第三步检查是否缺少 rollback 逻辑。”
-
-#### 3. 隔离环境（Worktree）
-
-* **安全无污染修改**：
-  > “在独立的 git worktree 中让 subagent 尝试将打包工具迁移到 Vite，不要影响当前工作区。”
-
----
-
-## 3. Profiles 配置与语义角色
-
-Subagents 的配置位于 `subagents.yaml`（全局位于 `~/.pi/agent/fabric/subagents.yaml`，项目级位于 `.pi/fabric/subagents.yaml`）。
-
-### 常用 Profiles 角色说明
-
-| Profile 角色 | 典型 Runner | 思考等级 (Thinking) | 可用工具 | 适用场景 |
-|---|---|---|---|---|
-| `research` | `cli: agy` / `pi` | `low` | `[read, grep, find, ls]` | 低成本收集证据、查阅资料、回答定点问题 |
-| `explore` | `pi` | `low` | `[read, grep, find, ls]` | 探索项目代码结构、定位实现位置与依赖关系 |
-| `deep` | `pi` | `high` | 全部工具 | 疑难 Bug 分析、架构重构设计、递归解题 |
-| `review` | `cli: droid` / `pi` | `high` | `[read, grep, find, ls]` | 对 diff 进行独立审阅与代码安全检查 |
-
-例如：
-
-```yaml
-roles:
-  research:
-    runner: cli
-    cli: agy
-    thinking: low
-    tools: [read, grep, find, ls]
-
-  review:
-    runner: cli
-    cli: droid
-    thinking: high
-    tools: [read, grep, find, ls]
-
-  deep:
-    runner: pi
-    thinking: high
+```text
+fast     -> gpt-5.6-luna
+balance  -> gpt-5.6-terra
+strong   -> gpt-5.6-sol
 ```
 
-`runner: cli` 是一个通用适配入口，第一版内置 `agy` 与 `droid` 两个 adapter。Fabric 直接调用对应 CLI，不再要求安装 Veda。后续支持新的 headless CLI 时，应新增 adapter，而不是向 AgentManager/worker 再添加一套 runner 分支。
+三档默认都使用 `medium` thinking。AGY / Droid 继续保留为可覆盖的 CLI runner，但不再属于默认 tier 映射。
 
-CLI adapters 当前是 one-shot：不支持 `agents.recurse`、steer/follow-up 或 Fabric 主动 compact。递归 profile 必须使用 `runner: pi`。
+### `fast`
 
-在对话中随时查询当前可用的 Profiles：
+适合：
+
+- 搜索代码位置；
+- 收集证据；
+- 阅读少量相关文件；
+- 重复性检查；
+- 很明确、不需要架构判断的调研。
+
+默认：
+
+```text
+runner: pi
+model: azure-openai-responses/gpt-5.6-luna
+thinking: medium
+```
+
+Main 应该优先把机械式、边界清楚的工作交给 `fast`，而不是让主模型或强模型浪费上下文与成本。
+
+### `balance`
+
+适合：
+
+- 常规 debugging；
+- 普通实现任务；
+- 根据已有证据进行分析；
+- 跑测试并判断结果；
+- 中等复杂度验证。
+
+默认：
+
+```text
+runner: pi
+model: azure-openai-responses/gpt-5.6-terra
+thinking: medium
+```
+
+这是常规子任务的默认档位。
+
+### `strong`
+
+适合：
+
+- 模糊、难定位的 bug；
+- 架构和高影响决策；
+- 多种解释都合理的复杂问题；
+- 对 Main 的结论做真正独立的强审查；
+- `fast` / `balance` 已经无法可靠解决的任务。
+
+默认：
+
+```text
+runner: pi
+model: azure-openai-responses/gpt-5.6-sol
+thinking: medium
+```
+
+原则不是“重要任务全部 strong”，而是：**先用能够可靠完成任务的最低档位，证据不足或任务确实更难时再升级。**
+
+## 3. policy：角色和权限彻底分开
+
+第一版提供四个默认 policy。
+
+### `inspect`
+
+```text
+read, grep, find, ls
+```
+
+只读。适合 research、repo exploration、review、证据收集。
+
+### `execute`
+
+```text
+read, grep, find, ls, bash
+```
+
+可以跑测试、build、诊断命令，但不能 edit/write。
+
+### `modify`
+
+```text
+read, grep, find, ls, bash, edit, write
+worktree: false
+```
+
+用于在当前 workspace 做范围明确的实现。
+
+### `isolated`
+
+```text
+read, grep, find, ls, bash, edit, write
+worktree: true
+```
+
+用于实验性修改、并行修改，或者不希望污染 Main 当前 workspace 的任务。
+
+这里有一个重要规则：**policy 是能力边界，role 不是。**
+
+即使 Main 把一个 child 命名为 `implementer`，只要它选择的是 `inspect`，child 仍然没有写文件的能力。
+
+## 4. Main 如何动态定义子代理
+
+### 快速代码探查
 
 ```ts
-const catalog = await agents.profiles({});
-return catalog.profiles;
-```
-
----
-
-## 4. 对话与 TUI 交互体验
-
-当 Subagent 或 Workflow 在执行时，Pi 的 TUI 界面会呈现如下生命周期：
-
-1. **`fabric_exec` 卡片预览**：
-   * 折叠状态下默认显示前 8 行 TypeScript 调度脚本；
-   * 在 TUI 中按 `Ctrl+O` 可展开查看完整的调度与逻辑代码。
-
-2. **实时子任务进度**：
-   * 界面会实时显示当前正在执行的子代理 headline（例如 `agents.run [research]`、`pi.grep` 等）；
-   * 并发执行时会清晰呈现每个 worker 的并发进度。
-
-3. **结果精简聚合**：
-   * 子代理执行完成后，最终结果或结构化数据返回给主 Agent；
-   * 主 Agent 结合结果直接回答用户，保持主对话的历史记录干净清爽，避免大量零散的 tool step 污染主聊天窗口。
-
----
-
-## 5. 常用 TypeScript 调度代码范式
-
-### 同步调用单个子代理
-```ts
-const docs = await agents.run({
-  profile: "research",
-  task: "查阅 upstream 文档中关于重试退避算法的配置规范。",
+const evidence = await agents.run({
+  tier: "fast",
+  policy: "inspect",
+  role: "repository scout",
+  instructions: "只返回相关文件、调用链和关键证据，不要讨论无关架构。",
+  task: "定位 reconnect backoff 的实现。",
 });
-return docs;
+return evidence;
 ```
 
-### 并发工作流（Parallel Fan-Out）
+### 常规实现
+
+```ts
+return agents.run({
+  tier: "balance",
+  policy: "modify",
+  role: "focused implementer",
+  instructions: "保持 patch 最小，只修改任务必要文件，并运行直接相关测试。",
+  task: "修复 Main 已定位的 retry timer leak。",
+});
+```
+
+### 独立强审查
+
+```ts
+return agents.run({
+  tier: "strong",
+  policy: "inspect",
+  role: "independent reviewer",
+  instructions: "不要默认 Main 的方案正确。只报告有证据支持的 regression、遗漏和 residual risk。",
+  task: "独立审查当前 diff。",
+});
+```
+
+## 5. Main 什么时候应该主动委派
+
+默认 policy 建议 Main 在这些情况下主动使用 subagent：
+
+- **保护 Main context**：需要读很多文件、长日志、大量 grep 结果；
+- **天然并行**：多个模块/资料源彼此独立；
+- **成本优化**：低智力要求的 bounded work 可以用 `fast`；
+- **独立验证**：关键实现或判断值得让另一个上下文重新审查；
+- **隔离 mutation**：实验或并行修改适合独立 worktree。
+
+反过来，以下情况不值得为了“用了 subagent”而拆：
+
+- 任务很小；
+- 下一步高度依赖刚刚得到的结果；
+- Main 已经掌握全部必要上下文；
+- 拆分后同步和整合成本高于收益。
+
+## 6. 工作流由 Main 决定，而不是另一个 planner
+
+Workflow 只是 TypeScript 编排工具，不是第二个调度大脑。
+
+Main 先决定每个 worker 的 role / tier / policy，再用普通 `Promise.all` 或 workflow helper 组合。
+
 ```ts
 const findings = await parallel(
-  ["auth", "router", "models"].map((area) => () =>
-    agent(`审查 ${area} 目录下是否存在硬编码密钥。`, {
-      profile: "explore",
-      label: `audit ${area}`,
+  ["auth", "routing", "cache"].map((topic) => () =>
+    agent(`Inspect ${topic} and return bounded evidence.`, {
+      tier: "fast",
+      policy: "inspect",
+      role: `${topic} repository scout`,
+      label: `inspect ${topic}`,
     })
   ),
   { concurrency: 3 },
 );
-return findings;
+
+return agent(
+  `独立验证这些 findings，删除没有证据支持的结论：\n${JSON.stringify(findings)}`,
+  {
+    tier: "strong",
+    policy: "inspect",
+    role: "independent reviewer",
+    label: "verify",
+  },
+);
 ```
 
-### 递归任务分解（Recursive Delegation）
+简单 fan-out 优先直接使用：
+
 ```ts
-return await agents.recurse({
-  profile: "deep",
-  task: "对这个跨进程内存泄露问题进行分层排查，按需分发子探查任务并返回修复方案。",
+const [docs, code] = await Promise.all([
+  agents.run({
+    tier: "fast",
+    policy: "inspect",
+    role: "upstream researcher",
+    task: "检查 upstream contract。",
+  }),
+  agents.run({
+    tier: "fast",
+    policy: "inspect",
+    role: "repository scout",
+    task: "定位本地实现。",
+  }),
+]);
+return { docs, code };
+```
+
+## 7. 并发规则
+
+Main 可以并发：
+
+- 不同模块的只读 exploration；
+- 多个资料源 research；
+- 独立测试/验证；
+- 已明确分区的工作。
+
+Main 不应该并发：
+
+- 有前后依赖的步骤；
+- 多个 `modify` worker 同时改相同文件；
+- 一个 worker 的输出决定另一个 worker 的任务内容。
+
+如果确实需要并行 mutation，应优先使用 `isolated`，或者明确划分文件 ownership。
+
+## 8. 子代理默认输出 policy
+
+每个 child 都会自动获得这些默认要求：
+
+- 返回**压缩后的结果**，不要返回完整 tool transcript；
+- 相关时提供具体证据、changed files、验证结果；
+- 明确说明 uncertainty、缺失证据或 blocker；
+- 不要自行扩大任务范围；
+- Main 负责最终 synthesis 和 decision。
+
+这正是 subagent 与直接开一个完整 pane/CLI 的主要区别：Main 应该收到的是 bounded result，而不是重新阅读 child 的所有过程输出。
+
+## 9. 配置覆盖
+
+即使完全没有 `subagents.yaml`，默认 tier/policy 也能直接工作。
+
+全局覆盖：
+
+```text
+~/.pi/agent/fabric/subagents.yaml
+```
+
+项目覆盖：
+
+```text
+.pi/fabric/subagents.yaml
+```
+
+项目配置只在 trusted project 中加载。
+
+示例：
+
+```yaml
+tiers:
+  fast:
+    runner: pi
+    model: azure-openai-responses/gpt-5.6-luna
+    thinking: medium
+
+  balance:
+    runner: pi
+    model: azure-openai-responses/gpt-5.6-terra
+    thinking: medium
+
+  strong:
+    runner: pi
+    model: azure-openai-responses/gpt-5.6-sol
+    thinking: medium
+
+policies:
+  inspect:
+    tools: [read, grep, find, ls]
+
+  execute:
+    tools: [read, grep, find, ls, bash]
+
+  modify:
+    tools: [read, grep, find, ls, bash, edit, write]
+    worktree: false
+
+  isolated:
+    tools: [read, grep, find, ls, bash, edit, write]
+    worktree: true
+```
+
+这里只支持 `tiers:` 和 `policies:`。**不兼容旧 `roles:` / profile 配置。**
+
+Tier 可以覆盖 runner、CLI adapter、transport、model、thinking、timeout、extensions 和 tier instructions；policy 可以覆盖 tools、worktree、description 和 policy instructions。
+
+例如，你仍然可以把某个 tier 覆盖到 AGY：
+
+```yaml
+tiers:
+  fast:
+    runner: cli
+    cli: agy
+    thinking: low
+```
+
+需要查看当前语义配置时：
+
+```ts
+return agents.routing({});
+```
+
+Main 正常工作时不需要每次先 discover routing。
+
+## 10. 递归委派
+
+只有一个 child context 仍然明显不足时，才使用：
+
+```ts
+return agents.recurse({
+  tier: "strong",
+  policy: "inspect",
+  role: "problem decomposer",
+  task: "拆解这个跨模块问题，必要时继续委派 bounded evidence gathering，最后返回验证后的结论。",
 });
 ```
+
+选择的 tier 必须最终解析为 Pi runner。默认情况下 `fast`、`balance`、`strong` 三档都可以 recurse；如果某个 tier 被覆盖成 CLI runner，它仍然只能 one-shot。
+
+递归仍受这些限制：
+
+- `agents.maxDepth`；
+- 每次 `fabric_exec` 的 agent call ceiling；
+- child timeout / token limit；
+- `agents.budgetUsd`；
+- 当前 policy 的工具和 worktree 权限。
+
+普通任务优先 `run` / `spawn`，不要把 recursion 当作默认编排方式。
+
+## 11. 最终心智模型
+
+最简单的理解是：
+
+```text
+Main = planner + router + synthesizer
+Tier = 成本 / 智力档位
+Policy = 能力权限边界
+Role = Main 临时创建的任务身份
+Workflow = 纯编排工具
+Subagent = bounded worker
+```
+
+这样我们不需要提前猜未来会有哪些角色，也不需要维护越来越大的 `research/explore/review/tester/...` 配置目录。Main 根据当前任务动态定义角色，而真正需要稳定配置的只有少量 tier 与 policy。

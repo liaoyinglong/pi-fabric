@@ -30,6 +30,7 @@ const shippedDocs = [
   "docs/usage.md",
   "docs/configuration.md",
   "docs/lean-code-mode.md",
+  "docs/subagents-and-workflows.md",
 ] as const;
 
 describe("lean Fabric skill surface", () => {
@@ -61,7 +62,7 @@ describe("lean Fabric skill surface", () => {
     }
   });
 
-  it("keeps legacy Fabric providers out of default lean system guidance", () => {
+  it("advertises autonomous tier and policy routing without profile selectors", () => {
     const guidance = [
       fabricExecutionKernelGuidance(true),
       defaultFabricExecutionGuidance(true),
@@ -73,25 +74,36 @@ describe("lean Fabric skill surface", () => {
     expect(guidance).toContain("mcp.<server>.<tool>");
     expect(guidance).toContain("agents.*");
     expect(guidance).toContain("workflow");
-    expect(guidance).toContain("agents.profiles({})");
-    expect(guidance).toContain("semantic profile");
-    expect(guidance).toContain("`name` is display-only");
-    expect(guidance).toContain("agents.recurse({profile,task})");
-    expect(guidance).toContain("caller should not need to name a model");
+    expect(guidance).toContain("Main owns delegation");
+    expect(guidance).toContain("fast");
+    expect(guidance).toContain("balance");
+    expect(guidance).toContain("strong");
+    expect(guidance).toContain("inspect");
+    expect(guidance).toContain("execute");
+    expect(guidance).toContain("modify");
+    expect(guidance).toContain("isolated");
+    expect(guidance).toContain("agents.run({tier,policy,role,task})");
+    expect(guidance).toContain("agents.routing({})");
+    expect(guidance).toContain("Prefer the lowest tier");
+    expect(guidance).toContain("Main remains responsible for synthesis");
+    expect(guidance).not.toContain("agents.profiles");
+    expect(guidance).not.toContain("semantic profile");
+    expect(guidance).not.toContain('profile: "');
 
     for (const legacy of ["memory.*", "state.*", "schema.*", "mesh.*", "actors"] as const) {
       expect(guidance).not.toContain(legacy);
     }
   });
 
-  it("does not advertise disabled MCP or semantic subagents", () => {
+  it("does not advertise disabled MCP or subagent routing", () => {
     const guidance = defaultFabricExecutionGuidance(true, {
       agentsEnabled: false,
       mcpEnabled: false,
     });
     expect(guidance).not.toContain("mcp.<server>.<tool>");
-    expect(guidance).not.toContain("agents.profiles({})");
-    expect(guidance).not.toContain("semantic profile");
+    expect(guidance).not.toContain("Main owns delegation");
+    expect(guidance).not.toContain("agents.routing({})");
+    expect(guidance).not.toContain("agents.run({tier,policy,role,task})");
     expect(guidance).toContain("agents and agent-backed workflow delegation are disabled");
   });
 
@@ -99,8 +111,12 @@ describe("lean Fabric skill surface", () => {
     const skill = fs.readFileSync("skills/fabric-exec/SKILL.md", "utf8");
     expect(skill).toContain("Pi Code Mode");
     expect(skill).toContain("Captured extension tools");
-    expect(skill).toContain("Profile-based subagents");
+    expect(skill).toContain("Tier/policy subagents");
     expect(skill).toContain("Thin workflow composition");
+    expect(skill).toContain('tier: "fast"');
+    expect(skill).toContain('policy: "inspect"');
+    expect(skill).not.toContain("agents.profiles");
+    expect(skill).not.toContain('profile: "');
     expect(skill).not.toContain("memory.recall");
     expect(skill).not.toContain("state.transition");
     expect(skill).not.toContain("schema.hypothesize");
@@ -128,11 +144,21 @@ describe("lean Fabric skill surface", () => {
     }
   }, 30_000);
 
-  it("does not make hidden workflow skills part of the ambient model catalog", () => {
+  it("keeps delegation skills visible to the ambient model catalog", () => {
     for (const name of ["fabric-subagents", "fabric-workflow"] as const) {
       const skill = fs.readFileSync(path.join("skills", name, "SKILL.md"), "utf8");
       const frontmatter = skill.slice(0, skill.indexOf("---", 4));
-      expect(frontmatter).toContain("disable-model-invocation: true");
+      expect(frontmatter).not.toContain("disable-model-invocation: true");
+      expect(frontmatter).toContain("Use proactively");
+    }
+  });
+
+  it("does not ship executable profile selectors in the three lean skills", () => {
+    for (const name of shippedSkills) {
+      const skill = fs.readFileSync(path.join("skills", name, "SKILL.md"), "utf8");
+      expect(skill).not.toContain("agents.profiles");
+      expect(skill).not.toContain('profile: "');
+      expect(skill).not.toContain("roles:\n  research:");
     }
   });
 });

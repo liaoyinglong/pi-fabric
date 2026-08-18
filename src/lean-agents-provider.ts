@@ -7,7 +7,12 @@ import type {
 import { AgentManager, effectiveAgentTimeoutMs } from "./agents/manager.js";
 import type { AgentRunRequest, AgentRunResult, FabricSteeringMode } from "./agents/types.js";
 import { isFabricThinking } from "./thinking.js";
-import { describeSubagentRoles, resolveSubagentRole } from "./subagents/profiles.js";
+import {
+  describeSubagentRouting,
+  resolveSubagentRouting,
+  SUBAGENT_POLICIES,
+  SUBAGENT_TIERS,
+} from "./subagents/routing.js";
 
 const emptySchema = { type: "object", properties: {}, additionalProperties: false };
 const idSchema = {
@@ -18,22 +23,38 @@ const idSchema = {
 };
 const runProperties = {
   task: { type: "string", description: "Self-contained task for the child worker" },
-  profile: { type: "string", description: "Configured semantic subagent profile, such as research, explore, deep, or review" },
-  name: { type: "string", description: "Optional display name; does not select the model/profile" },
+  tier: {
+    type: "string",
+    enum: [...SUBAGENT_TIERS],
+    description: "Capability/cost tier selected by Main: fast, balance, or strong",
+  },
+  policy: {
+    type: "string",
+    enum: [...SUBAGENT_POLICIES],
+    description: "Capability boundary selected by Main: inspect, execute, modify, or isolated",
+  },
+  role: {
+    type: "string",
+    description: "Temporary semantic role Main assigns for this run; it is not a configured profile selector",
+  },
+  instructions: {
+    type: "string",
+    description: "Optional bounded instructions/output contract Main creates for this run",
+  },
+  name: { type: "string", description: "Optional display name only" },
   timeoutMs: { type: "number" },
-  worktree: { type: "boolean" },
   schema: { type: "object", additionalProperties: true },
 };
 const runSchema = {
   type: "object",
   properties: runProperties,
-  required: ["task"],
+  required: ["task", "tier", "policy"],
   additionalProperties: false,
 };
 const recurseSchema = {
   type: "object",
   properties: runProperties,
-  required: ["task", "profile"],
+  required: ["task", "tier", "policy"],
   additionalProperties: false,
 };
 const messageSchema = {
@@ -53,18 +74,18 @@ const modeSchema = {
 };
 
 export const LEAN_AGENT_ACTIONS: FabricActionDescriptor[] = [
-  { name: "run", description: "Run one configured child worker and wait for its result", inputSchema: runSchema, risk: "agent" },
-  { name: "spawn", description: "Start one configured child worker and return a handle", inputSchema: runSchema, risk: "agent" },
+  { name: "run", description: "Run one tier/policy-routed child worker and wait for its result", inputSchema: runSchema, risk: "agent" },
+  { name: "spawn", description: "Start one tier/policy-routed child worker and return a handle", inputSchema: runSchema, risk: "agent" },
   {
     name: "recurse",
-    description: "Run one recursive Pi child under the configured depth, call, and cost budgets and return a compact result",
+    description: "Run one recursive Pi child under the selected tier/policy and configured depth, call, and cost budgets",
     inputSchema: recurseSchema,
     risk: "agent",
   },
   { name: "wait", description: "Wait for a spawned child worker", inputSchema: idSchema, risk: "read" },
   { name: "status", description: "Read the latest status of a local child worker", inputSchema: idSchema, risk: "read" },
   { name: "list", description: "List child workers created by this Pi host", inputSchema: emptySchema, risk: "read" },
-  { name: "profiles", description: "List configured semantic subagent profiles", inputSchema: emptySchema, risk: "read" },
+  { name: "routing", description: "List the active fast/balance/strong tiers and capability policies", inputSchema: emptySchema, risk: "read" },
   { name: "stop", description: "Stop a local child worker", inputSchema: idSchema, risk: "agent" },
   {
     name: "cleanup",
@@ -105,7 +126,7 @@ const runRequest = (
   context: FabricInvocationContext,
   manager: AgentManager,
 ): AgentRunRequest => {
-  const { args } = resolveSubagentRole(raw, manager.cwd, {
+  const { args } = resolveSubagentRouting(raw, manager.cwd, {
     projectTrusted: projectTrusted(context),
   });
   const runner = args.runner === "pi" || args.runner === "claude" || args.runner === "cli"
@@ -160,7 +181,7 @@ const compactRecursiveResult = (result: AgentRunResult): Record<string, unknown>
 
 export class LeanAgentsProvider implements FabricProvider {
   readonly name = "agents";
-  readonly description = "Profile-based subagents backed by Pi, Claude, or pluggable CLI adapters";
+  readonly description = "Main-routed subagents using fast/balance/strong tiers and explicit capability policies";
 
   constructor(readonly manager: AgentManager) {}
 
@@ -188,7 +209,7 @@ export class LeanAgentsProvider implements FabricProvider {
       case "recurse": {
         const request = runRequest(args, context, this.manager);
         if (request.runner !== "pi") {
-          throw new Error("Recursive subagent profiles must use runner: pi");
+          throw new Error("Recursive subagent tier must resolve to runner: pi");
         }
         return compactRecursiveResult(
           await this.manager.run({ ...request, recursive: true }, context.signal),
@@ -200,24 +221,10 @@ export class LeanAgentsProvider implements FabricProvider {
         return this.manager.status(String(args.id));
       case "list":
         return this.manager.list();
-      case "profiles":
-      case "roles":
-        return describeSubagentRoles(this.manager.cwd, {
+      case "routing":
+        return describeSubagentRouting(this.manager.cwd, {
           projectTrusted: projectTrusted(context),
         });
-      // Kept as an unlisted compatibility action for existing scripts. Model
-      // routing now belongs in semantic profiles, not in ordinary call sites.
-      case "models": {
-        const runner = args.runner === "claude" || args.runner === "cli" || args.runner === "pi"
-          ? args.runner
-          : this.manager.config.runner;
-        if (runner === "claude") return this.manager.claudeModels(args.refresh === true);
-        if (runner === "cli") return [];
-        const model = context.extensionContext.model;
-        return model
-          ? [{ provider: model.provider, id: model.id, name: model.name, key: `${model.provider}/${model.id}` }]
-          : [];
-      }
       case "stop":
         return this.manager.stop(String(args.id));
       case "cleanup":

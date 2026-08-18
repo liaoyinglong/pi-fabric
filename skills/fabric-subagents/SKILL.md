@@ -1,104 +1,179 @@
 ---
 name: fabric-subagents
-description: Delegates bounded work to semantic Pi Fabric subagent profiles with profile-specific runner, model, thinking, tools, and instructions. Use when a task benefits from isolated research, exploration, implementation, review, or bounded recursive decomposition.
-disable-model-invocation: true
+description: Delegates bounded work through Main-selected fast/balance/strong tiers and explicit capability policies. Use proactively when isolation, cheaper execution, parallel work, or independent verification improves the task.
 ---
 
-# Fabric Subagent Profiles
+# Fabric Subagents
 
-Route ordinary calls by semantic profile and keep raw model choices in configuration. Profiles are configured as `roles:` globally in `~/.pi/agent/fabric/subagents.yaml` or per trusted project in `.pi/fabric/subagents.yaml`. Project entries override global entries field-by-field.
+Main owns delegation. Users should not need to predefine roles or name models during normal conversation.
 
-Discover the active catalog:
+For each delegated task, Main decides four things at call time:
 
-```ts
-const catalog = await agents.profiles({});
-return catalog.profiles;
-```
+1. whether delegation is useful at all;
+2. a temporary semantic `role` and optional bounded `instructions`;
+3. an execution `tier`: `fast`, `balance`, or `strong`;
+4. a capability `policy`: `inspect`, `execute`, `modify`, or `isolated`.
 
-`agents.profiles()` returns `{ profiles, sources }`. Each profile has a `name`; there is no profile `id`. If the profile name is already known, call it directly instead of discovering first.
+Model, runner, thinking level, tool grants, and worktree behavior come from the selected tier/policy configuration. The model-facing API intentionally does not expose those raw routing fields.
 
-Run a configured profile synchronously:
+## Tiers
+
+| Tier | Default routing | Use for |
+| --- | --- | --- |
+| `fast` | Pi `gpt-5.6-luna`, medium thinking | bounded search, evidence gathering, repetitive inspection, cheap checks |
+| `balance` | Pi `gpt-5.6-terra`, medium thinking | routine reasoning, debugging, implementation, verification |
+| `strong` | Pi `gpt-5.6-sol`, medium thinking | ambiguous bugs, architecture/high-impact decisions, difficult reasoning, independent review |
+
+Prefer the lowest tier that can reliably finish the bounded task. Escalate only when the result is uncertain, evidence is insufficient, or the task proves harder than expected. Do not run a strong worker merely because it exists.
+
+AGY and Droid remain available as CLI runner overrides in `subagents.yaml`; they are not part of the built-in tier mapping.
+
+## Capability policies
+
+| Policy | Default boundary | Worktree |
+| --- | --- | --- |
+| `inspect` | `read`, `grep`, `find`, `ls` | no |
+| `execute` | inspect + `bash`; no edit/write | no |
+| `modify` | read/search + `bash`, `edit`, `write` | no |
+| `isolated` | same mutation tools as `modify` | yes |
+
+Use `inspect` by default for research/review. Use `execute` when tests, builds, or diagnostics are required without source mutation. Use `modify` for a bounded implementation in the current workspace. Use `isolated` for experiments or parallel mutation that should not touch Main's current worktree.
+
+Policies are capability boundaries, not personas. A child cannot gain write tools merely because Main calls it an "implementer"; Main must select a policy that grants those capabilities.
+
+## Main-defined roles
+
+Roles are ephemeral call-time context, not configured selectors:
 
 ```ts
 const finding = await agents.run({
-  profile: "research",
-  task: "Find the relevant upstream documentation and return only evidence needed for this task.",
+  tier: "fast",
+  policy: "inspect",
+  role: "repository scout",
+  instructions: "Locate the retry implementation and return file references plus the relevant control flow.",
+  task: "Find how reconnect backoff is implemented.",
 });
 return finding;
 ```
 
-Or spawn it and wait later:
+Main can create any role that helps the current task: repository scout, API verifier, migration reviewer, test analyst, focused implementer, architecture critic, and so on. Do not add a permanent profile merely to name a temporary responsibility.
+
+For routine implementation:
+
+```ts
+return await agents.run({
+  tier: "balance",
+  policy: "modify",
+  role: "focused implementer",
+  instructions: "Keep the patch minimal and run the directly relevant tests.",
+  task: "Fix the retry timer leak described by Main.",
+});
+```
+
+For independent verification:
+
+```ts
+const review = await agents.run({
+  tier: "strong",
+  policy: "inspect",
+  role: "independent reviewer",
+  instructions: "Challenge Main's assumptions. Report only concrete regressions or residual risks.",
+  task: "Review the current diff for correctness regressions.",
+});
+return review;
+```
+
+Or spawn independent work and wait later:
 
 ```ts
 const handle = await agents.spawn({
-  profile: "review",
-  task: "Independently review the current diff for correctness regressions.",
+  tier: "fast",
+  policy: "inspect",
+  role: "upstream researcher",
+  task: "Check upstream behavior and return only evidence relevant to this change.",
 });
-// Do other bounded work here.
+// Main can do other independent work here.
 return await agents.wait({ id: handle.id });
 ```
 
-`name` is only an optional display name. Do not use it for model routing. Older `name: "research"` calls still resolve matching profiles as a compatibility fallback, but new code should always use `profile`.
+## Default delegation policy
 
-A profile may define:
+Main should delegate when at least one of these is true:
+
+- isolation keeps large search/log/file-reading work out of Main context;
+- multiple independent tasks can run concurrently;
+- a cheaper worker is sufficient for bounded work;
+- an independent context materially improves verification;
+- a mutation is safer in an isolated worktree.
+
+Keep simple, tightly coupled work in Main. Parallelize only independent tasks. Never let concurrent children write overlapping files. Main remains responsible for synthesis, final decisions, and integration.
+
+Children are prompted to return compact results rather than raw tool transcripts, include concrete evidence or validation when relevant, state uncertainty explicitly, and avoid broadening scope.
+
+## Configuration overrides
+
+Built-in tier and policy defaults work without any `subagents.yaml`. Override them globally at `~/.pi/agent/fabric/subagents.yaml` or per trusted project at `.pi/fabric/subagents.yaml`. Project values override global values field-by-field; an explicit `PI_FABRIC_SUBAGENTS_FILE` is applied last.
 
 ```yaml
-roles:
-  research:
-    description: Cheap bounded research and evidence gathering
-    instructions: |
-      Gather concrete evidence. Avoid architecture decisions unless requested.
-    runner: cli
-    cli: agy
-    thinking: low
-    tools: [read, grep, find, ls]
-
-  explore:
-    description: Repository exploration
+tiers:
+  fast:
     runner: pi
     model: azure-openai-responses/gpt-5.6-luna
-    thinking: low
+    thinking: medium
 
-  deep:
-    description: Difficult reasoning and implementation decisions
+  balance:
+    runner: pi
+    model: azure-openai-responses/gpt-5.6-terra
+    thinking: medium
+
+  strong:
     runner: pi
     model: azure-openai-responses/gpt-5.6-sol
-    thinking: high
-    tools: [read, grep, find, ls, edit, write, bash]
+    thinking: medium
 
-  review:
-    description: Strong independent verification
-    runner: cli
-    cli: droid
-    thinking: high
+policies:
+  inspect:
     tools: [read, grep, find, ls]
+
+  execute:
+    tools: [read, grep, find, ls, bash]
+
+  modify:
+    tools: [read, grep, find, ls, bash, edit, write]
+    worktree: false
+
+  isolated:
+    tools: [read, grep, find, ls, bash, edit, write]
+    worktree: true
 ```
 
-If `tools` is omitted, an ordinary one-shot child inherits the safe read-only allowlist `read`, `grep`, `find`, and `ls`. Add `bash`, `edit`, or `write` explicitly only for profiles that need execution or mutation.
+Tier overrides may set `runner`, `cli`, `transport`, `model`, `thinking`, `timeoutMs`, `extensions`, `description`, and `instructions`. Policy overrides may set `tools`, `worktree`, `description`, and `instructions`.
 
-Pi extension discovery stays enabled by default. This is necessary for extensions that dynamically register model providers. Ordinary nested Pi children still do **not** enter Fabric again: when they discover the Fabric extension it detects one-shot child mode and stays inert, while the child's `--tools` allowlist remains the model-facing tool boundary. Set `extensions: false` explicitly only when the child genuinely needs no extension-provided model/provider or other extension behavior.
+There is no `roles:` / profile compatibility layer in this design. The configured surface is only tiers and policies; roles are created dynamically by Main.
 
-Profile configuration owns `runner`, `cli`, `transport`, `model`, `thinking`, `tools`, `timeoutMs`, `extensions`, and `worktree`. The public `agents.run`/`spawn` call surface intentionally does not expose raw model-routing fields; change the profile when routing policy changes. Profile `instructions` are prepended to the child task.
+Inspect the active semantic surface when needed:
 
-Project profile files are skipped when Pi marks the project untrusted. Global profiles and an explicit host-supplied `PI_FABRIC_SUBAGENTS_FILE` remain available.
+```ts
+return await agents.routing({});
+```
 
-For `runner: cli`, select `cli: agy` or `cli: droid`. If `cli` is omitted, the profile inherits `agents.cli.adapter`. Model identifiers are adapter-specific; omit `model` to use the selected CLI's own configured/default model.
+`agents.routing()` returns tier/policy descriptions and capability boundaries, but deliberately does not expose raw model IDs or runner routing to Main.
 
-CLI adapters are deliberately one-shot. They do not support recursive Fabric, steering, follow-ups, or Fabric-triggered compaction. Start a new run for another CLI prompt.
+Project routing files are skipped when Pi marks the project untrusted.
 
-## Minimal recursive delegation
+## Recursion
 
-Use recursion only when one isolated child context is not enough. `agents.recurse` starts a recursive **Pi** profile, allows that child to use Lean Code Mode and delegate again, and returns only a compact result that omits the full run record.
+Use recursion only when one isolated child context is insufficient:
 
 ```ts
 return await agents.recurse({
-  profile: "deep",
+  tier: "strong",
+  policy: "inspect",
+  role: "problem decomposer",
   task: "Decompose this cross-module problem, delegate bounded evidence gathering as needed, and return the verified conclusion.",
 });
 ```
 
-The profile selected by `agents.recurse` must resolve to `runner: pi`; CLI adapters and Claude remain one-shot workers. A recursive Pi child's model-facing execution gateway is `fabric_exec`; Lean hides the direct Pi core tools from that child model. The selected profile's original `tools` list is retained as the internal Code Mode capability grant, so recursion cannot expand authority. For example, a profile that only grants `read`, `grep`, `find`, and `ls` can use those actions through `pi.*` inside `fabric_exec`, but `pi.bash`, `pi.edit`, and `pi.write` are unavailable. Granted captured extension tool names are filtered the same way.
+All three built-in tiers resolve to `runner: pi`, so recursion is available to `fast`, `balance`, and `strong`. Recursive Pi children remain bounded by `agents.maxDepth`, the per-execution agent-call ceiling, child timeouts/token limits, tool policy, and the shared `agents.budgetUsd` ledger when configured.
 
-Recursion is bounded by `agents.maxDepth`, the execution agent-call ceiling, child timeouts/token limits, and the shared `agents.budgetUsd` cost ledger when configured. Prefer ordinary `run`/`spawn` unless recursive decomposition materially reduces the parent context burden.
-
-The intended routing pattern is semantic: cheap profiles such as `research`/`explore` gather evidence, while `deep`/`review` handle difficult reasoning or independent verification. The main agent should choose the profile, not the provider/model identifier.
+Prefer ordinary `run`/`spawn` unless recursive decomposition materially reduces Main's context burden.
