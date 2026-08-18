@@ -3,7 +3,7 @@ import { newQuickJSWASMModuleFromVariant } from "quickjs-emscripten-core";
 import ts from "typescript";
 import { runAbortable, settleWithin } from "./async-settlement.js";
 
-export type CodeModeV2Capability = "read" | "grep" | "bash" | "mcp";
+export type CodeModeV2Capability = "read" | "grep" | "bash" | "mcp" | "dispatch";
 
 export type CodeModeV2HostHandler = (
   args: Record<string, unknown>,
@@ -28,6 +28,8 @@ export interface CodeModeV2ExecuteOptions {
   code: string;
   strings?: Record<string, string>;
   signal?: AbortSignal;
+  /** Trusted host-supplied bootstrap evaluated after the minimal host surface is installed. */
+  guestSetup?: string;
 }
 
 export interface CodeModeV2ExecutionResult {
@@ -45,7 +47,7 @@ const HOST_TASK_SETTLE_GRACE_MS = 250;
 const QUICKJS_MAX_STACK_SIZE_BYTES = 256 * 1024;
 const QUICKJS_GC_LIST_ASSERTION = "list_empty(&rt->gc_obj_list)";
 
-const CAPABILITIES = new Set<CodeModeV2Capability>(["read", "grep", "bash", "mcp"]);
+const CAPABILITIES = new Set<CodeModeV2Capability>(["read", "grep", "bash", "mcp", "dispatch"]);
 
 export const CODE_MODE_V2_GUEST_SETUP = `
 (() => {
@@ -57,6 +59,7 @@ export const CODE_MODE_V2_GUEST_SETUP = `
     grep: (args = {}) => call("grep", args),
     bash: (args = {}) => call("bash", args),
     mcp: (args = {}) => call("mcp", args),
+    dispatch: (args = {}) => call("dispatch", args),
   });
   globalThis.console = Object.freeze({
     log: (...values) => print(...values),
@@ -307,6 +310,16 @@ export class CodeModeRuntimeV2 {
         return finish({ value: undefined, logs, terminationReason: "runtime_error", error });
       }
       setupResult.value.dispose();
+
+      if (options.guestSetup?.trim()) {
+        const guestSetupResult = context.evalCode(options.guestSetup, "code-mode-v2-host-setup.js");
+        if (guestSetupResult.error) {
+          const error = formatValue(context.dump(guestSetupResult.error));
+          guestSetupResult.error.dispose();
+          return finish({ value: undefined, logs, terminationReason: "runtime_error", error });
+        }
+        guestSetupResult.value.dispose();
+      }
 
       executionGate = context.newPromise();
       context.setProp(context.global, "__codeModeV2ExecutionGate", executionGate.handle);
