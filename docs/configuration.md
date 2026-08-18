@@ -2,6 +2,8 @@
 
 Fabric reads global configuration from `~/.pi/agent/fabric.json` and trusted-project overrides from `.pi/fabric.json`. `PI_FABRIC_CONFIG` can point at an additional explicit config file.
 
+Configuration is file-based. Fabric does not provide a settings command or settings TUI.
+
 ## Executor
 
 ```json
@@ -33,7 +35,7 @@ Fabric reads global configuration from `~/.pi/agent/fabric.json` and trusted-pro
 }
 ```
 
-Each value is `allow`, `ask`, `auto`, or `deny`. `agent` remains a generic risk class for third-party actions that delegate to an external agent; it does not enable a Fabric subagent runtime.
+Each value is `allow`, `ask`, `auto`, or `deny`. `agent` remains a generic risk class for third-party actions that delegate externally; it does not enable a Fabric subagent runtime. Auto approval is retained for now and can be evaluated independently from the execution-core cleanup.
 
 ## MCP
 
@@ -80,7 +82,3 @@ Lean forces capture on and hides captured tools from the model unless they are l
 ## Removed configuration
 
 Lean V2 no longer reads or exposes Fabric-owned agent runner, tier/policy routing, workflow, child-run retention, session export, or todo configuration. Legacy keys are ignored by normalization and can be removed from existing config files.
-
-## TUI
-
-`/fabric` opens the settings UI. It edits executor, MCP, approval, and capture settings only.

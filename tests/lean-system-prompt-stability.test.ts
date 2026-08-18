@@ -12,14 +12,13 @@ const skill: Skill = {
   disableModelInvocation: false,
 };
 
-describe("lean system prompt stability", () => {
-  it("keeps current-turn content out of the cached system prompt", () => {
+describe("lean system prompt compatibility", () => {
+  it("restores model-visible skills without adding turn-varying content", () => {
     const capturedTools = new CapturedToolCatalog();
     const renderTurn = (_turnPrompt: string): string => buildLeanSystemPrompt({
       systemPrompt: "Core prompt\nCurrent working directory: /workspace",
       skills: [skill],
       capturedTools,
-      mcpEnabled: true,
     });
 
     const ordinaryTurn = renderTurn("Inspect the auth flow.");

@@ -11,6 +11,11 @@ const FABRIC_SKILL_LOAD_INSTRUCTION =
   "Use `pi.read` inside `fabric_exec` to load a skill's file when the task matches its description.";
 const CWD_MARKER = "\nCurrent working directory:";
 
+/**
+ * Pi only adds model-visible skills when the native `read` tool is active.
+ * Lean hides `read`, so restore the same catalog and adapt only the load
+ * instruction to the `fabric_exec` guest bridge.
+ */
 export const restoreSkillsForFullCodePrompt = (
   systemPrompt: string,
   skills: readonly Skill[],

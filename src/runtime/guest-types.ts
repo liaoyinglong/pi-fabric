@@ -1,8 +1,5 @@
 import type { FabricDynamicGuestDeclarations } from "../protocol.js";
 
-// These names and compatibility fields are the single source of truth for
-// generated core-override overloads. Keep them beside PiToolsApi below so an
-// override extends the same guest contract rather than copying its signatures.
 export const PI_CORE_COMPATIBILITY_ARGUMENT_TYPE_NAMES = {
   read: "PiReadCompatibilityArgument",
   bash: "PiBashCompatibilityArgument",
@@ -290,11 +287,6 @@ interface FabricConsole {
 declare const console: FabricConsole;
 declare const π: Readonly<Record<string, string>>;
 declare function print(...args: unknown[]): void;
-declare function all<T extends Record<string, unknown>>(
-  tasks: T & ThisType<{
-    readonly $: { readonly [K in keyof T]: Promise<T[K] extends (...args: any[]) => infer R ? Awaited<R> : Awaited<T[K]>> };
-  }>,
-): Promise<{ [K in keyof T]: T[K] extends (...args: any[]) => infer R ? Awaited<R> : Awaited<T[K]> }>;
 declare function setTimeout(handler: (...args: any[]) => void, timeout?: number): number;
 declare function clearTimeout(handle: number): void;
 declare function setInterval(handler: (...args: any[]) => void, timeout?: number): number;
@@ -311,11 +303,8 @@ const MCP_LOOSE_DECLARATION = "declare const mcp: FabricMcpApi;\n";
 const EXTENSIONS_LOOSE_DECLARATION = "declare const extensions: FabricExtensionsApi;\n";
 
 export interface FabricGuestDeclarationOptions {
-  /** Global names to omit, for example providers disabled by configuration. */
   excludeGlobals?: readonly string[];
-  /** Pre-rendered replacement blocks from buildDynamicGuestDeclarations(). */
   dynamic?: FabricDynamicGuestDeclarations;
-  /** Additive overloads for captured exact-name core overrides. */
   coreOverrides?: string;
 }
 

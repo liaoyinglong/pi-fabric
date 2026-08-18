@@ -11,21 +11,7 @@ description: >-
 
 ## Composition
 
-Use ordinary TypeScript control flow. Sequential `await` is for dependent work. Use `Promise.all(...)` for independent calls. Use `all({...})` when independent and dependent operations form a small dependency graph:
-
-```ts
-const result = await all({
-  packageJson: () => pi.read({ path: "package.json" }),
-  source: () => pi.read({ path: "src/index.ts" }),
-  summary: async function () {
-    const [pkg, source] = await Promise.all([this.$.packageJson, this.$.source]);
-    return { packageBytes: pkg.length, sourceBytes: source.length };
-  },
-});
-return result.summary;
-```
-
-Do not use Fabric as a planner or persistent workflow engine.
+Use ordinary TypeScript control flow. Sequential `await` is for dependent work. Use `Promise.all(...)` for independent calls. Fabric does not add a workflow or scheduling DSL.
 
 ## Pi tools
 
@@ -61,7 +47,7 @@ Captured Pi extension tools hidden from the model remain callable as `extensions
 return extensions.some_tool({ /* extension args */ });
 ```
 
-Core overrides stay on `pi.*`. If an exact tool or schema is unknown, discover it before calling it.
+Core overrides stay on `pi.*`. Fabric preserves their authored prompt guidance because the original override tool is hidden from the model.
 
 ## MCP
 
@@ -72,6 +58,8 @@ return mcp.some_server.some_tool({ query: "..." });
 ```
 
 Use `tools.search`, `tools.describe`, and `tools.call` for unknown or computed refs. `tools.providers()` and `tools.catalog()` expose bounded discovery metadata.
+
+Read `<skill-dir>/references/mcp.md` when exact MCP server-management, aliasing, or dynamic registration behavior matters.
 
 ## Progress and diagnostics
 

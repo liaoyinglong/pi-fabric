@@ -2,8 +2,8 @@ import type { CapturedToolCatalog } from "../capture/catalog.js";
 import { PI_CORE_TOOL_NAMES } from "./pi-tools.js";
 
 /**
- * Append authored guidance from the current exact-name core overrides without
- * presenting those definitions as separate extension tools.
+ * Preserve authored guidance from exact-name core overrides after Fabric hides
+ * the original tool from the model and re-exposes it through `pi.*`.
  */
 export const coreOverridePromptGuidance = (
   catalog: CapturedToolCatalog,
@@ -24,6 +24,6 @@ export const coreOverridePromptGuidance = (
     if (lines.length > 0) sections.push(lines.join("\n"));
   }
   return sections.length > 0
-    ? `\n\nEffective compatible core override guidance:\n${sections.join("\n")}`
+    ? `Effective compatible core override guidance:\n${sections.join("\n")}`
     : "";
 };

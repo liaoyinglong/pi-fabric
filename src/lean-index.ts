@@ -4,15 +4,10 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, Skill } from "@earendil-works/pi-coding-agent";
 import { CapturedToolCatalog } from "./capture/catalog.js";
 import { installRegisteredToolCapture } from "./capture/interceptor.js";
-import { registerLeanFabricCommand } from "./commands/lean-fabric.js";
 import { DEFAULT_FABRIC_CONFIG } from "./config.js";
 import { coreOverridePromptGuidance } from "./core/core-override-guidance.js";
 import { PI_CORE_TOOL_NAME_SET } from "./core/pi-tools.js";
 import { restoreSkillsForFullCodePrompt } from "./core/skill-prompt.js";
-import {
-  defaultFabricExecutionGuidance,
-  fabricExecutionKernelGuidance,
-} from "./core/system-guidance.js";
 import { createLeanFabricExecTool } from "./lean-exec-tool.js";
 import { LeanCodeModeRuntime } from "./lean-runtime.js";
 
@@ -43,29 +38,23 @@ export interface LeanSystemPromptInput {
   systemPrompt: string;
   skills: readonly Skill[];
   capturedTools: CapturedToolCatalog;
-  mcpEnabled: boolean;
 }
 
 /**
- * Build only turn-stable system guidance. Current-turn skill expansion and
- * capability steering belong in the message channel so provider prefix caches
- * can reuse the same system prefix across ordinary turns.
+ * Preserve host semantics that disappear when Lean hides native tools:
+ * model-visible skill discovery/loading and authored guidance for exact-name
+ * core overrides. Generic Fabric usage guidance stays on the fabric_exec tool.
  */
 export const buildLeanSystemPrompt = ({
   systemPrompt,
   skills,
   capturedTools,
-  mcpEnabled,
 }: LeanSystemPromptInput): string => {
   const restoredSystemPrompt = restoreSkillsForFullCodePrompt(systemPrompt, skills);
   const overrideGuidance = coreOverridePromptGuidance(capturedTools).trim();
-  const guidance = [
-    fabricExecutionKernelGuidance(true),
-    defaultFabricExecutionGuidance(true, { mcpEnabled }),
-    overrideGuidance || undefined,
-  ].filter((value): value is string => Boolean(value)).join("\n\n");
-
-  return `${restoredSystemPrompt}\n\n${guidance}`;
+  return overrideGuidance
+    ? `${restoredSystemPrompt}\n\n${overrideGuidance}`
+    : restoredSystemPrompt;
 };
 
 export default async function leanFabricExtension(pi: ExtensionAPI): Promise<void> {
@@ -73,8 +62,6 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
   const runtime = new LeanCodeModeRuntime(pi, capturedTools);
   const fabricTool = createLeanFabricExecTool(runtime);
   let savedActiveTools: string[] | undefined;
-
-  registerLeanFabricCommand(pi, runtime);
 
   const inactiveCapturePolicy = {
     ...structuredClone(DEFAULT_FABRIC_CONFIG.capture),
@@ -123,7 +110,6 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
         systemPrompt: event.systemPrompt,
         skills: event.systemPromptOptions.skills ?? [],
         capturedTools,
-        mcpEnabled: runtime.config.mcp.enabled,
       }),
     };
   });
