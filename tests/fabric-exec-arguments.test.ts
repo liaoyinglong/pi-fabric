@@ -24,21 +24,6 @@ describe("prepareFabricExecArguments", () => {
       code: null,
       strings: null,
       resultFormat: null,
-      display: null,
     })).toEqual({ code: null });
-  });
-
-  it("canonicalizes display shorthands before execution", () => {
-    expect(prepareFabricExecArguments({ code: "return 1;", display: "Probe" })).toEqual({
-      code: "return 1;",
-      display: { name: "Probe" },
-    });
-    expect(prepareFabricExecArguments({
-      code: "return 1;",
-      display: '{"name":"Probe","description":"check"}',
-    })).toEqual({
-      code: "return 1;",
-      display: { name: "Probe", description: "check" },
-    });
   });
 });

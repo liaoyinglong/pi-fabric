@@ -7,18 +7,6 @@ import { renderLeanExecCall, renderLeanExecResult } from "./ui/lean-exec-render.
 
 const RESULT_FORMATS = ["auto", "yaml", "json", "text"] as const;
 
-const displayValue = (value: unknown): { name?: string; description?: string } | undefined => {
-  if (typeof value === "string") return value.trim() ? { name: value.trim() } : undefined;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  const name = typeof record.name === "string" && record.name.trim() ? record.name.trim() : undefined;
-  const description =
-    typeof record.description === "string" && record.description.trim()
-      ? record.description.trim()
-      : undefined;
-  return name || description ? { ...(name ? { name } : {}), ...(description ? { description } : {}) } : undefined;
-};
-
 const resultText = (value: unknown, format: string | undefined): string | undefined => {
   if (value === undefined) return undefined;
   if (format === "text" || format === "auto" || format === undefined) {
@@ -38,9 +26,12 @@ export const createLeanFabricExecTool = (
     "Execute one type-checked TypeScript program that composes Pi core tools, captured Pi extension tools, and MCP tools. Intermediate values stay inside the runtime; return only the bounded value needed by the caller.",
   promptSnippet: "programmatic tool calling through one bounded TypeScript execution",
   promptGuidelines: [
-    "Batch related tool operations inside one fabric_exec program. Use sequential await when one result determines the next step and Promise.all/all({...}) only for independent work.",
-    "Use pi.* for Pi core coding tools, extensions.* for captured Pi extension tools, and mcp.* for known MCP tools.",
-    "Return compact decisions, evidence, or changed results. Keep raw logs and unused intermediate values inside the program.",
+    "Use fabric_exec to batch related tool operations. Use sequential await when one result determines the next step and Promise.all(...) only for independent work.",
+    "Inside fabric_exec, Pi core tools are pi.read, pi.bash, pi.edit, pi.write, pi.grep, pi.find, and pi.ls; shell execution is pi.bash, not pi.exec.",
+    "Inside fabric_exec, pi.read/pi.grep/pi.find/pi.ls return strings, while pi.bash/pi.edit/pi.write return {ok, output, details} envelopes.",
+    "fabric_exec runs in a sandbox, not a Node.js module environment; process and require are unavailable to guest code.",
+    "Inside fabric_exec, use extensions.* for captured Pi extension tools, mcp.* for known MCP tools, and tools.search/tools.describe/tools.call for dynamic discovery.",
+    "Return compact decisions, evidence, or changed results from fabric_exec. Keep raw logs and unused intermediate values inside the program.",
   ],
   parameters: Type.Object({
     code: Type.String({ description: "TypeScript function body with top-level await and return" }),
@@ -50,15 +41,6 @@ export const createLeanFabricExecTool = (
       }),
     ),
     resultFormat: Type.Optional(Type.Union(RESULT_FORMATS.map((value) => Type.Literal(value)))),
-    display: Type.Optional(
-      Type.Union([
-        Type.String(),
-        Type.Object({
-          name: Type.Optional(Type.String()),
-          description: Type.Optional(Type.String()),
-        }),
-      ]),
-    ),
   }),
   prepareArguments(args) {
     return prepareFabricExecArguments(args) as any;
@@ -71,14 +53,12 @@ export const createLeanFabricExecTool = (
   },
   async execute(toolCallId, params, signal, onUpdate, context) {
     const code = Array.isArray(params.code) ? params.code.join("\n") : String(params.code ?? "");
-    const display = displayValue(params.display);
     const result = await runtime.execute({
       code,
       ...(params.strings ? { strings: params.strings } : {}),
       signal,
       parentToolCallId: toolCallId,
       context,
-      ...(display ? { display } : {}),
       onPartial(snapshot) {
         onUpdate?.({
           content: [],

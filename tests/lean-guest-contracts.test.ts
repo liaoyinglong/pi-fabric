@@ -9,7 +9,7 @@ const runtimeOptions = {
 };
 
 describe("Lean guest contract alignment", () => {
-  it.each(["agents", "workflow", "agent", "parallel", "pipeline", "phase", "budget"])(
+  it.each(["agents", "workflow", "agent", "parallel", "pipeline", "phase", "budget", "all"])(
     "does not type %s as a Fabric guest global",
     (name) => {
       const result = typeCheckFabricCode(`return ${name};`, GUEST_TYPE_DECLARATIONS);
@@ -28,6 +28,7 @@ describe("Lean guest contract alignment", () => {
   pipeline: typeof globalThis.pipeline,
   phase: typeof globalThis.phase,
   budget: typeof globalThis.budget,
+  all: typeof globalThis.all,
 };`,
       async () => undefined,
       runtimeOptions,
@@ -42,17 +43,17 @@ describe("Lean guest contract alignment", () => {
       pipeline: "undefined",
       phase: "undefined",
       budget: "undefined",
+      all: "undefined",
     });
   });
 
-  it("keeps intentionally retained execution globals", async () => {
+  it("keeps only execution globals", async () => {
     const result = await new QuickJsRuntime().execute(
       `return {
   tools: typeof tools,
   pi: typeof pi,
   extensions: typeof extensions,
   mcp: typeof mcp,
-  all: typeof all,
   print: typeof print,
   console: typeof console,
 };`,
@@ -66,7 +67,6 @@ describe("Lean guest contract alignment", () => {
       pi: "object",
       extensions: "object",
       mcp: "object",
-      all: "function",
       print: "function",
       console: "object",
     });
@@ -75,9 +75,9 @@ describe("Lean guest contract alignment", () => {
   it("rejects object-style properties on stable Pi string results before runtime", () => {
     const result = typeCheckFabricCode(
       `
-const skill = await pi.read({ path: "SKILL.md" });
+const content = await pi.read({ path: "README.md" });
 const files = await pi.find({ pattern: "*", path: "." });
-return { skill: skill.content, matches: files.matches };
+return { content: content.content, matches: files.matches };
 `,
       GUEST_TYPE_DECLARATIONS,
     );

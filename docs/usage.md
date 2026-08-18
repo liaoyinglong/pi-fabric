@@ -12,11 +12,11 @@ const source = await pi.read({ path: "src/session.ts", offset: 1, limit: 160 });
 return { hits, source };
 ```
 
-`pi.read`, `pi.grep`, `pi.find`, and `pi.ls` resolve to strings. `pi.bash`, `pi.edit`, and `pi.write` resolve to envelopes with `ok`, `output`, and `details`.
+`pi.read`, `pi.grep`, `pi.find`, and `pi.ls` resolve to strings. `pi.bash`, `pi.edit`, and `pi.write` resolve to envelopes with `ok`, `output`, and `details`. Shell execution is `pi.bash`; there is no `pi.exec`.
 
-## Independent work
+## Parallel work
 
-Use `Promise.all` for independent operations:
+Use sequential `await` when one operation depends on another. Use `Promise.all` for independent operations:
 
 ```ts
 const [routes, auth] = await Promise.all([
@@ -26,17 +26,17 @@ const [routes, auth] = await Promise.all([
 return { routes, auth };
 ```
 
-Use `all({...})` when some tasks depend on other tasks in the same program.
+Fabric does not add a scheduling DSL.
 
 ## Captured extension tools
 
-Pi extension tools captured by Fabric are available as `extensions.<tool>`:
+Captured Pi extension tools are available as `extensions.<tool>`:
 
 ```ts
 return extensions.project_status({ verbose: false });
 ```
 
-Core overrides still use the `pi.*` names.
+Exact-name core overrides remain on the `pi.*` surface. Fabric preserves their authored prompt snippet/guidelines even though the original registered tool is hidden from the model.
 
 ## MCP
 
@@ -56,6 +56,10 @@ return { matches, descriptor };
 
 Use `tools.call({ ref, args })` only when a direct namespace call is not practical.
 
+## Skills
+
+Pi's model-visible skill catalog remains available in Lean mode even though native `read` is hidden. When a task matches a skill, load its `SKILL.md` through `pi.read` inside `fabric_exec` and follow it. The packaged `fabric-exec` skill is an on-demand reference, not a workflow engine.
+
 ## String inputs
 
 Pass multiline or syntax-heavy data with the top-level `strings` field and access it through `π`:
@@ -69,6 +73,4 @@ return text.length;
 
 `tools.progress({ message: "Checking routes" })` updates execution progress. `print()` and `console.log()` write bounded diagnostics. The program's `return` value is the result sent back to the model.
 
-## Removed orchestration surface
-
-Lean Fabric does not provide subagents, workflow scheduling, routing tiers, built-in todo state, or child-agent lifecycle commands. The calling agent can use its own delegation or planning facilities outside Fabric and can call `fabric_exec` for execution when useful.
+A long explicit `pi.bash` timeout can raise the enclosing execution deadline enough for that shell call. Generic provider calls do not receive a special orchestration timeout floor.

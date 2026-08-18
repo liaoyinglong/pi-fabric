@@ -1,6 +1,5 @@
 import path from "node:path";
 import ts from "typescript";
-import { withBetterAllGuestEpilogue } from "./better-all-guest.js";
 
 export interface FabricTypeError {
   line: number;
@@ -107,12 +106,12 @@ export const normalizeTypeScriptPath = (fileName: string): string =>
   fileName.replaceAll("\\", "/");
 
 /**
- * The first wrapper line removes orchestration globals left by the historical
- * bootstrap. User code still starts on wrapped line 2 so diagnostics and source
- * maps keep their existing coordinate contract.
+ * The first wrapper line removes globals from retired orchestration features.
+ * User code starts on wrapped line 2 so diagnostics and source maps keep their
+ * existing coordinate contract.
  */
 export const wrapFabricGuestCode = (code: string): string =>
-  `async function __piFabricMain() { ${GUEST_BOUNDARY_CLEANUP}\n${withBetterAllGuestEpilogue(code)}\n}\n`;
+  `async function __piFabricMain() { ${GUEST_BOUNDARY_CLEANUP}\n${code}\n}\n`;
 
 class FabricTypeChecker {
   readonly #guestFile: string;
