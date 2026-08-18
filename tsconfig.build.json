@@ -12,6 +12,7 @@
     "src/lean-index.ts",
     "src/protocol.ts",
     "src/runtime-v2.ts",
+    "src/fabric-runtime-v2.ts",
     "src/worker.ts"
   ],
   "exclude": ["tests/**"]
