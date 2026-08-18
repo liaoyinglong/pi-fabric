@@ -129,8 +129,9 @@ return "done";
     expect(store.snapshot()).toEqual([]);
   });
 
-  it("updates a persistent below-editor widget and clears it with an empty list", async () => {
+  it("renders the persistent widget with pi-tasks-style task presentation", async () => {
     const setWidget = vi.fn();
+    const requestRender = vi.fn();
     const context = {
       hasUI: true,
       ui: {
@@ -152,16 +153,22 @@ return "done";
       { extensionContext: context } as never,
     );
 
-    expect(setWidget).toHaveBeenLastCalledWith(
-      TODO_WIDGET_ID,
-      [
-        "Todos · 1/3 done · 1 active",
-        "✓ Inspect runtime",
-        "◆ Implementing widget",
-        "○ Run verification",
-      ],
-      { placement: "belowEditor" },
+    expect(setWidget).toHaveBeenCalledTimes(1);
+    const [widgetId, widgetFactory, options] = setWidget.mock.calls[0]!;
+    expect(widgetId).toBe(TODO_WIDGET_ID);
+    expect(typeof widgetFactory).toBe("function");
+    expect(options).toEqual({ placement: "belowEditor" });
+
+    const component = widgetFactory(
+      { terminal: { columns: 120 }, requestRender },
+      plainTheme,
     );
+    expect(component.render()).toEqual([
+      "● 3 tasks (1 done, 1 in progress, 1 open)",
+      "  ✔ Inspect runtime",
+      "  ✳ Implementing widget…",
+      "  ◻ Run verification",
+    ]);
 
     await provider.invoke(
       "replace",
@@ -175,7 +182,7 @@ return "done";
     );
   });
 
-  it("bounds the fixed widget without expand-only hints", () => {
+  it("bounds the fixed widget with pi-tasks-style overflow copy", () => {
     const todos = [
       { content: "Inspect runtime", status: "completed" as const },
       { content: "Implement todo", status: "in_progress" as const, activeForm: "Implementing todo UI" },
@@ -186,10 +193,10 @@ return "done";
     ];
     const widget = renderLeanTodoWidgetLines(todos, plainTheme).join("\n");
 
-    expect(widget).toContain("Todos · 1/10 done · 1 active");
-    expect(widget).toContain("✓ Inspect runtime");
-    expect(widget).toContain("◆ Implementing todo UI");
-    expect(widget).toContain("… 2 more");
+    expect(widget).toContain("● 10 tasks (1 done, 1 in progress, 8 open)");
+    expect(widget).toContain("  ✔ Inspect runtime");
+    expect(widget).toContain("  ✳ Implementing todo UI…");
+    expect(widget).toContain("    … and 2 more");
     expect(widget).not.toContain("Ctrl+O");
     expect(widget).not.toContain("Task 10");
   });
