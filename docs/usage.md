@@ -97,7 +97,7 @@ Use sequential `await` when one result determines the next operation. Use `Promi
 
 ### TUI
 
-The `fabric_exec` card keeps generated code visible. Its result area also renders the current Todo checklist when the program uses `todo(...)`. `/fabric` opens a lightweight overlay over the current `AgentManager`, showing top-level and recursive workers plus live output.
+The `fabric_exec` card keeps generated code and execution details visible. Todo uses a separate persistent widget below the editor, so the current checklist remains visible across later turns until the list is cleared. `/fabric` opens a lightweight overlay over the current `AgentManager`, showing top-level and recursive workers plus live output.
 
 Focused commands remain available:
 
@@ -133,6 +133,8 @@ await todo({
 ```
 
 Statuses are `pending`, `in_progress`, and `completed`. `activeForm` is optional and is intended as a short present-progress label for an active item.
+
+When Pi has an interactive UI, each successful Todo replacement refreshes a `belowEditor` widget immediately. Completed items are dimmed and struck through, the in-progress item uses `activeForm` when present, and pending items stay muted. The widget shows at most eight items plus a remainder count and persists across turns. `todo([])` removes the widget.
 
 Todo stays deliberately bounded:
 

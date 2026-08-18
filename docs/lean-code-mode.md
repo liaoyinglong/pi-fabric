@@ -9,6 +9,7 @@ lean-index
         -> built-in todo(...)
            -> TodoProvider
            -> session-local TodoStore
+           -> persistent below-editor widget when UI is available
         -> ActionRegistry
            -> pi.*
            -> extensions.*
@@ -28,7 +29,7 @@ Only the bounded program return is intended to reach Main from Code Mode. Interm
 
 `fabric_exec` is the single Lean model-facing execution gateway over Pi core tools, captured Pi extension tools, optional MCP, optional one-shot agents, workflow helpers, and the built-in Todo API.
 
-The Lean TUI renderer shows generated TypeScript, the current Todo checklist, live nested tool headlines/progress, bounded write/edit diffs, and a concise completion result.
+The Lean TUI renderer shows generated TypeScript, live nested tool headlines/progress, bounded write/edit diffs, and a concise completion result. Todo has its own persistent widget below the editor so current coordination state is not duplicated into historical `fabric_exec` cards.
 
 ### Built-in Todo
 
@@ -47,7 +48,7 @@ The contract uses complete-list replacement. Each item contains `content`, `stat
 
 Todo state belongs to the current session lifecycle and resets on session start/shutdown. There are no IDs, dependencies, priorities, persistence files, or command surface. This keeps Todo as bounded coordination metadata and leaves the removed Fabric State/Mesh systems out of Lean.
 
-Todo snapshots are attached to `fabric_exec` partial/final details. The Code Mode renderer shows the checklist in the same card and hides the internal `todo.replace` audit row from the compact call list.
+After each successful replacement, `TodoProvider` updates the Pi extension UI through `ctx.ui.setWidget("fabric-todo", ..., { placement: "belowEditor" })`. The widget persists across turns, shows up to eight items, strikes through completed work, uses `activeForm` for current work, and is removed by `todo([])` or session lifecycle cleanup. The internal `todo.replace` audit row stays hidden from the compact `fabric_exec` call list.
 
 ### Lean dashboard
 
@@ -220,7 +221,7 @@ fabric-subagents
 fabric-workflow
 ```
 
-Todo ships as part of `fabric_exec`: `src/todo-store.ts` holds bounded session state, `src/providers/todo-provider.ts` handles internal replacement calls, and `src/todo-guest.ts` injects the typed guest helper used by generated TypeScript.
+Todo ships as part of `fabric_exec`: `src/todo-store.ts` holds bounded session state, `src/providers/todo-provider.ts` handles internal replacement calls and UI refreshes, `src/todo-guest.ts` injects the typed guest helper used by generated TypeScript, and `src/ui/lean-todo-render.ts` owns the persistent widget presentation.
 
 Pi's normal external/user skill catalog remains available in Full Code Mode, with progressive loading adapted to `pi.read` inside `fabric_exec`.
 

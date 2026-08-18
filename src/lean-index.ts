@@ -15,6 +15,7 @@ import {
 } from "./core/system-guidance.js";
 import { createLeanFabricExecTool } from "./lean-exec-tool.js";
 import { LeanCodeModeRuntime } from "./lean-runtime.js";
+import { updateLeanTodoWidget } from "./ui/lean-todo-render.js";
 
 const extensionPath = fileURLToPath(import.meta.url);
 const entryDir = path.dirname(extensionPath);
@@ -98,6 +99,7 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
   pi.on("session_start", async (_event, context) => {
     savedActiveTools = undefined;
     runtime.resetSessionState();
+    updateLeanTodoWidget(context, []);
     await runtime.initialize(context);
     toolCapture.setPolicy(runtime.config.capture);
     pi.registerTool(fabricTool);
@@ -123,9 +125,10 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
     return { systemPrompt: `${systemPrompt}\n\n${guidance}` };
   });
 
-  pi.on("session_shutdown", async () => {
+  pi.on("session_shutdown", async (_event, context) => {
     toolCapture.setPolicy(inactiveCapturePolicy);
     runtime.resetSessionState();
+    updateLeanTodoWidget(context, []);
     await runtime.close();
     if (savedActiveTools) {
       const registered = new Set(pi.getAllTools().map((tool) => tool.name));
