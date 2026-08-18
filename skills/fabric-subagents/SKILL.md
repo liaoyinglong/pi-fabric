@@ -22,9 +22,11 @@ Model, runner, thinking level, tool grants, and worktree behavior come from the 
 | --- | --- | --- |
 | `fast` | Pi `gpt-5.6-luna`, medium thinking | bounded search, evidence gathering, repetitive inspection, cheap checks |
 | `balance` | Pi `gpt-5.6-terra`, medium thinking | routine reasoning, debugging, implementation, verification |
-| `strong` | Pi `gpt-5.6-sol`, medium thinking | ambiguous bugs, architecture/high-impact decisions, difficult reasoning, independent review |
+| `strong` | Pi `gpt-5.6-sol`, medium thinking | ambiguous bugs, architecture/high-impact decisions, difficult reasoning, targeted independent review |
 
 Prefer the lowest tier that can reliably finish the bounded task. Escalate only when the result is uncertain, evidence is insufficient, or the task proves harder than expected. Do not run a strong worker merely because it exists.
+
+For staged research and review, follow **reuse before reread**: later reviewers start from compact findings and referenced evidence produced by earlier workers. They should inspect additional repository context only when a concrete claim is high-risk, uncertain, contradictory, decision-critical, or missing evidence. Do not make a strong reviewer retrace the full original research scope by default. Mechanical or factual checks should stay on `fast`/`balance` unless stronger reasoning is actually required.
 
 AGY and Droid remain available as CLI runner overrides in `subagents.yaml`; they are not part of the built-in tier mapping.
 
@@ -70,18 +72,27 @@ return await agents.run({
 });
 ```
 
-For independent verification:
+For targeted verification after earlier research:
 
 ```ts
+const findings = await agents.run({
+  tier: "fast",
+  policy: "inspect",
+  role: "repository scout",
+  task: "Trace the auth flow and return compact findings with file/line evidence.",
+});
+
 const review = await agents.run({
   tier: "strong",
   policy: "inspect",
   role: "independent reviewer",
-  instructions: "Challenge Main's assumptions. Report only concrete regressions or residual risks.",
-  task: "Review the current diff for correctness regressions.",
+  instructions: "Start from the supplied findings and evidence. Confirm, refute, or qualify only high-risk, uncertain, contradictory, or decision-critical claims. Read additional files only to close concrete evidence gaps; do not retrace the whole auth flow.",
+  task: `Review these candidate findings:\n${JSON.stringify(findings)}`,
 });
 return review;
 ```
+
+A truly independent full review is still valid when independence itself is the goal, such as reviewing a small current diff for regressions. Make that scope explicit instead of using a full retrace as the default second phase.
 
 Or spawn independent work and wait later:
 
@@ -107,6 +118,8 @@ Main should delegate when at least one of these is true:
 - a mutation is safer in an isolated worktree.
 
 Keep simple, tightly coupled work in Main. Parallelize only independent tasks. Never let concurrent children write overlapping files. Main remains responsible for synthesis, final decisions, and integration.
+
+For multi-stage analysis, Main should reuse child outputs as inputs to later stages instead of asking later children to rediscover the same context. Strong review should narrow uncertainty, not duplicate cheap research. Final synthesis should preserve the concrete evidence that supports important conclusions.
 
 Children are prompted to return compact results rather than raw tool transcripts, include concrete evidence or validation when relevant, state uncertainty explicitly, and avoid broadening scope.
 
