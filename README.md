@@ -107,7 +107,7 @@ Each call submits the complete current list:
 }
 ```
 
-Use an empty `todos` array to clear the list. The list is session-local and resets on session start/shutdown. `content` is capped at 200 characters, `activeForm` at 120 characters, and the list at 64 items so Todo remains bounded coordination state instead of becoming another scratchpad.
+Use an empty `todos` array to clear the list. The list is session-local and resets on session start/shutdown. `content` is capped at 200 characters, `activeForm` at 120 characters, and the list at 64 items so Todo remains bounded coordination state and does not become another scratchpad.
 
 The MVP deliberately has no persistence, task IDs, dependencies, priorities, or `/todo` editing commands.
 
