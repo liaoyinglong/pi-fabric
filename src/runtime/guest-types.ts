@@ -39,12 +39,6 @@ interface FabricAction {
   namespace?: string;
   effect?: FabricActionEffect;
 }
-interface FabricModelInfo {
-  provider: string;
-  id: string;
-  name: string;
-  key: string;
-}
 interface FabricCapabilityActionHead {
   key: string;
   parentKey: string;
@@ -88,7 +82,6 @@ interface FabricToolsApi {
   describe(args: { ref: string }): Promise<FabricAction>;
   call(args: { ref: string; args?: Record<string, unknown> }): Promise<unknown>;
   progress(args: { message: string }): Promise<void>;
-  models(): Promise<FabricModelInfo[]>;
 }
 interface FabricCapturedToolResult {
   content: Array<{ type: string; text?: string; [key: string]: unknown }>;

@@ -72,6 +72,11 @@ describe("Lean guest contract alignment", () => {
     });
   });
 
+  it("does not declare the host model registry on the tools API", () => {
+    expect(GUEST_TYPE_DECLARATIONS).not.toContain("models():");
+    expect(GUEST_TYPE_DECLARATIONS).not.toContain("FabricModelInfo");
+  });
+
   it("rejects object-style properties on stable Pi string results before runtime", () => {
     const result = typeCheckFabricCode(
       `

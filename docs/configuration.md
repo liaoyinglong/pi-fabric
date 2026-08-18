@@ -35,7 +35,9 @@ Configuration is file-based. Fabric does not provide a settings command or setti
 }
 ```
 
-Each value is `allow`, `ask`, `auto`, or `deny`. `agent` remains a generic risk class for third-party actions that delegate externally; it does not enable a Fabric subagent runtime. Auto approval is retained for now and can be evaluated independently from the execution-core cleanup.
+Each value is `allow`, `ask`, or `deny`. `ask` requires explicit user approval and can grant one call or the risk class for the current Pi session. `agent` remains a generic risk class for third-party actions that delegate externally; it does not enable a Fabric subagent runtime.
+
+Legacy `auto` values normalize to `ask`, so an existing model-driven auto-approval configuration fails safe to explicit approval after upgrading. The legacy `approvals.model` field is ignored.
 
 ## MCP
 
@@ -81,4 +83,4 @@ Lean forces capture on and hides captured tools from the model unless they are l
 
 ## Removed configuration
 
-Lean V2 no longer reads or exposes Fabric-owned agent runner, tier/policy routing, workflow, child-run retention, session export, or todo configuration. Legacy keys are ignored by normalization and can be removed from existing config files.
+Lean V2 no longer reads or exposes Fabric-owned agent runner, tier/policy routing, workflow, child-run retention, session export, todo, or model-driven approval configuration. Legacy keys are ignored by normalization and can be removed from existing config files.

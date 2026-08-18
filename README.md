@@ -11,9 +11,9 @@ Fabric owns execution mechanics:
 - captured extension dispatch through `extensions.*`
 - MCP dispatch through `mcp.*`
 - dynamic discovery through `tools.*`
-- validation, approvals, cancellation, tracing, progress, and bounded output
+- validation, deterministic approvals, cancellation, tracing, progress, and bounded output
 
-Fabric does not own planning, delegation, workflows, todos, or agent policy.
+Fabric does not own planning, delegation, workflows, todos, model selection, or agent policy.
 
 ## Model-facing surface
 
@@ -39,7 +39,7 @@ Retained guest surfaces:
 - `pi.read`, `pi.bash`, `pi.edit`, `pi.write`, `pi.grep`, `pi.find`, `pi.ls`
 - `extensions.<tool>(args)` for captured Pi extension tools
 - `mcp.<server>.<tool>(args)` for known MCP tools
-- `tools.providers/catalog/list/search/describe/call/progress/models`
+- `tools.providers/catalog/list/search/describe/call/progress`
 - ordinary JavaScript/TypeScript control flow, `Promise.all`, timers, `print`, `console`, and `π`
 
 Fabric-specific scheduling helpers such as `all({...})` are intentionally absent. Use the language runtime directly.

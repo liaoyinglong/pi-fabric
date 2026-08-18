@@ -9,6 +9,7 @@
     "src/**/*.ts"
   ],
   "ignoreDependencies": [
+    "@earendil-works/pi-ai",
     "cross-spawn",
     "@types/cross-spawn"
   ],

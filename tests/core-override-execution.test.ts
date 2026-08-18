@@ -89,7 +89,6 @@ const setup = (
     undefined,
     authorizer,
     undefined,
-    undefined,
     catalog,
   );
   return { catalog, service, runner };
