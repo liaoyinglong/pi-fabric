@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
-const stable = ["lean-index.js", "protocol.js", "worker.js"];
+const stable = ["lean-index.js", "protocol.js"];
 const declarations = stable.map((file) => file.replace(/\.js$/, ".d.ts"));
 const required = [
   ...stable,
@@ -32,6 +32,13 @@ const sources = [
   ...chunks.map((file) => readFileSync(join(chunksDir, file), "utf8")),
 ].join("\n");
 for (const forbidden of [
+  "src/agents/manager.ts",
+  "src/lean-agents-provider.ts",
+  "src/pi-subagents-bridge.ts",
+  "src/subagents/",
+  "src/providers/todo-provider.ts",
+  "src/todo-store.ts",
+  "src/todo-guest.ts",
   "src/fabric-runtime-state.ts",
   "src/actors/manager.ts",
   "src/mesh/store.ts",
@@ -42,7 +49,7 @@ for (const forbidden of [
   "src/prewalk/",
 ]) {
   if (sources.includes(forbidden)) {
-    throw new Error(`Lean build still reaches legacy runtime module: ${forbidden}`);
+    throw new Error(`Lean build still reaches removed runtime module: ${forbidden}`);
   }
 }
 
@@ -50,9 +57,5 @@ for (const file of stable) {
   const checked = spawnSync(process.execPath, ["--check", join(dist, file)], { encoding: "utf8" });
   if (checked.status !== 0) throw new Error(checked.stderr || `Syntax check failed: ${file}`);
 }
-await Promise.all(
-  stable.filter((file) => file !== "worker.js").map((file) =>
-    import(new URL(`../dist/${file}`, import.meta.url)),
-  ),
-);
+await Promise.all(stable.map((file) => import(new URL(`../dist/${file}`, import.meta.url))));
 console.log(`lean build artifacts verified (${stable.length} entrypoints, ${chunks.length} chunks)`);

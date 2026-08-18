@@ -9,7 +9,6 @@ import {
 import { NODE_PROCESS_CHILD_SOURCE } from "./node-process-child-source.js";
 import { createGuestStackMap, remapGuestErrorText } from "./guest-stack-map.js";
 import { transpileFabricCodeWithSourceMap } from "./type-checker.js";
-import { resolveScriptRuntimeSync } from "../agents/transports/process-utils.js";
 
 interface ChildCallMessage {
   type: "call";
@@ -57,7 +56,7 @@ export class NodeProcessRuntime {
 
     const heapLimitMb = Math.max(16, Math.floor(options.memoryLimitBytes / (1024 * 1024)));
     const child = spawn(
-      resolveScriptRuntimeSync({ requireNode: true }),
+      process.execPath,
       [
         `--max-old-space-size=${heapLimitMb}`,
         "--input-type=module",
@@ -194,7 +193,6 @@ export class NodeProcessRuntime {
         setup: GUEST_SETUP,
         code: guestBundle.code,
         strings: options.strings ?? {},
-        tokenBudget: options.tokenBudget,
         maxLogChars: options.maxLogChars ?? 100_000,
       });
     });

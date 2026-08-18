@@ -35,12 +35,11 @@ export const createLeanFabricExecTool = (
   name: "fabric_exec",
   label: "Code Mode",
   description:
-    "Execute one type-checked TypeScript program that can compose Pi core tools, captured Pi extension tools, MCP tools, tier-routed subagents, workflow helpers, and the built-in todo() task list. Intermediate values stay inside the runtime; return only the bounded value needed by the caller.",
+    "Execute one type-checked TypeScript program that composes Pi core tools, captured Pi extension tools, and MCP tools. Intermediate values stay inside the runtime; return only the bounded value needed by the caller.",
   promptSnippet: "programmatic tool calling through one bounded TypeScript execution",
   promptGuidelines: [
-    "Batch related tool operations inside one fabric_exec program. Use sequential await when one result determines the next step and parallel/all only for independent work.",
-    "Use pi.* for Pi core coding tools, extensions.* for captured Pi extension tools, mcp.* for known MCP tools, agents.* or workflow agent(...) for one-shot subagents, and todo([...]) for non-trivial multi-step task tracking.",
-    "todo([...]) replaces the complete session-local list. Mark active work in_progress before starting it, completed only after it finishes, and pass [] to clear the list.",
+    "Batch related tool operations inside one fabric_exec program. Use sequential await when one result determines the next step and Promise.all/all({...}) only for independent work.",
+    "Use pi.* for Pi core coding tools, extensions.* for captured Pi extension tools, and mcp.* for known MCP tools.",
     "Return compact decisions, evidence, or changed results. Keep raw logs and unused intermediate values inside the program.",
   ],
   parameters: Type.Object({
@@ -51,8 +50,6 @@ export const createLeanFabricExecTool = (
       }),
     ),
     resultFormat: Type.Optional(Type.Union(RESULT_FORMATS.map((value) => Type.Literal(value)))),
-    tokenBudget: Type.Optional(Type.Number({ minimum: 1 })),
-    agentBudget: Type.Optional(Type.Number({ minimum: 1 })),
     display: Type.Optional(
       Type.Union([
         Type.String(),
@@ -81,8 +78,6 @@ export const createLeanFabricExecTool = (
       signal,
       parentToolCallId: toolCallId,
       context,
-      ...(typeof params.tokenBudget === "number" ? { tokenBudget: params.tokenBudget } : {}),
-      ...(typeof params.agentBudget === "number" ? { agentBudget: params.agentBudget } : {}),
       ...(display ? { display } : {}),
       onPartial(snapshot) {
         onUpdate?.({
@@ -90,7 +85,6 @@ export const createLeanFabricExecTool = (
           details: {
             audits: snapshot.audits,
             phases: snapshot.phases,
-            todos: snapshot.todos,
             ...(snapshot.progress ? { progress: snapshot.progress } : {}),
           },
         } as never);
@@ -110,7 +104,6 @@ export const createLeanFabricExecTool = (
         elapsedMs: result.elapsedMs,
         phases: result.phases,
         audits: result.audits,
-        todos: runtime.todoSnapshot(),
         trace: result.trace,
         ...(result.usage ? { usage: result.usage } : {}),
       },

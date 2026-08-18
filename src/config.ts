@@ -2,11 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { FabricRisk } from "./protocol.js";
-import { DEFAULT_FABRIC_THINKING, isFabricThinking, type FabricThinking } from "./thinking.js";
 
-export type FabricAgentTransport = "auto" | "process" | "tmux" | "screen" | "localterm" | "herdr";
-export type FabricAgentRunner = "pi" | "claude" | "cli";
-export type FabricCliAdapter = "agy" | "droid";
 export type FabricResultFormat = "auto" | "yaml" | "json" | "text";
 export type FabricExecutorRuntime = "quickjs" | "node-process";
 export type FabricConfigScope = "global" | "project";
@@ -28,6 +24,7 @@ export interface FabricApprovalConfig {
   write: FabricApprovalMode;
   execute: FabricApprovalMode;
   network: FabricApprovalMode;
+  /** Generic risk class for third-party actions that delegate to another agent. */
   agent: FabricApprovalMode;
   model?: string;
 }
@@ -46,32 +43,6 @@ export interface FabricMcpConfig {
   advisory: boolean;
 }
 
-export interface FabricAgentConfig {
-  enabled: boolean;
-  runner: FabricAgentRunner;
-  transport: FabricAgentTransport;
-  model?: string;
-  claude: { binary: string; model?: string };
-  cli: {
-    adapter: FabricCliAdapter;
-    agy: { binary: string; model?: string };
-    droid: { binary: string; model?: string };
-  };
-  thinking: FabricThinking;
-  maxConcurrent: number;
-  maxPerExecution: number;
-  maxDepth: number;
-  timeoutMs: number;
-  extensions: boolean;
-  defaultTools: string[];
-  retainRuns: boolean;
-  notifyOnComplete: boolean;
-  budgetUsd: number;
-  maxTokensPerChild: number;
-  sessionExport: boolean;
-  sessionExportDir: string;
-}
-
 export interface FabricCapabilityAdvisoryConfig {
   mode: "enabled" | "hidden" | "disabled";
   threshold: number;
@@ -88,31 +59,26 @@ export interface FabricToolCaptureConfig {
   advisory: FabricCapabilityAdvisoryConfig;
 }
 
-export interface FabricRetentionConfig {
-  orphanedTempRunMs: number;
-  oneShotRunMs: number;
-}
-
 /**
  * Lean V2 config. `fullCodeMode` and `schema.mode` remain broad at the type
  * boundary only so ExecutionService's low-level unit tests can exercise legacy
  * branches. The V2 loader always normalizes them to true/off respectively.
+ *
+ * Agent runners, workflow scheduling, and transient todo state intentionally
+ * do not belong to this config. Those concerns are owned by the calling agent.
  */
 export interface FabricConfig {
   fullCodeMode: boolean;
   executor: FabricExecutorConfig;
   approvals: FabricApprovalConfig;
   mcp: FabricMcpConfig;
-  agents: FabricAgentConfig;
   capture: FabricToolCaptureConfig;
-  retention: FabricRetentionConfig;
   ui: { updateDebounceMs: number };
   schema: { mode: "off" | "audit" | "enforce" };
 }
 
-export const MIN_AGENT_TIMEOUT_MS = 1_000;
-export const MAX_AGENT_TIMEOUT_MS = 24 * 3_600_000;
-const DEFAULT_AGENT_TIMEOUT_MS = 3_600_000;
+export const MIN_HOST_CALL_TIMEOUT_MS = 1_000;
+export const MAX_HOST_CALL_TIMEOUT_MS = 24 * 3_600_000;
 export const QUICKJS_MAX_MEMORY_LIMIT_BYTES = 0xffff_ffff;
 export const MAX_EXECUTOR_MEMORY_LIMIT_BYTES = Math.max(
   8 * 1024 * 1024,
@@ -153,34 +119,6 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
     },
     advisory: false,
   },
-  agents: {
-    enabled: true,
-    runner: "pi",
-    transport: "process",
-    claude: { binary: "claude" },
-    cli: {
-      adapter: "agy",
-      agy: { binary: "agy" },
-      droid: { binary: "droid" },
-    },
-    thinking: DEFAULT_FABRIC_THINKING,
-    maxConcurrent: 4,
-    maxPerExecution: 100,
-    maxDepth: 2,
-    timeoutMs: DEFAULT_AGENT_TIMEOUT_MS,
-    // Keep extension discovery enabled so provider extensions (for example a
-    // dynamically registered cliproxyapi provider) exist in ordinary Pi
-    // children. Lean itself no-ops in non-recursive Fabric children; the
-    // --tools allowlist remains the model-facing capability boundary.
-    extensions: true,
-    defaultTools: ["read", "grep", "find", "ls"],
-    retainRuns: false,
-    notifyOnComplete: true,
-    budgetUsd: 0,
-    maxTokensPerChild: 0,
-    sessionExport: true,
-    sessionExportDir: "",
-  },
   capture: {
     enabled: true,
     hideFromModel: true,
@@ -196,10 +134,6 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
       bash: "execute",
     },
     advisory: { mode: "disabled", threshold: 0.9, maxPerSession: 0, budget: 0 },
-  },
-  retention: {
-    orphanedTempRunMs: 6 * 60 * 60 * 1_000,
-    oneShotRunMs: 24 * 60 * 60 * 1_000,
   },
   ui: { updateDebounceMs: 100 },
   schema: { mode: "off" },
@@ -234,8 +168,6 @@ const numberValue = (value: unknown, fallback: number, min = 0, max = Number.MAX
     : fallback;
 const booleanValue = (value: unknown, fallback: boolean): boolean =>
   typeof value === "boolean" ? value : fallback;
-const stringValue = (value: unknown, fallback: string): string =>
-  typeof value === "string" && value.trim() ? value.trim() : fallback;
 const optionalString = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() ? value.trim() : undefined;
 const stringList = (value: unknown, fallback: string[]): string[] =>
@@ -245,13 +177,6 @@ const stringList = (value: unknown, fallback: string[]): string[] =>
 
 const approvalMode = (value: unknown, fallback: FabricApprovalMode): FabricApprovalMode =>
   value === "allow" || value === "ask" || value === "auto" || value === "deny" ? value : fallback;
-const runnerValue = (value: unknown, fallback: FabricAgentRunner): FabricAgentRunner =>
-  value === "pi" || value === "claude" || value === "cli" ? value : fallback;
-const cliAdapterValue = (value: unknown, fallback: FabricCliAdapter): FabricCliAdapter =>
-  value === "agy" || value === "droid" ? value : fallback;
-const transportValue = (value: unknown, fallback: FabricAgentTransport): FabricAgentTransport =>
-  value === "auto" || value === "process" || value === "tmux" || value === "screen" ||
-  value === "localterm" || value === "herdr" ? value : fallback;
 const riskValue = (value: unknown, fallback: FabricRisk): FabricRisk =>
   value === "read" || value === "write" || value === "execute" || value === "network" || value === "agent"
     ? value
@@ -262,14 +187,8 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
   const approvals = isObject(raw.approvals) ? raw.approvals : {};
   const mcp = isObject(raw.mcp) ? raw.mcp : {};
   const mcpCache = isObject(mcp.cache) ? mcp.cache : {};
-  const agents = isObject(raw.agents) ? raw.agents : {};
-  const claude = isObject(agents.claude) ? agents.claude : {};
-  const cli = isObject(agents.cli) ? agents.cli : {};
-  const agy = isObject(cli.agy) ? cli.agy : {};
-  const droid = isObject(cli.droid) ? cli.droid : {};
   const capture = isObject(raw.capture) ? raw.capture : {};
   const rawRisks = isObject(capture.risks) ? capture.risks : {};
-  const retention = isObject(raw.retention) ? raw.retention : {};
   const runtime: FabricExecutorRuntime = executor.runtime === "node-process" ? "node-process" : "quickjs";
   const resultFormat: FabricResultFormat =
     executor.resultFormat === "yaml" || executor.resultFormat === "json" || executor.resultFormat === "text"
@@ -279,9 +198,6 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
   for (const [name, value] of Object.entries(rawRisks)) {
     risks[name] = riskValue(value, DEFAULT_FABRIC_CONFIG.capture.defaultRisk);
   }
-  const thinking = isFabricThinking(agents.thinking)
-    ? agents.thinking
-    : DEFAULT_FABRIC_CONFIG.agents.thinking;
   const revalidate: FabricMcpRevalidatePolicy =
     mcpCache.revalidate === "all" || mcpCache.revalidate === "off"
       ? mcpCache.revalidate
@@ -291,7 +207,12 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
     fullCodeMode: true,
     executor: {
       runtime,
-      timeoutMs: numberValue(executor.timeoutMs, DEFAULT_FABRIC_CONFIG.executor.timeoutMs, 1_000, MAX_AGENT_TIMEOUT_MS),
+      timeoutMs: numberValue(
+        executor.timeoutMs,
+        DEFAULT_FABRIC_CONFIG.executor.timeoutMs,
+        MIN_HOST_CALL_TIMEOUT_MS,
+        MAX_HOST_CALL_TIMEOUT_MS,
+      ),
       memoryLimitBytes: numberValue(
         executor.memoryLimitBytes,
         DEFAULT_FABRIC_CONFIG.executor.memoryLimitBytes,
@@ -315,49 +236,23 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
       ...(optionalString(mcp.configPath) ? { configPath: optionalString(mcp.configPath)! } : {}),
       disableOAuth: booleanValue(mcp.disableOAuth, DEFAULT_FABRIC_CONFIG.mcp.disableOAuth),
       allowDynamicServers: booleanValue(mcp.allowDynamicServers, DEFAULT_FABRIC_CONFIG.mcp.allowDynamicServers),
-      callTimeoutMs: numberValue(mcp.callTimeoutMs, DEFAULT_FABRIC_CONFIG.mcp.callTimeoutMs, 1_000, MAX_AGENT_TIMEOUT_MS),
+      callTimeoutMs: numberValue(
+        mcp.callTimeoutMs,
+        DEFAULT_FABRIC_CONFIG.mcp.callTimeoutMs,
+        MIN_HOST_CALL_TIMEOUT_MS,
+        MAX_HOST_CALL_TIMEOUT_MS,
+      ),
       cache: {
         enabled: booleanValue(mcpCache.enabled, DEFAULT_FABRIC_CONFIG.mcp.cache.enabled),
         revalidate,
-        revalidateBudgetMs: numberValue(mcpCache.revalidateBudgetMs, DEFAULT_FABRIC_CONFIG.mcp.cache.revalidateBudgetMs, 1_000, MAX_AGENT_TIMEOUT_MS),
+        revalidateBudgetMs: numberValue(
+          mcpCache.revalidateBudgetMs,
+          DEFAULT_FABRIC_CONFIG.mcp.cache.revalidateBudgetMs,
+          MIN_HOST_CALL_TIMEOUT_MS,
+          MAX_HOST_CALL_TIMEOUT_MS,
+        ),
       },
       advisory: false,
-    },
-    agents: {
-      enabled: booleanValue(agents.enabled, DEFAULT_FABRIC_CONFIG.agents.enabled),
-      runner: runnerValue(agents.runner, DEFAULT_FABRIC_CONFIG.agents.runner),
-      transport: transportValue(agents.transport, DEFAULT_FABRIC_CONFIG.agents.transport),
-      ...(optionalString(agents.model) ? { model: optionalString(agents.model)! } : {}),
-      claude: {
-        binary: stringValue(claude.binary, DEFAULT_FABRIC_CONFIG.agents.claude.binary),
-        ...(optionalString(claude.model) ? { model: optionalString(claude.model)! } : {}),
-      },
-      cli: {
-        adapter: cliAdapterValue(cli.adapter, DEFAULT_FABRIC_CONFIG.agents.cli.adapter),
-        agy: {
-          binary: stringValue(agy.binary, DEFAULT_FABRIC_CONFIG.agents.cli.agy.binary),
-          ...(optionalString(agy.model) ? { model: optionalString(agy.model)! } : {}),
-        },
-        droid: {
-          binary: stringValue(droid.binary, DEFAULT_FABRIC_CONFIG.agents.cli.droid.binary),
-          ...(optionalString(droid.model) ? { model: optionalString(droid.model)! } : {}),
-        },
-      },
-      thinking,
-      maxConcurrent: Math.floor(numberValue(agents.maxConcurrent, DEFAULT_FABRIC_CONFIG.agents.maxConcurrent, 1, 32)),
-      maxPerExecution: Math.floor(numberValue(agents.maxPerExecution, DEFAULT_FABRIC_CONFIG.agents.maxPerExecution, 1, 1_000)),
-      maxDepth: Math.floor(numberValue(agents.maxDepth, DEFAULT_FABRIC_CONFIG.agents.maxDepth, 0, 16)),
-      timeoutMs: numberValue(agents.timeoutMs, DEFAULT_FABRIC_CONFIG.agents.timeoutMs, MIN_AGENT_TIMEOUT_MS, MAX_AGENT_TIMEOUT_MS),
-      extensions: booleanValue(agents.extensions, DEFAULT_FABRIC_CONFIG.agents.extensions),
-      defaultTools: stringList(agents.defaultTools, DEFAULT_FABRIC_CONFIG.agents.defaultTools),
-      retainRuns: booleanValue(agents.retainRuns, DEFAULT_FABRIC_CONFIG.agents.retainRuns),
-      notifyOnComplete: booleanValue(agents.notifyOnComplete, DEFAULT_FABRIC_CONFIG.agents.notifyOnComplete),
-      budgetUsd: numberValue(agents.budgetUsd, DEFAULT_FABRIC_CONFIG.agents.budgetUsd, 0),
-      maxTokensPerChild: Math.floor(numberValue(agents.maxTokensPerChild, DEFAULT_FABRIC_CONFIG.agents.maxTokensPerChild, 0)),
-      sessionExport: booleanValue(agents.sessionExport, DEFAULT_FABRIC_CONFIG.agents.sessionExport),
-      sessionExportDir: typeof agents.sessionExportDir === "string"
-        ? agents.sessionExportDir.trim()
-        : DEFAULT_FABRIC_CONFIG.agents.sessionExportDir,
     },
     capture: {
       enabled: booleanValue(capture.enabled, DEFAULT_FABRIC_CONFIG.capture.enabled),
@@ -366,10 +261,6 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
       defaultRisk: riskValue(capture.defaultRisk, DEFAULT_FABRIC_CONFIG.capture.defaultRisk),
       risks,
       advisory: { ...DEFAULT_FABRIC_CONFIG.capture.advisory },
-    },
-    retention: {
-      orphanedTempRunMs: numberValue(retention.orphanedTempRunMs, DEFAULT_FABRIC_CONFIG.retention.orphanedTempRunMs, 0),
-      oneShotRunMs: numberValue(retention.oneShotRunMs, DEFAULT_FABRIC_CONFIG.retention.oneShotRunMs, 0),
     },
     ui: { updateDebounceMs: 100 },
     schema: { mode: "off" },

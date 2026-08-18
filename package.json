@@ -1,7 +1,7 @@
 {
   "name": "pi-fabric",
   "version": "0.61.0",
-  "description": "Programmatic tool calling runtime for Pi with Main-routed subagents and workflows",
+  "description": "Programmatic tool calling runtime for Pi",
   "type": "module",
   "main": "./dist/lean-index.js",
   "types": "./dist/lean-index.d.ts",
@@ -17,14 +17,10 @@
   },
   "files": [
     "dist/",
-    "internal/pi-subagents/agents/",
     "skills/fabric-exec/",
-    "skills/fabric-subagents/",
-    "skills/fabric-workflow/",
     "docs/usage.md",
     "docs/configuration.md",
     "docs/lean-code-mode.md",
-    "docs/subagents-and-workflows.md",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md"
@@ -43,10 +39,7 @@
     "pi-extension",
     "codemode",
     "programmatic-tool-calling",
-    "mcp",
-    "subagents",
-    "workflows",
-    "orchestration"
+    "mcp"
   ],
   "license": "MIT",
   "author": "monotykamary",
@@ -63,20 +56,12 @@
   },
   "pi": {
     "extensions": [
-      "./dist/lean-index.js",
-      "./node_modules/pi-subagents/index.ts"
+      "./dist/lean-index.js"
     ],
     "skills": [
-      "./skills/fabric-exec",
-      "./skills/fabric-subagents",
-      "./skills/fabric-workflow"
+      "./skills/fabric-exec"
     ],
     "image": "https://raw.githubusercontent.com/monotykamary/pi-fabric/main/media/cover.jpg"
-  },
-  "pi-subagents": {
-    "agents": [
-      "./internal/pi-subagents/agents"
-    ]
   },
   "dependencies": {
     "@earendil-works/pi-ai": "0.84.2",
@@ -84,15 +69,11 @@
     "cross-spawn": "^7.0.6",
     "diff": "^9.0.0",
     "mcporter": "^0.12.3",
-    "pi-subagents": "0.45.2",
     "quickjs-emscripten-core": "^0.32.0",
     "typebox": "1.3.8",
     "typescript": "^6.0.3",
     "yaml": "^2.9.0"
   },
-  "bundledDependencies": [
-    "pi-subagents"
-  ],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.80.6",
     "@earendil-works/pi-tui": ">=0.80.6"

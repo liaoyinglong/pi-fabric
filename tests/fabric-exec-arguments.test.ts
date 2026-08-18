@@ -3,7 +3,7 @@ import { prepareFabricExecArguments } from "../src/fabric-exec-arguments.js";
 
 describe("prepareFabricExecArguments", () => {
   it("keeps canonical arguments unchanged", () => {
-    const input = { code: "return 1;", tokenBudget: 10 };
+    const input = { code: "return 1;", resultFormat: "json" };
     expect(prepareFabricExecArguments(input)).toBe(input);
   });
 
@@ -24,8 +24,6 @@ describe("prepareFabricExecArguments", () => {
       code: null,
       strings: null,
       resultFormat: null,
-      tokenBudget: null,
-      agentBudget: undefined,
       display: null,
     })).toEqual({ code: null });
   });

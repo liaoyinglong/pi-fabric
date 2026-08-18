@@ -1,11 +1,6 @@
 packages:
   - "."
 
-# npm pack follows bundledDependencies from node_modules. pnpm's default
-# isolated linker stores dependencies behind .pnpm symlinks; use a hoisted
-# layout so the bundled pi-subagents package is publishable as part of Fabric.
-nodeLinker: hoisted
-
 allowBuilds:
   "@google/genai": true
   esbuild: true
