@@ -3,7 +3,7 @@ name: Test
 on:
   workflow_dispatch:
   push:
-    branches: [release, "agent/**"]
+    branches: [release, "agent/code-mode-runtime-v2"]
   pull_request:
     branches: [release, "agent/code-mode-runtime-v2"]
 
