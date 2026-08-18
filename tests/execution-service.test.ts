@@ -2,8 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it, vi } from "vitest";
-import type { FabricAutoApprovalClassifier } from "../src/core/auto-approval-classifier.js";
+import { describe, expect, it } from "vitest";
 import { DEFAULT_FABRIC_CONFIG } from "../src/config.js";
 import { ActionRegistry } from "../src/core/action-registry.js";
 import { FabricExecutionService } from "../src/execution-service.js";
@@ -133,65 +132,6 @@ describe("FabricExecutionService", () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toContain("timed out");
-  });
-
-  it("audits auto approvals and accounts for classifier usage", async () => {
-    const registry = new ActionRegistry();
-    const descriptor: FabricActionDescriptor = {
-      name: "mutate",
-      description: "mutate one value",
-      inputSchema: {
-        type: "object",
-        properties: { value: { type: "string" } },
-        required: ["value"],
-        additionalProperties: false,
-      },
-      risk: "write",
-    };
-    const invoke = vi.fn(async (_name: string, args: Record<string, unknown>) => args);
-    registry.register({
-      name: "demo",
-      description: "demo provider",
-      async list() { return [descriptor]; },
-      async describe(name) { return name === "mutate" ? descriptor : undefined; },
-      invoke,
-    });
-    const usage = {
-      input: 20,
-      output: 5,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 25,
-      cost: { input: 0.01, output: 0.02, cacheRead: 0, cacheWrite: 0, total: 0.03 },
-    };
-    const classifier = {
-      classify: vi.fn(async () => ({
-        decision: "allow" as const,
-        reason: "Bounded task-aligned mutation",
-        model: "anthropic/classifier",
-        usage,
-      })),
-    } as unknown as FabricAutoApprovalClassifier;
-    const config = structuredClone(DEFAULT_FABRIC_CONFIG);
-    config.fullCodeMode = false;
-    config.approvals.write = "auto";
-    const result = await new FabricExecutionService(
-      registry,
-      config,
-      undefined,
-      undefined,
-      classifier,
-    ).execute({
-      code: 'return tools.call({ ref: "demo.mutate", args: { value: "next" } });',
-      signal: undefined,
-      parentToolCallId: "auto-approval",
-      context: context(),
-      onPartial() {},
-    });
-    expect(result.success).toBe(true);
-    expect(invoke).toHaveBeenCalledOnce();
-    expect(result.usage).toEqual(usage);
-    expect(result.trace.operations).toContainEqual(expect.objectContaining({ ref: "fabric.approval.auto" }));
   });
 });
 

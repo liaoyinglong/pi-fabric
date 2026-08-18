@@ -7,7 +7,7 @@ export type FabricResultFormat = "auto" | "yaml" | "json" | "text";
 export type FabricExecutorRuntime = "quickjs" | "node-process";
 export type FabricConfigScope = "global" | "project";
 
-type FabricApprovalMode = "allow" | "ask" | "auto" | "deny";
+type FabricApprovalMode = "allow" | "ask" | "deny";
 type FabricMcpRevalidatePolicy = "changed" | "all" | "off";
 
 export interface FabricExecutorConfig {
@@ -26,7 +26,6 @@ export interface FabricApprovalConfig {
   network: FabricApprovalMode;
   /** Generic risk class for third-party actions that delegate to another agent. */
   agent: FabricApprovalMode;
-  model?: string;
 }
 
 export interface FabricMcpConfig {
@@ -175,8 +174,12 @@ const stringList = (value: unknown, fallback: string[]): string[] =>
     ? value.filter((entry): entry is string => typeof entry === "string").map((entry) => entry.trim()).filter(Boolean)
     : [...fallback];
 
-const approvalMode = (value: unknown, fallback: FabricApprovalMode): FabricApprovalMode =>
-  value === "allow" || value === "ask" || value === "auto" || value === "deny" ? value : fallback;
+const approvalMode = (value: unknown, fallback: FabricApprovalMode): FabricApprovalMode => {
+  if (value === "allow" || value === "ask" || value === "deny") return value;
+  // Legacy model-driven auto approval fails safe to explicit approval.
+  if (value === "auto") return "ask";
+  return fallback;
+};
 const riskValue = (value: unknown, fallback: FabricRisk): FabricRisk =>
   value === "read" || value === "write" || value === "execute" || value === "network" || value === "agent"
     ? value
@@ -229,7 +232,6 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
       execute: approvalMode(approvals.execute, DEFAULT_FABRIC_CONFIG.approvals.execute),
       network: approvalMode(approvals.network, DEFAULT_FABRIC_CONFIG.approvals.network),
       agent: approvalMode(approvals.agent, DEFAULT_FABRIC_CONFIG.approvals.agent),
-      ...(optionalString(approvals.model) ? { model: optionalString(approvals.model)! } : {}),
     },
     mcp: {
       enabled: booleanValue(mcp.enabled, DEFAULT_FABRIC_CONFIG.mcp.enabled),

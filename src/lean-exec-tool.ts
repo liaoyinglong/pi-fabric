@@ -85,7 +85,6 @@ export const createLeanFabricExecTool = (
         phases: result.phases,
         audits: result.audits,
         trace: result.trace,
-        ...(result.usage ? { usage: result.usage } : {}),
       },
     };
   },
