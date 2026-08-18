@@ -34,5 +34,8 @@ describe("lean system prompt stability", () => {
     expect(skillTurn).not.toContain("Inspect the auth flow.");
     expect(skillTurn).not.toContain("TURN_ONLY_SKILL_EXPANSION");
     expect(skillTurn).toContain("<name>review</name>");
+    expect(skillTurn).toContain(
+      "Use `pi.read` inside `fabric_exec` to load a skill's file when the task matches its description.",
+    );
   });
 });
