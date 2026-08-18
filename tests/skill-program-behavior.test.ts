@@ -30,44 +30,62 @@ const parallel = async (thunks: Array<() => Promise<unknown>>) => Promise.all(
   thunks.map((thunk) => thunk()),
 );
 
+type AgentOptions = {
+  tier?: string;
+  policy?: string;
+  role?: string;
+  label?: string;
+};
+
 describe("lean workflow skill behavior", () => {
   it("extracts TypeScript programs from CRLF Markdown", () => {
     expect(extractMarkdownProgram("before\r\n```ts\r\nreturn 42;\r\n```\r\n", "fixture.md"))
       .toBe("return 42;");
   });
 
-  it("fans out with explore and verifies with review profiles", async () => {
-    const calls: Array<{ profile?: string; label?: string; prompt: string }> = [];
+  it("fans out with fast inspectors and verifies with a strong inspector", async () => {
+    const calls: Array<AgentOptions & { prompt: string }> = [];
     const result = await runWorkflow({
       parallel,
-      agent: async (prompt: string, options: { profile?: string; label?: string }) => {
+      agent: async (prompt: string, options: AgentOptions) => {
         calls.push({ prompt, ...options });
-        if (options.profile === "review") return "verified result";
+        if (options.tier === "strong") return "verified result";
         return `${options.label} evidence`;
       },
     });
 
     expect(result).toBe("verified result");
-    expect(calls.filter((call) => call.profile === "explore")).toHaveLength(3);
-    expect(calls.at(-1)?.profile).toBe("review");
+    expect(calls.filter((call) => call.tier === "fast")).toHaveLength(3);
+    expect(calls.slice(0, 3).every((call) => call.policy === "inspect")).toBe(true);
+    expect(calls.at(-1)?.tier).toBe("strong");
+    expect(calls.at(-1)?.policy).toBe("inspect");
+    expect(calls.at(-1)?.role).toBe("independent reviewer");
     expect(calls.at(-1)?.prompt).toContain("Independently verify these findings");
   });
 
-  it("keeps labels distinct while routing policy stays in profiles", async () => {
+  it("lets Main create distinct temporary roles without configured profiles", async () => {
     const labels: string[] = [];
+    const roles: string[] = [];
     await runWorkflow({
       parallel,
-      agent: async (_prompt: string, options: { profile?: string; label?: string }) => {
+      agent: async (_prompt: string, options: AgentOptions) => {
         if (options.label) labels.push(options.label);
-        return options.profile === "review" ? "ok" : "evidence";
+        if (options.role) roles.push(options.role);
+        return options.tier === "strong" ? "ok" : "evidence";
       },
     });
 
     expect(labels).toEqual([
-      "explore auth",
-      "explore routing",
-      "explore caching",
+      "inspect auth",
+      "inspect routing",
+      "inspect caching",
       "verify findings",
+    ]);
+    expect(roles).toEqual([
+      "auth repository scout",
+      "routing repository scout",
+      "caching repository scout",
+      "independent reviewer",
     ]);
   });
 });

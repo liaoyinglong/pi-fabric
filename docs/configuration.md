@@ -4,19 +4,19 @@ This reference describes the configuration fields read by Lean V2. Day-to-day ex
 
 ## File locations and precedence
 
-Global configuration:
+Global runtime configuration:
 
 ```text
 ~/.pi/agent/fabric.json
 ```
 
-Trusted project configuration:
+Trusted project runtime configuration:
 
 ```text
 .pi/fabric.json
 ```
 
-Optional explicit configuration:
+Optional explicit runtime configuration:
 
 ```bash
 PI_FABRIC_CONFIG=/absolute/path/to/fabric.json pi
@@ -28,7 +28,7 @@ Precedence:
 global < trusted project < PI_FABRIC_CONFIG
 ```
 
-Project configuration is skipped when Pi marks the project untrusted. `fabric.json` changes apply when the Lean runtime initializes again; subagent profile files are resolved per agent call.
+Project configuration is skipped when Pi marks the project untrusted. `fabric.json` changes apply when the Lean runtime initializes again. Subagent routing files are resolved per agent call.
 
 Configuration objects merge recursively. Scalar values replace earlier values. Arrays replace earlier arrays; they are not concatenated.
 
@@ -80,19 +80,21 @@ With `mcp.enabled: false`, Lean does not register/warm the MCP provider and omit
 
 ## `agents`
 
+The `agents` group controls the worker runtime and global safety ceilings. Main does **not** choose these raw fields in ordinary `agents.run` calls; Main chooses a tier and policy instead.
+
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `true` | Enables one-shot child workers |
-| `runner` | `pi` | Fallback runner when a profile does not specify one |
-| `transport` | `process` | Fallback process transport |
-| `model` | unset | Fallback Pi child model; an unset Pi model can inherit the host model |
+| `enabled` | `true` | Enables child workers |
+| `runner` | `pi` | Internal fallback runner when a tier does not resolve one |
+| `transport` | `process` | Internal fallback process transport |
+| `model` | unset | Fallback Pi child model |
 | `thinking` | `medium` | Fallback child reasoning level |
 | `maxConcurrent` | `4` | Maximum concurrently managed children |
 | `maxPerExecution` | `100` | Maximum `run`/`spawn`/`recurse` starts in one `fabric_exec` |
 | `maxDepth` | `2` | Maximum recursive Pi child depth |
 | `timeoutMs` | `3600000` | Default child deadline |
-| `extensions` | `true` | Keeps Pi extension discovery available to children, including dynamically registered model providers |
-| `defaultTools` | `read, grep, find, ls` | Read-only fallback child tool allowlist |
+| `extensions` | `true` | Keeps Pi extension discovery available to children |
+| `defaultTools` | `read, grep, find, ls` | Internal fallback child tool allowlist |
 | `retainRuns` | `false` | Keeps completed local run state when enabled |
 | `notifyOnComplete` | `true` | Delivers detached `spawn` completion back to Main |
 | `budgetUsd` | `0` | Shared child cost budget; `0` disables it |
@@ -100,11 +102,9 @@ With `mcp.enabled: false`, Lean does not register/warm the MCP provider and omit
 | `sessionExport` | `true` | Exports Pi-format usage records for child attribution |
 | `sessionExportDir` | empty | Optional explicit export directory |
 
-These values are defaults and safety ceilings. Ordinary Code Mode calls should select a semantic `profile`; model/runner/tool policy belongs in the profile file and stays out of the `agents.run` call.
-
-If a one-shot profile omits `tools`, it inherits the read-only `read`, `grep`, `find`, and `ls` allowlist. Shell execution and writes (`bash`, `edit`, `write`) are opt-in through profile or host configuration. Extension discovery stays enabled by default so provider extensions such as dynamically registered model providers remain available in the child. When an ordinary child discovers Pi Fabric itself, Lean detects that it is a non-recursive Fabric child, stays inert, and leaves the child's core tools untouched. The Pi `--tools` allowlist remains the model-facing tool boundary.
-
 `agents.run` and `agents.wait` are foreground work. `agents.spawn` is detached until waited; when detached work settles and `notifyOnComplete` is enabled, Lean sends a bounded follow-up to Main.
+
+Ordinary one-shot Pi children keep extension discovery enabled by default so dynamically registered providers remain available. Lean itself stays inert in non-recursive Fabric children, while the selected policy's portable tool allowlist remains the model-facing capability boundary.
 
 ### Claude runner
 
@@ -115,38 +115,56 @@ If a one-shot profile omits `tools`, it inherits the read-only `read`, `grep`, `
 
 ### CLI runner
 
-The `cli` runner calls a supported headless CLI directly through a small adapter. Fabric no longer needs a Veda intermediary.
+The `cli` runner calls a supported headless CLI directly through a small adapter. Fabric does not require Veda.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `agents.cli.adapter` | `agy` | Default CLI adapter: `agy` or `droid` |
+| `agents.cli.adapter` | `agy` | Fallback CLI adapter: `agy` or `droid` |
 | `agents.cli.agy.binary` | `agy` | Antigravity CLI executable |
 | `agents.cli.agy.model` | unset | Antigravity model default |
 | `agents.cli.droid.binary` | `droid` | Factory Droid CLI executable |
 | `agents.cli.droid.model` | unset | Droid model default |
 
-Example:
+CLI adapters are one-shot: they do not support recursive Fabric, steering, follow-ups, or Fabric-triggered compaction. Droid maps Fabric's portable tool names to native tool IDs and uses native restriction flags. Antigravity receives the selected policy's tool list as an explicit prompt boundary while its own permission configuration remains authoritative; Fabric does not enable a dangerous permission bypass automatically.
 
-```json
-{
-  "agents": {
-    "runner": "cli",
-    "cli": {
-      "adapter": "agy",
-      "agy": { "binary": "agy" },
-      "droid": { "binary": "droid" }
-    }
-  }
-}
+## Subagent routing: `tiers` + `policies`
+
+Lean V2 ships a complete default routing table. No subagent file is required for normal use.
+
+Main chooses:
+
+```text
+tier:    fast | balance | strong
+policy:  inspect | execute | modify | isolated
+role:    temporary call-time semantic role
 ```
 
-CLI adapters are one-shot: they do not support recursive Fabric, steering, follow-ups, or Fabric-triggered compaction. Droid maps Fabric's portable tool names to Droid's native tool IDs and uses Droid's native tool restriction flags. Antigravity does not currently expose an equivalent per-run tool allowlist, so Fabric passes the requested tool list as an explicit prompt boundary and leaves Antigravity's own permission policy authoritative; Fabric never enables Antigravity's dangerous permission bypass automatically.
+`role` is created dynamically by Main and is not configuration.
 
-## Subagent profile files
+### Built-in tier defaults
 
-The historical configuration key remains `roles:`; the public runtime selector is `profile`.
+| Tier | Default | Intended use |
+| --- | --- | --- |
+| `fast` | Pi `gpt-5.6-luna`, medium thinking | cheap bounded search, evidence gathering, repetitive inspection |
+| `balance` | Pi `gpt-5.6-terra`, medium thinking | routine reasoning, debugging, implementation, verification |
+| `strong` | Pi `gpt-5.6-sol`, medium thinking | ambiguous bugs, architecture/high-impact decisions, difficult reasoning, independent review |
 
-Global files:
+AGY and Droid remain available as CLI runner overrides. The built-in routing table itself uses Pi for all three tiers.
+
+### Built-in policy defaults
+
+| Policy | Tools | Worktree | Intended use |
+| --- | --- | --- | --- |
+| `inspect` | `read, grep, find, ls` | no | research, exploration, review |
+| `execute` | inspect + `bash` | no | tests/builds/diagnostics without source edits |
+| `modify` | `read, grep, find, ls, bash, edit, write` | no | bounded implementation in the current workspace |
+| `isolated` | same mutation tools | yes | experiments or parallel mutation in an isolated worktree |
+
+Policies are capability boundaries. A temporary role never expands the selected policy.
+
+### Routing file locations
+
+Global routing:
 
 ```text
 ~/.pi/agent/fabric/subagents.yaml
@@ -154,7 +172,7 @@ Global files:
 ~/.pi/agent/fabric/subagents.json
 ```
 
-Trusted project files:
+Trusted project routing:
 
 ```text
 .pi/fabric/subagents.yaml
@@ -171,64 +189,94 @@ PI_FABRIC_SUBAGENTS_FILE=/absolute/path/to/subagents.yaml pi
 Precedence:
 
 ```text
-global < trusted project < PI_FABRIC_SUBAGENTS_FILE
+built-ins < global < trusted project < PI_FABRIC_SUBAGENTS_FILE
 ```
 
-Project files are skipped for untrusted projects. Profiles merge field-by-field; later arrays such as `tools` replace earlier arrays.
+Project files are skipped for untrusted projects. Later values merge field-by-field; policy `tools` arrays replace earlier arrays.
 
-Profile fields:
+Only two top-level keys are recognized: `tiers` and `policies`. There is no `roles:` or profile compatibility layer.
+
+```yaml
+tiers:
+  fast:
+    runner: pi
+    model: azure-openai-responses/gpt-5.6-luna
+    thinking: medium
+
+  balance:
+    runner: pi
+    model: azure-openai-responses/gpt-5.6-terra
+    thinking: medium
+
+  strong:
+    runner: pi
+    model: azure-openai-responses/gpt-5.6-sol
+    thinking: medium
+    # transport: herdr
+
+policies:
+  inspect:
+    tools: [read, grep, find, ls]
+
+  execute:
+    tools: [read, grep, find, ls, bash]
+
+  modify:
+    tools: [read, grep, find, ls, bash, edit, write]
+    worktree: false
+
+  isolated:
+    tools: [read, grep, find, ls, bash, edit, write]
+    worktree: true
+```
+
+Tier override fields:
 
 | Field | Meaning |
 | --- | --- |
-| `description` | Short semantic purpose shown during profile discovery |
-| `instructions` | Instructions prepended to the child task |
+| `description` | Semantic description used in child routing guidance |
+| `instructions` | Tier-wide child instructions |
 | `runner` | `pi`, `claude`, or `cli` |
-| `cli` | For `runner: cli`, select `agy` or `droid`; omitted profiles use `agents.cli.adapter` |
+| `cli` | `agy` or `droid` when `runner: cli` |
 | `transport` | `auto`, `process`, `tmux`, `screen`, `localterm`, or `herdr` |
 | `model` | Runner-specific model identifier |
 | `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` |
-| `tools` | Portable child tool allowlist; omitted profiles inherit `read, grep, find, ls` |
-| `timeoutMs` | Profile child timeout |
-| `extensions` | Whether Pi extension discovery is enabled for the child; omitted means `true` |
-| `worktree` | Create an isolated Git worktree |
+| `timeoutMs` | Tier-specific timeout |
+| `extensions` | Whether Pi extension discovery is enabled |
 
-Example CLI profiles:
+Policy override fields:
 
-```yaml
-roles:
-  research:
-    runner: cli
-    cli: agy
-    model: gemini-3.7-flash
-    tools: [read, grep, find, ls]
+| Field | Meaning |
+| --- | --- |
+| `description` | Semantic capability description |
+| `instructions` | Policy-wide hard-boundary guidance |
+| `tools` | Portable child tool allowlist |
+| `worktree` | Whether the worker runs in an isolated Git worktree |
 
-  review:
-    runner: cli
-    cli: droid
-    tools: [read, grep, find, ls]
-```
-
-Public `agents.run` / `agents.spawn` calls expose only `task`, `profile`, optional display `name`, `timeoutMs`, `worktree`, and `schema`. Raw runner/model/thinking/tool fields are intentionally not part of the model-facing call schema.
+Main can inspect the active semantic routing surface with `agents.routing({})`. The result intentionally exposes tier/policy meanings and policy capability boundaries, not raw model IDs or runners.
 
 ## Recursive delegation
 
-`agents.recurse({ profile, task })` explicitly starts a recursive Pi profile and returns a compact result. The resolved profile must use `runner: pi`.
+`agents.recurse({ tier, policy, role, task })` explicitly starts a recursive child. The selected tier must resolve to `runner: pi`.
+
+With the built-in routing table, `fast`, `balance`, and `strong` can all recurse. A tier overridden to a CLI runner remains one-shot and cannot recurse.
 
 Relevant guards:
 
 - `agents.maxDepth` limits recursive depth;
 - `agents.maxPerExecution` limits starts in the current Code Mode execution;
-- `agents.timeoutMs` / profile timeout bound each child;
+- `agents.timeoutMs` / tier timeout bound each child;
 - `agents.maxTokensPerChild` bounds cumulative child tokens when non-zero;
-- `agents.budgetUsd` provides a shared cost ledger across recursive Pi descendants when non-zero.
+- `agents.budgetUsd` provides a shared cost ledger across recursive Pi descendants when non-zero;
+- the selected policy continues to bound tools and worktree behavior.
 
-Recursive Pi children force Lean Fabric on and keep `fabric_exec` as the model-facing execution gateway. The selected profile's original `tools` allowlist becomes the hard internal Fabric capability grant: for example, a read-only profile may call `pi.read`, `pi.grep`, `pi.find`, and `pi.ls` inside `fabric_exec`, but cannot reach `pi.bash`, `pi.edit`, or `pi.write`. Captured extension actions are likewise limited to extension tool names granted by the profile. This keeps recursive Code Mode from expanding a profile's authority.
+Recursive Pi children use Lean Code Mode. A read-only `inspect` child can reach only its read/search grant through `pi.*`; a `modify` child can reach the mutation tools granted by that policy. Recursion cannot expand authority beyond policy.
 
 There is no separate RLM provider or persistent recursive scheduler.
 
 ## `capture`
 
-Lean V2 owns model-facing tool visibility in Full Code Mode. The runtime forces capture on and captured extension tools hidden from Main. `capture.enabled` and `capture.hideFromModel` remain compatibility inputs but normalize to `true`.
+Lean V2 owns model-facing tool visibility in Full Code Mode. The runtime forces capture on and captured extension tools hidden from Main. `capture.enabled` and `capture.hideFromModel` remain broad inputs but normalize to `true`.
 
 User-facing controls:
 

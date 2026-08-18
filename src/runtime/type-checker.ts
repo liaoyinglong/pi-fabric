@@ -45,41 +45,63 @@ const shouldKeepSemanticDiagnostic = (diagnostic: ts.Diagnostic): boolean => {
   if (diagnostic.code !== 2339 && diagnostic.code !== 2551) return false;
   const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
   // Dynamic MCP namespaces and intentionally-wide agent result unions still
-  // rely on property-miss tolerance. Stable primitive/catalog contracts do
-  // not: reject object-style access on Pi strings and the recurring
-  // agents.profiles() mistakes (catalog.find / profile.id) before QuickJS.
-  return /does not exist on type '(?:string|FabricSubagentProfileCatalog|FabricSubagentRoleInfo)'/.test(message);
+  // rely on property-miss tolerance. Stable Pi string contracts do not.
+  return /does not exist on type 'string'/.test(message);
 };
 
 const PI_CORE_ACTIONS = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 const PI_CORE_ACTION_LIST = [...PI_CORE_ACTIONS].map((action) => `pi.${action}`).join(", ");
+const REMOVED_AGENT_ACTIONS = new Set(["profiles", "roles", "models"]);
+
+const memberName = (
+  node: ts.Node,
+  objectName: string,
+): { action: string; nameNode: ts.Node } | undefined => {
+  if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === objectName) {
+    return { action: node.name.text, nameNode: node.name };
+  }
+  if (
+    ts.isElementAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === objectName &&
+    node.argumentExpression &&
+    ts.isStringLiteralLike(node.argumentExpression)
+  ) {
+    return { action: node.argumentExpression.text, nameNode: node.argumentExpression };
+  }
+  return undefined;
+};
 
 const unknownPiCoreActionErrors = (sourceFile: ts.SourceFile): FabricTypeError[] => {
   const errors: FabricTypeError[] = [];
   const visit = (node: ts.Node): void => {
-    let action: string | undefined;
-    let nameNode: ts.Node | undefined;
-    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "pi") {
-      action = node.name.text;
-      nameNode = node.name;
-    } else if (
-      ts.isElementAccessExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === "pi" &&
-      node.argumentExpression &&
-      ts.isStringLiteralLike(node.argumentExpression)
-    ) {
-      action = node.argumentExpression.text;
-      nameNode = node.argumentExpression;
-    }
-    if (action && nameNode && !PI_CORE_ACTIONS.has(action)) {
-      const position = sourceFile.getLineAndCharacterOfPosition(nameNode.getStart(sourceFile));
+    const member = memberName(node, "pi");
+    if (member && !PI_CORE_ACTIONS.has(member.action)) {
+      const position = sourceFile.getLineAndCharacterOfPosition(member.nameNode.getStart(sourceFile));
       errors.push({
         line: Math.max(1, position.line),
         column: position.character + 1,
-        message: `Unknown Pi core action: pi.${action}. Available actions: ${PI_CORE_ACTION_LIST}.${
-          action === "exec" ? " Use pi.bash for shell commands." : ""
+        message: `Unknown Pi core action: pi.${member.action}. Available actions: ${PI_CORE_ACTION_LIST}.${
+          member.action === "exec" ? " Use pi.bash for shell commands." : ""
         }`,
+      });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return errors;
+};
+
+const removedAgentActionErrors = (sourceFile: ts.SourceFile): FabricTypeError[] => {
+  const errors: FabricTypeError[] = [];
+  const visit = (node: ts.Node): void => {
+    const member = memberName(node, "agents");
+    if (member && REMOVED_AGENT_ACTIONS.has(member.action)) {
+      const position = sourceFile.getLineAndCharacterOfPosition(member.nameNode.getStart(sourceFile));
+      errors.push({
+        line: Math.max(1, position.line),
+        column: position.character + 1,
+        message: `Property '${member.action}' is removed from FabricAgentsApi. Use tier/policy routing through agents.run, agents.spawn, agents.recurse, or inspect agents.routing({}).`,
       });
     }
     ts.forEachChild(node, visit);
@@ -93,17 +115,127 @@ let nextCheckerId = 0;
 export const normalizeTypeScriptPath = (fileName: string): string =>
   fileName.replaceAll("\\", "/");
 
-// GUEST_SETUP historically exposed agents.roles but not the newer profiles /
-// recurse members. Patch that host object once per guest execution through the
-// generic dispatcher. Keeping this prelude on wrapped line 1 preserves the
-// long-standing invariant that user code starts on wrapped line 2, while the
-// model-facing API remains canonical: agents.profiles() and agents.recurse().
+const AGENT_GUEST_CONTRACT = `type FabricSubagentTier = "fast" | "balance" | "strong";
+type FabricSubagentPolicy = "inspect" | "execute" | "modify" | "isolated";
+interface FabricAgentRequest {
+  task: string;
+  tier: FabricSubagentTier;
+  policy: FabricSubagentPolicy;
+  role?: string;
+  instructions?: string;
+  name?: string;
+  timeoutMs?: number;
+  schema?: Record<string, unknown>;
+}
+interface FabricAgentHandle {
+  id: string;
+  name: string;
+  status: "queued" | "running" | "completed" | "failed" | "stopped" | "timed_out";
+  runner: FabricAgentRunner;
+  transport: FabricTransport;
+  cwd: string;
+  model?: string;
+  thinking?: FabricThinking;
+  sessionId?: string;
+  runnerSessionId?: string;
+  attachCommand?: string;
+  branch?: string;
+  worktree?: string;
+}
+interface FabricAgentUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+}
+interface FabricAgentResult extends FabricAgentHandle {
+  task: string;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt?: number;
+  turns: number;
+  toolCalls: number;
+  text: string;
+  value?: unknown;
+  error?: string;
+  stderr?: string;
+  exitCode?: number | null;
+  usage: FabricAgentUsage;
+  pendingMessages?: { steering: string[]; followUp: string[] };
+}
+interface FabricSubagentTierInfo {
+  name: FabricSubagentTier;
+  description: string;
+}
+interface FabricSubagentPolicyInfo {
+  name: FabricSubagentPolicy;
+  description: string;
+  tools: string[];
+  worktree: boolean;
+}
+interface FabricSubagentRoutingCatalog {
+  tiers: FabricSubagentTierInfo[];
+  policies: FabricSubagentPolicyInfo[];
+  sources: string[];
+}
+type FabricAgentTargetArgs = { id: string };
+interface FabricAgentsApi {
+  run(args: FabricAgentRequest): Promise<FabricAgentResult>;
+  spawn(args: FabricAgentRequest): Promise<FabricAgentHandle>;
+  wait(args: FabricAgentTargetArgs): Promise<FabricAgentResult>;
+  status(args: FabricAgentTargetArgs): Promise<FabricAgentResult | FabricAgentHandle>;
+  list(args?: Record<string, never>): Promise<Array<FabricAgentResult | FabricAgentHandle>>;
+  routing(args?: Record<string, never>): Promise<FabricSubagentRoutingCatalog>;
+  recurse(args: FabricAgentRequest): Promise<{
+    id: string;
+    name: string;
+    status: FabricAgentResult["status"];
+    text: string;
+    value?: unknown;
+    error?: string;
+    turns: number;
+    toolCalls: number;
+    usage: FabricAgentUsage;
+  }>;
+  stop(args: FabricAgentTargetArgs): Promise<FabricAgentResult>;
+  cleanup(args: FabricAgentTargetArgs & { deleteBranch?: boolean }): Promise<{ cleaned: boolean }>;
+  steer(args: FabricAgentTargetArgs & { message: string; data?: unknown }): Promise<{ queued: true; messageId: string }>;
+  followUp(args: FabricAgentTargetArgs & { message: string; data?: unknown }): Promise<{ queued: true; messageId: string }>;
+  setSteeringMode(args: FabricAgentTargetArgs & { mode: "all" | "one-at-a-time" }): Promise<{ queued: true; messageId: string }>;
+  setFollowUpMode(args: FabricAgentTargetArgs & { mode: "all" | "one-at-a-time" }): Promise<{ queued: true; messageId: string }>;
+  compact(args: FabricAgentTargetArgs & { instructions?: string }): Promise<unknown>;
+}`;
+
+const AGENT_DECLARATIONS_RE =
+  /interface FabricAgentRequest \{[\s\S]*?\n\}\n\ninterface FabricWorkflowAgentOptions/;
+
+export const normalizeAgentGuestDeclarations = (declarations: string): string => {
+  const normalizedRunner = declarations.replace(
+    'type FabricAgentRunner = "pi" | "claude" | "veda";',
+    'type FabricAgentRunner = "pi" | "claude" | "cli";',
+  );
+  if (!AGENT_DECLARATIONS_RE.test(normalizedRunner)) return normalizedRunner;
+  return normalizedRunner.replace(
+    AGENT_DECLARATIONS_RE,
+    `${AGENT_GUEST_CONTRACT}\n\ninterface FabricWorkflowAgentOptions`,
+  );
+};
+
+// GUEST_SETUP still has a compact fixed agents object. Adapt it to Lean V2's
+// model-facing contract without treating the old roles/profiles helpers as a
+// compatibility surface. An empty proxy target avoids invariants from the
+// frozen setup object; supported calls forward to the original object. The
+// internal models helper stays reachable for low-level runtime tests, but the
+// type checker rejects it from model-authored programs.
 const AGENT_RUNTIME_PRELUDE =
   "const __fabricGlobals=globalThis as any;const __fabricAgentsBase=__fabricGlobals.agents;" +
-  "__fabricGlobals.agents=new Proxy(__fabricAgentsBase,{get(target,property,receiver){" +
-  "if(property===\"profiles\"||property===\"roles\")return(args={})=>__fabricGlobals.tools.call({ref:\"agents.profiles\",args});" +
+  "__fabricGlobals.agents=new Proxy({}, {get(_target,property){" +
+  "if(property===\"routing\")return(args={})=>__fabricGlobals.tools.call({ref:\"agents.routing\",args});" +
   "if(property===\"recurse\")return(args:any)=>__fabricGlobals.tools.call({ref:\"agents.recurse\",args});" +
-  "return Reflect.get(target,property,receiver);}});";
+  "if(property===\"roles\"||property===\"profiles\"||property===\"models\"){" +
+  "if(property===\"models\")return Reflect.get(__fabricAgentsBase,property,__fabricAgentsBase);return undefined;}" +
+  "return Reflect.get(__fabricAgentsBase,property,__fabricAgentsBase);}});";
 
 /**
  * Guest programs execute inside this wrapper; user code starts on wrapped line 2.
@@ -210,6 +342,7 @@ class FabricTypeChecker {
       };
     });
     errors.push(...unknownPiCoreActionErrors(this.#sourceFile));
+    errors.push(...removedAgentActionErrors(this.#sourceFile));
     if (errors.length > 0) return { errors };
 
     let javascript: string | undefined;
@@ -230,14 +363,15 @@ const checkerCache = new Map<string, FabricTypeChecker>();
 const MAX_CHECKERS = 4;
 
 const checkerFor = (declarations: string): FabricTypeChecker => {
-  const cached = checkerCache.get(declarations);
+  const normalized = normalizeAgentGuestDeclarations(declarations);
+  const cached = checkerCache.get(normalized);
   if (cached) {
-    checkerCache.delete(declarations);
-    checkerCache.set(declarations, cached);
+    checkerCache.delete(normalized);
+    checkerCache.set(normalized, cached);
     return cached;
   }
-  const checker = new FabricTypeChecker(declarations);
-  checkerCache.set(declarations, checker);
+  const checker = new FabricTypeChecker(normalized);
+  checkerCache.set(normalized, checker);
   while (checkerCache.size > MAX_CHECKERS) {
     const oldest = checkerCache.keys().next().value as string | undefined;
     if (oldest === undefined) break;

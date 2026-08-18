@@ -12,19 +12,26 @@ const runtimeOptions = {
 };
 
 describe("Lean guest contract alignment", () => {
-  it("executes canonical agents.profiles through the checked production path", async () => {
-    const source = "return agents.profiles({});";
+  it("executes canonical agents.routing through the checked production path", async () => {
+    const source = "return agents.routing({});";
     const checked = typeCheckFabricCode(source, GUEST_TYPE_DECLARATIONS);
     expect(checked.errors).toEqual([]);
-    expect(checked.javascript).toContain("agents.profiles");
+    expect(checked.javascript).toContain("agents.routing");
     expect(checked.javascript).toBeDefined();
 
     const hostCall = vi.fn(async (ref: string, args: Record<string, unknown>) => {
       expect(ref).toBe("fabric.$call");
-      expect(args).toEqual({ ref: "agents.profiles", args: {} });
+      expect(args).toEqual({ ref: "agents.routing", args: {} });
       return {
-        profiles: [{ name: "research", runner: "veda" }],
-        sources: ["global"],
+        tiers: [
+          { name: "fast", description: "cheap evidence" },
+          { name: "balance", description: "routine work" },
+          { name: "strong", description: "difficult reasoning" },
+        ],
+        policies: [
+          { name: "inspect", description: "read only", tools: ["read"], worktree: false },
+        ],
+        sources: ["built-in"],
       };
     });
 
@@ -40,26 +47,33 @@ describe("Lean guest contract alignment", () => {
 
     expect(result.error).toBeUndefined();
     expect(result.value).toEqual({
-      profiles: [{ name: "research", runner: "veda" }],
-      sources: ["global"],
+      tiers: [
+        { name: "fast", description: "cheap evidence" },
+        { name: "balance", description: "routine work" },
+        { name: "strong", description: "difficult reasoning" },
+      ],
+      policies: [
+        { name: "inspect", description: "read only", tools: ["read"], worktree: false },
+      ],
+      sources: ["built-in"],
     });
     expect(hostCall).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps agents.profiles canonical and preserves string literals", () => {
+  it("keeps agents.routing canonical and preserves string literals", () => {
     const source = [
-      'const literal = "agents.profiles({})";',
-      "const catalog = await agents.profiles({});",
-      "return { literal, profiles: catalog.profiles };",
+      'const literal = "agents.routing({})";',
+      "const catalog = await agents.routing({});",
+      "return { literal, tiers: catalog.tiers };",
     ].join("\n");
     const transpiled = transpileFabricCodeWithSourceMap(source).code;
 
-    expect(transpiled).toContain('"agents.profiles({})"');
-    expect(transpiled).toContain("agents.profiles({})");
+    expect(transpiled).toContain('"agents.routing({})"');
+    expect(transpiled).toContain("agents.routing({})");
   });
 
-  it("executes agents.recurse through the canonical bridge", async () => {
-    const source = 'return agents.recurse({ profile: "deep", task: "inspect" });';
+  it("executes agents.recurse through the tier/policy bridge", async () => {
+    const source = 'return agents.recurse({ tier: "strong", policy: "inspect", role: "decomposer", task: "inspect" });';
     const checked = typeCheckFabricCode(source, GUEST_TYPE_DECLARATIONS);
     expect(checked.errors).toEqual([]);
     expect(checked.javascript).toBeDefined();
@@ -68,11 +82,11 @@ describe("Lean guest contract alignment", () => {
       expect(ref).toBe("fabric.$call");
       expect(args).toEqual({
         ref: "agents.recurse",
-        args: { profile: "deep", task: "inspect" },
+        args: { tier: "strong", policy: "inspect", role: "decomposer", task: "inspect" },
       });
       return {
         id: "child-1",
-        name: "deep",
+        name: "decomposer",
         status: "completed",
         text: "done",
         turns: 1,
@@ -91,38 +105,29 @@ describe("Lean guest contract alignment", () => {
     expect((result.value as { status?: string }).status).toBe("completed");
   });
 
-  it("rejects the recurring wrong agents.profiles return shape", () => {
+  it("rejects removed agents.profiles calls in the model-facing contract", () => {
     const result = typeCheckFabricCode(
-      `
-const profiles = await agents.profiles({});
-const research = profiles.find((p: any) => p.name === "research");
-return research.id;
-`,
+      "return agents.profiles({});",
       GUEST_TYPE_DECLARATIONS,
     );
 
     expect(result.javascript).toBeUndefined();
     expect(result.errors.some((error) =>
-      error.message.includes("Property 'find'") &&
-      error.message.includes("FabricSubagentProfileCatalog"),
+      error.message.includes("Property 'profiles'") && error.message.includes("FabricAgentsApi"),
     )).toBe(true);
   });
 
-  it("rejects profile.id and keeps profile.name as the selector", () => {
+  it("types routing catalog tier and policy semantics", () => {
     const result = typeCheckFabricCode(
       `
-const catalog = await agents.profiles({});
-const research = catalog.profiles[0];
-return research.id;
+const catalog = await agents.routing({});
+const fast = catalog.tiers.find((tier) => tier.name === "fast");
+const inspect = catalog.policies.find((policy) => policy.name === "inspect");
+return { fast: fast?.description, tools: inspect?.tools, worktree: inspect?.worktree };
 `,
       GUEST_TYPE_DECLARATIONS,
     );
-
-    expect(result.javascript).toBeUndefined();
-    expect(result.errors.some((error) =>
-      error.message.includes("Property 'id'") &&
-      error.message.includes("FabricSubagentRoleInfo"),
-    )).toBe(true);
+    expect(result.errors).toEqual([]);
   });
 
   it("rejects object-style properties on stable Pi string results before runtime", () => {

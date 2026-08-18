@@ -1,7 +1,7 @@
 {
   "name": "pi-fabric",
   "version": "0.61.0",
-  "description": "Programmatic tool calling runtime for Pi with named subagents and workflows",
+  "description": "Programmatic tool calling runtime for Pi with Main-routed subagents and workflows",
   "type": "module",
   "main": "./dist/lean-index.js",
   "types": "./dist/lean-index.d.ts",
@@ -27,6 +27,7 @@
     "docs/usage.md",
     "docs/configuration.md",
     "docs/lean-code-mode.md",
+    "docs/subagents-and-workflows.md",
     "docs/runtime-v2.md",
     "README.md",
     "LICENSE",
