@@ -28,6 +28,9 @@ const leanSkillPaths = [
 
 export const LEAN_MODEL_FACING_TOOL_NAMES = ["fabric_exec"] as const;
 
+export const isPiSubagentsSourcePath = (sourcePath: string): boolean =>
+  /(?:^|[\\/])node_modules[\\/]pi-subagents(?:[\\/]|$)/.test(sourcePath);
+
 export const resolveLeanActiveTools = (
   active: readonly string[],
   hiddenCaptured: ReadonlySet<string>,
@@ -93,7 +96,9 @@ export const isOneShotFabricChild = (
 export default async function leanFabricExtension(pi: ExtensionAPI): Promise<void> {
   if (isOneShotFabricChild()) return;
 
-  const capturedTools = new CapturedToolCatalog();
+  const capturedTools = new CapturedToolCatalog({
+    hideOnly: (registeredTool) => isPiSubagentsSourcePath(registeredTool.sourceInfo.path),
+  });
   const runtime = new LeanCodeModeRuntime(pi, capturedTools, extensionPath);
   const fabricTool = createLeanFabricExecTool(runtime);
   let savedActiveTools: string[] | undefined;
@@ -111,9 +116,10 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
     const active = pi.getActiveTools();
     savedActiveTools ??= [...active];
     const keepVisible = new Set(runtime.config.capture.keepVisible);
-    const captured = new Set(
-      capturedTools.list().map((entry) => entry.name).filter((name) => !keepVisible.has(name)),
-    );
+    const captured = new Set([
+      ...capturedTools.list().map((entry) => entry.name).filter((name) => !keepVisible.has(name)),
+      ...capturedTools.hiddenOnlyNames(),
+    ]);
     const next = resolveLeanActiveTools(active, captured);
     if (next.length !== active.length || next.some((name, index) => name !== active[index])) {
       pi.setActiveTools(next);

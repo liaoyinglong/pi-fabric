@@ -27,8 +27,18 @@ export interface CapturedToolEntry {
   risk: FabricRisk;
 }
 
+export interface CapturedToolCatalogOptions {
+  /**
+   * Tools classified as hide-only remain registered with Pi and are removed
+   * from the parent model's active tool set, but are never exposed through
+   * Fabric's `extensions.*` guest namespace.
+   */
+  hideOnly?: (tool: RegisteredTool) => boolean;
+}
+
 export class CapturedToolCatalog {
   readonly #tools = new Map<string, CapturedToolEntry>();
+  readonly #hiddenOnly = new Set<string>();
   readonly #listeners = new Set<() => void>();
   // The ExtensionRunner observed during the last tool refresh. Stored even
   // when capture is disabled so PiToolsProvider can replay the tool-execution
@@ -36,6 +46,8 @@ export class CapturedToolCatalog {
   // in full-code mode — without it, extensions that hook those events
   // (pi-vision-handoff, auditors, etc.) would never fire for pi core tools.
   #runner: ExtensionRunner | undefined;
+
+  constructor(readonly options: CapturedToolCatalogOptions = {}) {}
 
   get runner(): ExtensionRunner | undefined {
     return this.#runner;
@@ -50,6 +62,7 @@ export class CapturedToolCatalog {
     // Always remember the runner (see field comment) before the enabled gate.
     this.#runner = runner;
     this.#tools.clear();
+    this.#hiddenOnly.clear();
     if (!config.enabled) {
       this.#emit();
       return;
@@ -58,6 +71,10 @@ export class CapturedToolCatalog {
     for (const registeredTool of registeredTools) {
       const { definition, sourceInfo } = registeredTool;
       if (sourceInfo.path === ownSourcePath) continue;
+      if (this.options.hideOnly?.(registeredTool)) {
+        this.#hiddenOnly.add(definition.name);
+        continue;
+      }
       this.#tools.set(definition.name, {
         name: definition.name,
         definition,
@@ -77,6 +94,7 @@ export class CapturedToolCatalog {
 
   clear(): void {
     this.#tools.clear();
+    this.#hiddenOnly.clear();
     this.#emit();
   }
 
@@ -97,6 +115,10 @@ export class CapturedToolCatalog {
 
   list(): CapturedToolEntry[] {
     return [...this.#tools.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  hiddenOnlyNames(): string[] {
+    return [...this.#hiddenOnly].sort((left, right) => left.localeCompare(right));
   }
 
   get size(): number {
