@@ -193,13 +193,13 @@ const compactRecursiveResult = (result: AgentRunResult): Record<string, unknown>
 export class LeanAgentsProvider implements FabricProvider {
   readonly name = "agents";
   readonly description = "Main-routed subagents using fast/balance/strong tiers and explicit capability policies";
-  readonly bridge: PiSubagentsBridge;
+  readonly bridge: PiSubagentsBridge | undefined;
 
   constructor(
     readonly manager: AgentManager,
-    pi: ExtensionAPI,
+    pi?: ExtensionAPI,
   ) {
-    this.bridge = new PiSubagentsBridge(pi);
+    this.bridge = pi ? new PiSubagentsBridge(pi) : undefined;
   }
 
   async list(request: FabricProviderListRequest): Promise<FabricActionDescriptor[]> {
@@ -221,7 +221,7 @@ export class LeanAgentsProvider implements FabricProvider {
     switch (actionName) {
       case "run": {
         const routed = runRequest(args, context, this.manager);
-        if (this.bridge.supports(routed.request, routed.policy)) {
+        if (this.bridge?.supports(routed.request, routed.policy)) {
           return this.bridge.run(routed.request, routed.policy, context);
         }
         return this.manager.run(routed.request, context.signal);
