@@ -1,20 +1,79 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import {
-  SUBAGENT_DELEGATION_CANCEL_EVENT,
-  SUBAGENT_DELEGATION_REQUEST_EVENT,
-  SUBAGENT_DELEGATION_RESPONSE_EVENT,
-  SUBAGENT_DELEGATION_STARTED_EVENT,
-  SUBAGENT_DELEGATION_UPDATE_EVENT,
-  type SubagentDelegationResponse,
-  type SubagentDelegationStarted,
-  type SubagentDelegationUpdate,
-} from "pi-subagents/delegation";
 import type { AgentRunRequest, AgentRunResult } from "./agents/types.js";
 import type { FabricInvocationContext } from "./protocol.js";
 import type { SubagentPolicy } from "./subagents/routing.js";
 
 const ACTIVATION_TIMEOUT_MS = 5_000;
+
+// Stable extension-to-extension event contract exported by pi-subagents.
+// Keep these literal here so Fabric's built JS never runtime-imports the
+// dependency's TypeScript source from node_modules.
+export const SUBAGENT_DELEGATION_REQUEST_EVENT = "prompt-template:subagent:request";
+export const SUBAGENT_DELEGATION_STARTED_EVENT = "prompt-template:subagent:started";
+export const SUBAGENT_DELEGATION_UPDATE_EVENT = "prompt-template:subagent:update";
+export const SUBAGENT_DELEGATION_RESPONSE_EVENT = "prompt-template:subagent:response";
+export const SUBAGENT_DELEGATION_CANCEL_EVENT = "prompt-template:subagent:cancel";
+
+interface SubagentDelegationStarted {
+  requestId: string;
+  ownerRunId: string;
+  nodeId: string;
+}
+
+interface SubagentDelegationUpdate extends SubagentDelegationStarted {
+  runId?: string;
+  currentTool?: string;
+  recentOutput?: string;
+  model?: string;
+  toolCount?: number;
+  durationMs?: number;
+  tokens?: number;
+}
+
+type SubagentDelegationStatus =
+  | "completed"
+  | "failed"
+  | "timed_out"
+  | "cancelled"
+  | "interrupted"
+  | "turn_budget_exhausted"
+  | "tool_budget_exhausted"
+  | "structured_output_failed"
+  | "acceptance_failed"
+  | "invalid_request"
+  | "unavailable_context"
+  | "duplicate_node";
+
+type SubagentDelegationValue =
+  | { kind: "text"; text: string }
+  | { kind: "structured"; value: unknown };
+
+interface SubagentDelegationUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+  turns: number;
+  toolCalls: number;
+  durationMs: number;
+}
+
+interface SubagentDelegationResponse {
+  requestId: string;
+  ownerRunId?: string;
+  nodeId?: string;
+  status: SubagentDelegationStatus;
+  error?: string;
+  runId?: string;
+  agent?: string;
+  model?: string;
+  thinking?: string;
+  exitCode?: number;
+  result?: SubagentDelegationValue;
+  usage?: SubagentDelegationUsage;
+}
 
 export const PI_SUBAGENT_POLICY_AGENTS: Partial<Record<SubagentPolicy, string>> = {
   inspect: "fabric-inspect",
@@ -35,7 +94,7 @@ const sameToolset = (actual: readonly string[] | undefined, expected: readonly s
 };
 
 const completedStatus = (
-  status: SubagentDelegationResponse["status"],
+  status: SubagentDelegationStatus,
 ): AgentRunResult["status"] => {
   switch (status) {
     case "completed":
@@ -69,7 +128,7 @@ const responseText = (response: SubagentDelegationResponse): {
   text: string;
   value?: unknown;
 } => {
-  if (!("result" in response) || !response.result) return { text: "" };
+  if (!response.result) return { text: "" };
   if (response.result.kind === "text") return { text: response.result.text };
   return {
     text: JSON.stringify(response.result.value) ?? "null",
@@ -86,21 +145,17 @@ export const delegationResponseToAgentResult = (
 ): AgentRunResult => {
   const finishedAt = Date.now();
   const output = responseText(response);
-  const usage = "usage" in response ? response.usage : undefined;
-  const error = "error" in response ? response.error : undefined;
-  const runId = "runId" in response ? response.runId : undefined;
-  const responseModel = "model" in response ? response.model : undefined;
-  const exitCode = "exitCode" in response ? response.exitCode : undefined;
+  const usage = response.usage;
 
   return {
-    id: runId ?? randomUUID(),
+    id: response.runId ?? randomUUID(),
     name: request.name ?? fallbackName,
     task: request.task,
     status: completedStatus(response.status),
     runner: "pi",
     transport: "process",
     cwd: context.cwd,
-    ...(responseModel ?? request.model ? { model: responseModel ?? request.model } : {}),
+    ...(response.model ?? request.model ? { model: response.model ?? request.model } : {}),
     ...(request.thinking ? { thinking: request.thinking } : {}),
     startedAt,
     updatedAt: finishedAt,
@@ -109,8 +164,8 @@ export const delegationResponseToAgentResult = (
     toolCalls: usage?.toolCalls ?? 0,
     text: output.text,
     ...(output.value !== undefined ? { value: output.value } : {}),
-    ...(error ? { error } : {}),
-    ...(exitCode !== undefined ? { exitCode } : {}),
+    ...(response.error ? { error: response.error } : {}),
+    ...(response.exitCode !== undefined ? { exitCode: response.exitCode } : {}),
     usage: {
       input: usage?.input ?? 0,
       output: usage?.output ?? 0,
