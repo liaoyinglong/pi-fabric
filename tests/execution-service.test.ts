@@ -56,36 +56,31 @@ describe("FabricExecutionService", () => {
     expect(partials).toContainEqual(expect.objectContaining({ progress: "Halfway" }));
   });
 
-  it.each(["quickjs", "node-process"] as const)(
-    "waits for every nested write in the %s executor",
-    async (runtime) => {
-      const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-nested-"));
-      try {
-        const registry = new ActionRegistry();
-        registry.register(new PiToolsProvider(cwd, undefined, undefined));
-        const config = structuredClone(DEFAULT_FABRIC_CONFIG);
-        config.executor.runtime = runtime;
-        if (runtime === "node-process") config.executor.memoryLimitBytes = 128 * 1024 * 1024;
-        config.approvals.write = "allow";
-        const result = await new FabricExecutionService(registry, config).execute({
-          code: `await Promise.all([
+  it("waits for every nested write before completing", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-nested-"));
+    try {
+      const registry = new ActionRegistry();
+      registry.register(new PiToolsProvider(cwd, undefined, undefined));
+      const config = structuredClone(DEFAULT_FABRIC_CONFIG);
+      config.approvals.write = "allow";
+      const result = await new FabricExecutionService(registry, config).execute({
+        code: `await Promise.all([
   pi.write({ path: "one.txt", content: "one" }),
   pi.write({ path: "two.txt", content: "two" }),
 ]); return "done";`,
-          signal: undefined,
-          parentToolCallId: `nested-${runtime}`,
-          context: context(cwd),
-          onPartial() {},
-        });
-        expect(result.success).toBe(true);
-        expect(result.value).toBe("done");
-        expect(result.audits).toHaveLength(2);
-        expect(fs.readdirSync(cwd).sort()).toEqual(["one.txt", "two.txt"]);
-      } finally {
-        fs.rmSync(cwd, { recursive: true, force: true });
-      }
-    },
-  );
+        signal: undefined,
+        parentToolCallId: "nested-quickjs",
+        context: context(cwd),
+        onPartial() {},
+      });
+      expect(result.success).toBe(true);
+      expect(result.value).toBe("done");
+      expect(result.audits).toHaveLength(2);
+      expect(fs.readdirSync(cwd).sort()).toEqual(["one.txt", "two.txt"]);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 
   it("extends the outer deadline from an explicit pi.bash timeout", async () => {
     const registry = new ActionRegistry();

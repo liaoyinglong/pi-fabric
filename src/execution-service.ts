@@ -25,13 +25,11 @@ import type {
   FabricSandboxResult,
   FabricSandboxTerminationReason,
 } from "./runtime/quickjs-runtime.js";
-import type { NodeProcessRuntime } from "./runtime/node-process-runtime.js";
 import type { FabricTypeError } from "./runtime/type-checker.js";
 
 let runtimeDependencies:
   | Promise<{
       QuickJsRuntime: typeof import("./runtime/quickjs-runtime.js").QuickJsRuntime;
-      NodeProcessRuntime: typeof import("./runtime/node-process-runtime.js").NodeProcessRuntime;
       typeCheckFabricCode: typeof import("./runtime/type-checker.js").typeCheckFabricCode;
       guestTypeDeclarations: typeof import("./runtime/guest-types.js").guestTypeDeclarations;
       buildDynamicGuestDeclarations: typeof import("./runtime/dynamic-guest-types.js").buildDynamicGuestDeclarations;
@@ -42,14 +40,12 @@ let runtimeDependencies:
 const loadRuntimeDependencies = () =>
   runtimeDependencies ??= Promise.all([
     import("./runtime/quickjs-runtime.js"),
-    import("./runtime/node-process-runtime.js"),
     import("./runtime/type-checker.js"),
     import("./runtime/guest-types.js"),
     import("./runtime/dynamic-guest-types.js"),
     import("./runtime/core-override-guest-types.js"),
-  ]).then(([quickjs, nodeProcess, checker, guest, dynamicGuest, coreOverrides]) => ({
+  ]).then(([quickjs, checker, guest, dynamicGuest, coreOverrides]) => ({
     QuickJsRuntime: quickjs.QuickJsRuntime,
-    NodeProcessRuntime: nodeProcess.NodeProcessRuntime,
     typeCheckFabricCode: checker.typeCheckFabricCode,
     guestTypeDeclarations: guest.guestTypeDeclarations,
     buildDynamicGuestDeclarations: dynamicGuest.buildDynamicGuestDeclarations,
@@ -100,8 +96,7 @@ export interface FabricExecutionOptions {
 }
 
 export class FabricExecutionService {
-  #runtime: QuickJsRuntime | NodeProcessRuntime | undefined;
-  #runtimeKind: FabricConfig["executor"]["runtime"] | undefined;
+  #runtime: QuickJsRuntime | undefined;
   #capabilityView: FabricCommittedCapabilityView | undefined;
 
   constructor(
@@ -289,13 +284,7 @@ export class FabricExecutionService {
 
     let sandboxResult: FabricSandboxResult;
     try {
-      const runtimeKind = this.config.executor.runtime;
-      if (!this.#runtime || this.#runtimeKind !== runtimeKind) {
-        this.#runtime = runtimeKind === "node-process"
-          ? new dependencies.NodeProcessRuntime()
-          : new dependencies.QuickJsRuntime();
-        this.#runtimeKind = runtimeKind;
-      }
+      this.#runtime ??= new dependencies.QuickJsRuntime();
       sandboxResult = await this.#runtime.execute(
         options.code,
         async (ref, args, runtimeSignal) => {

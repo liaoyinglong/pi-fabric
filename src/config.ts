@@ -4,14 +4,12 @@ import path from "node:path";
 import type { FabricRisk } from "./protocol.js";
 
 export type FabricResultFormat = "auto" | "yaml" | "json" | "text";
-export type FabricExecutorRuntime = "quickjs" | "node-process";
 export type FabricConfigScope = "global" | "project";
 
 type FabricApprovalMode = "allow" | "ask" | "deny";
 type FabricMcpRevalidatePolicy = "changed" | "all" | "off";
 
 export interface FabricExecutorConfig {
-  runtime: FabricExecutorRuntime;
   timeoutMs: number;
   memoryLimitBytes: number;
   maxOutputChars: number;
@@ -76,17 +74,11 @@ export const MAX_HOST_CALL_TIMEOUT_MS = 24 * 3_600_000;
 export const QUICKJS_MAX_MEMORY_LIMIT_BYTES = 0xffff_ffff;
 export const MAX_EXECUTOR_MEMORY_LIMIT_BYTES = Math.max(
   8 * 1024 * 1024,
-  Math.min(Number.MAX_SAFE_INTEGER, Math.floor(os.totalmem())),
+  Math.min(QUICKJS_MAX_MEMORY_LIMIT_BYTES, Math.floor(os.totalmem())),
 );
-
-export const maxExecutorMemoryLimitBytes = (runtime: FabricExecutorRuntime): number =>
-  runtime === "quickjs"
-    ? Math.min(QUICKJS_MAX_MEMORY_LIMIT_BYTES, MAX_EXECUTOR_MEMORY_LIMIT_BYTES)
-    : MAX_EXECUTOR_MEMORY_LIMIT_BYTES;
 
 export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
   executor: {
-    runtime: "quickjs",
     timeoutMs: 120_000,
     memoryLimitBytes: 64 * 1024 * 1024,
     maxOutputChars: 50_000,
@@ -185,7 +177,6 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
   const mcpCache = isObject(mcp.cache) ? mcp.cache : {};
   const capture = isObject(raw.capture) ? raw.capture : {};
   const rawRisks = isObject(capture.risks) ? capture.risks : {};
-  const runtime: FabricExecutorRuntime = executor.runtime === "node-process" ? "node-process" : "quickjs";
   const resultFormat: FabricResultFormat =
     executor.resultFormat === "yaml" || executor.resultFormat === "json" || executor.resultFormat === "text"
       ? executor.resultFormat
@@ -201,7 +192,6 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
 
   return {
     executor: {
-      runtime,
       timeoutMs: numberValue(
         executor.timeoutMs,
         DEFAULT_FABRIC_CONFIG.executor.timeoutMs,
@@ -212,7 +202,7 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
         executor.memoryLimitBytes,
         DEFAULT_FABRIC_CONFIG.executor.memoryLimitBytes,
         8 * 1024 * 1024,
-        maxExecutorMemoryLimitBytes(runtime),
+        MAX_EXECUTOR_MEMORY_LIMIT_BYTES,
       ),
       maxOutputChars: numberValue(executor.maxOutputChars, DEFAULT_FABRIC_CONFIG.executor.maxOutputChars, 1_000, 10_000_000),
       maxNestedResultChars: numberValue(executor.maxNestedResultChars, DEFAULT_FABRIC_CONFIG.executor.maxNestedResultChars, 1_000, 20_000_000),
