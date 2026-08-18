@@ -15,6 +15,7 @@ import {
 } from "./core/system-guidance.js";
 import { createLeanFabricExecTool } from "./lean-exec-tool.js";
 import { LeanCodeModeRuntime } from "./lean-runtime.js";
+import { createLeanTodoTool, TodoStore } from "./todo-tool.js";
 
 const extensionPath = fileURLToPath(import.meta.url);
 const entryDir = path.dirname(extensionPath);
@@ -24,6 +25,21 @@ const leanSkillPaths = [
   path.join(skillsRoot, "fabric-subagents"),
   path.join(skillsRoot, "fabric-workflow"),
 ];
+
+export const LEAN_MODEL_FACING_TOOL_NAMES = ["fabric_exec", "todo"] as const;
+
+export const resolveLeanActiveTools = (
+  active: readonly string[],
+  hiddenCaptured: ReadonlySet<string>,
+): string[] => {
+  const next = active.filter((name) =>
+    !PI_CORE_TOOL_NAME_SET.has(name) && !hiddenCaptured.has(name),
+  );
+  for (const name of LEAN_MODEL_FACING_TOOL_NAMES) {
+    if (!next.includes(name)) next.push(name);
+  }
+  return next;
+};
 
 export const getLeanFabricSkillPaths = (): string[] =>
   leanSkillPaths.filter((skillPath) => existsSync(skillPath));
@@ -45,6 +61,8 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
   const capturedTools = new CapturedToolCatalog();
   const runtime = new LeanCodeModeRuntime(pi, capturedTools, extensionPath);
   const fabricTool = createLeanFabricExecTool(runtime);
+  const todoStore = new TodoStore();
+  const todoTool = createLeanTodoTool(todoStore);
   let savedActiveTools: string[] | undefined;
 
   registerLeanFabricCommand(pi, runtime);
@@ -63,10 +81,7 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
     const captured = new Set(
       capturedTools.list().map((entry) => entry.name).filter((name) => !keepVisible.has(name)),
     );
-    const next = active.filter((name) =>
-      !PI_CORE_TOOL_NAME_SET.has(name) && !captured.has(name),
-    );
-    if (!next.includes("fabric_exec")) next.push("fabric_exec");
+    const next = resolveLeanActiveTools(active, captured);
     if (next.length !== active.length || next.some((name, index) => name !== active[index])) {
       pi.setActiveTools(next);
     }
@@ -80,14 +95,17 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
   });
 
   pi.registerTool(fabricTool);
+  pi.registerTool(todoTool);
 
   pi.on("resources_discover", async () => ({ skillPaths: getLeanFabricSkillPaths() }));
 
   pi.on("session_start", async (_event, context) => {
     savedActiveTools = undefined;
+    todoStore.reset();
     await runtime.initialize(context);
     toolCapture.setPolicy(runtime.config.capture);
     pi.registerTool(fabricTool);
+    pi.registerTool(todoTool);
     applyToolOwnership();
   });
 
@@ -112,6 +130,7 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
 
   pi.on("session_shutdown", async () => {
     toolCapture.setPolicy(inactiveCapturePolicy);
+    todoStore.reset();
     await runtime.close();
     if (savedActiveTools) {
       const registered = new Set(pi.getAllTools().map((tool) => tool.name));
