@@ -118,7 +118,8 @@ describe("Fabric execution trace V1", () => {
     );
     const persisted = createFabricPersistedExecutionDetails(result);
     const rendered = readFabricExecutionRenderDetails(persisted);
-    expect(rendered?.trace).toEqual(result.trace);
+    expect(rendered).toMatchObject({ success: true, phases: result.phases });
+    expect(rendered.audits).toEqual(persisted.audits);
     expect(readFabricExecutionTraceV1(persisted.trace)).toEqual(result.trace);
   });
 
