@@ -137,7 +137,6 @@ export class LeanCodeModeRuntime {
       config,
       undefined,
       undefined,
-      undefined,
       this.capturedTools,
     );
   }

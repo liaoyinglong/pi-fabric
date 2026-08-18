@@ -86,7 +86,6 @@ const setup = (
   const service = new FabricExecutionService(
     registry,
     config,
-    undefined,
     authorizer,
     undefined,
     catalog,
