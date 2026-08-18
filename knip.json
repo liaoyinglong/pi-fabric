@@ -3,9 +3,6 @@
   "entry": [
     "src/lean-index.ts",
     "src/protocol.ts",
-    "src/worker.ts",
-    "src/worker-cli.ts",
-    "src/worker-dispatch.ts",
     "tests/**/*.test.ts"
   ],
   "project": [
