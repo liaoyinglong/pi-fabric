@@ -7,6 +7,22 @@ import type { LeanCodeModeRuntime } from "../lean-runtime.js";
 const MAX_INLINE_TEXT = 1_200;
 const DEFAULT_LOG_LINES = 40;
 const MAX_LOG_LINES = 500;
+const HIDDEN_LOG_EVENT_TYPES = new Set([
+  "agent_start",
+  "agent_end",
+  "agent_settled",
+  "turn_start",
+  "turn_end",
+  "message_start",
+  "message_update",
+  "tool_execution_update",
+  "extension_ui_request",
+  "queue_update",
+  "system",
+  "user",
+  "stream_event",
+  "result",
+]);
 
 const compactWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
 
@@ -81,15 +97,28 @@ export const formatLeanFabricLogLine = (line: FabricLogLine): string => {
     return clip(line.raw, 500);
   }
   const record = value as Record<string, unknown>;
+  const type = typeof record.type === "string" ? record.type : undefined;
+  if (type && HIDDEN_LOG_EVENT_TYPES.has(type)) return "";
+
+  if (type === "tool_execution_start") {
+    return typeof record.toolName === "string" ? `tool: ${clip(record.toolName, 500)}` : "tool";
+  }
+  if (type === "tool_execution_end") {
+    if (record.isError !== true) return "";
+    return typeof record.toolName === "string"
+      ? `tool_error: ${clip(record.toolName, 500)}`
+      : "tool_error";
+  }
+
   const message = record.message;
   if (typeof message === "object" && message !== null && !Array.isArray(message)) {
     const msg = message as Record<string, unknown>;
     const role = typeof msg.role === "string" ? msg.role : "message";
+    if ((type === "message_end" || type === "assistant") && role !== "assistant") return "";
     const model = typeof msg.model === "string" ? ` [${msg.model}]` : "";
     const text = contentText(msg.content);
     if (text) return `${role}${model}: ${clip(text, 500)}`;
   }
-  const type = typeof record.type === "string" ? record.type : undefined;
   const detail =
     typeof record.error === "string"
       ? record.error

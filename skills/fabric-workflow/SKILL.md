@@ -17,6 +17,8 @@ Prefer the smallest construct that makes orchestration clearer:
 - `pipeline(...)` for repeated staged transforms over a collection;
 - `phase(...)` only when explicit progress boundaries help a long execution.
 
+For `parallel(...)`, pass functions when Fabric should control when work starts. Do not write `parallel([agent(...), agent(...)])` when you want bounded concurrency: those `agent(...)` calls have already started and are promises. Use `Promise.all([agents.run(...), ...])` for simple already-started fan-out, or wrap each workflow worker as `() => agent(...)`. Lean tolerates an already-started values/promises array with no concurrency option as a recovery path, but functions remain the canonical `parallel(...)` form.
+
 For independent evidence gathering, cheap workers are usually enough:
 
 ```ts
