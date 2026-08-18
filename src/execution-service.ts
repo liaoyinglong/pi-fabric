@@ -5,20 +5,13 @@ import {
   FabricTraceSafeError,
   executionOutcomeFromError,
   type FabricExecutionFailureStageV1,
-  type FabricExecutionTraceOperationHandle,
   type FabricExecutionTraceV1,
 } from "./audit/trace.js";
 import { FabricActivityStore } from "./activity/store.js";
 import type { CapturedToolCatalog } from "./capture/catalog.js";
-import type {
-  FabricActivityEventInput,
-  FabricActivityItemInput,
-  FabricPhaseInput,
-  FabricRunDisplay,
-} from "./activity/types.js";
+import type { FabricRunDisplay } from "./activity/types.js";
 import {
-  MAX_AGENT_TIMEOUT_MS,
-  MIN_AGENT_TIMEOUT_MS,
+  MAX_HOST_CALL_TIMEOUT_MS,
   type FabricConfig,
 } from "./config.js";
 import {
@@ -32,10 +25,6 @@ import {
   type FabricAutoApprovalAudit,
 } from "./core/approval-controller.js";
 import { FabricAutoApprovalClassifier } from "./core/auto-approval-classifier.js";
-import {
-  codeUsesOrchestration,
-  isBlockingOrchestrationRef,
-} from "./runtime/orchestration.js";
 import type { FabricCommittedCapabilityView } from "./protocol.js";
 import { fabricExecTitleHintCached } from "./ui/fabric-title-hint.js";
 import type {
@@ -140,7 +129,6 @@ export interface FabricExecutionOptions {
   parentToolCallId: string;
   context: ExtensionContext;
   tokenBudget?: number;
-  maxAgentCalls?: number;
   display?: FabricRunDisplay;
   onPartial(snapshot: FabricExecutionPartial): void;
 }
@@ -149,6 +137,7 @@ export class FabricExecutionService {
   #runtime: QuickJsRuntime | NodeProcessRuntime | undefined;
   #runtimeKind: FabricConfig["executor"]["runtime"] | undefined;
   #capabilityView: FabricCommittedCapabilityView | undefined;
+
   constructor(
     readonly registry: ActionRegistry,
     readonly config: FabricConfig,
@@ -171,17 +160,13 @@ export class FabricExecutionService {
       options.display,
       options.display?.name?.trim() ? undefined : fabricExecTitleHintCached(options.code),
     );
+
     const dependencies = await loadRuntimeDependencies();
     const effectiveFullCodeMode =
       this.config.fullCodeMode || this.config.schema.mode === "enforce";
     const unavailable = new Map(
       this.registry.unavailableProviders().map((entry) => [entry.name, entry.reason]),
     );
-    // Snapshot live mcp/extension tool schemas so the type gate below rejects
-    // argument-shape mistakes on those surfaces pre-execution, the way pi.*
-    // calls already fail. Snapshotting is side-effect-free (cache-warm read);
-    // unavailable or cold providers yield empty sources and the loose
-    // declarations stand.
     const guestTypeSources = await this.registry.guestTypeSources({
       cwd: options.context.cwd,
       signal: options.signal,
@@ -191,15 +176,14 @@ export class FabricExecutionService {
       update() {},
       ...(this.#capabilityView ? { capabilityView: this.#capabilityView } : {}),
     });
-    const coreOverrideDeclarations =
-      effectiveFullCodeMode
-        ? dependencies.buildCoreOverrideGuestDeclarations(
-            this.capturedTools?.list().map((entry) => ({
-              name: entry.name,
-              inputSchema: entry.definition.parameters,
-            })) ?? [],
-          )
-        : undefined;
+    const coreOverrideDeclarations = effectiveFullCodeMode
+      ? dependencies.buildCoreOverrideGuestDeclarations(
+          this.capturedTools?.list().map((entry) => ({
+            name: entry.name,
+            inputSchema: entry.definition.parameters,
+          })) ?? [],
+        )
+      : undefined;
     const checked = dependencies.typeCheckFabricCode(
       options.code,
       dependencies.guestTypeDeclarations(effectiveFullCodeMode, {
@@ -208,6 +192,7 @@ export class FabricExecutionService {
         ...(coreOverrideDeclarations ? { coreOverrides: coreOverrideDeclarations } : {}),
       }),
     );
+
     if (checked.errors.length > 0) {
       for (const error of checked.errors) {
         const missing = /^Cannot find name '([^']+)'/.exec(error.message);
@@ -254,25 +239,7 @@ export class FabricExecutionService {
     );
     const audits: FabricCallAudit[] = [];
     const phases: string[] = [];
-    const workflowSpans = new Map<
-      string,
-      { kind: "parallel" | "pipeline"; operation: FabricExecutionTraceOperationHandle }
-    >();
-    let agentCalls = 0;
-    const maxAgentCalls = Math.max(
-      1,
-      Math.min(
-        options.maxAgentCalls ?? this.config.agents.maxPerExecution,
-        this.config.agents.maxPerExecution,
-      ),
-    );
-    const guardAgentCall = (ref: string): void => {
-      if (ref !== "agents.run" && ref !== "agents.spawn" && ref !== "agents.recurse") return;
-      agentCalls++;
-      if (agentCalls > maxAgentCalls) {
-        throw new FabricTraceSafeError(`Fabric agent budget exhausted (${maxAgentCalls} per execution)`);
-      }
-    };
+
     const fullCodeProvider = (value: string): "pi" | "extensions" | undefined => {
       const separator = value.indexOf(".");
       const provider = separator > 0 ? value.slice(0, separator) : value;
@@ -286,6 +253,7 @@ export class FabricExecutionService {
         `Fabric full code mode is disabled; call ${provider === "pi" ? "Pi core" : "registered extension"} tools directly outside fabric_exec`,
       );
     };
+
     let currentProgress: string | undefined;
     let emitPending = false;
     let emitTimer: NodeJS.Timeout | undefined;
@@ -302,9 +270,6 @@ export class FabricExecutionService {
       emitTimer = undefined;
       if (emitPending) emitNow();
     };
-    // One execution-wide timer coalesces updates from every parallel nested
-    // call. Keeping this global to the Fabric program prevents each call from
-    // independently churning rows while preserving a trailing final snapshot.
     const emit = (): void => {
       emitPending = true;
       const debounceMs = this.config.ui.updateDebounceMs;
@@ -312,9 +277,6 @@ export class FabricExecutionService {
         flushEmit();
         return;
       }
-      // Throttle to one render per window without resetting the timer. A
-      // trailing debounce starves continuously streaming tools because every
-      // delta postpones the render until the tool finishes.
       if (emitTimer) return;
       emitTimer = setTimeout(() => {
         emitTimer = undefined;
@@ -349,22 +311,11 @@ export class FabricExecutionService {
       update,
       ...(this.#capabilityView ? { capabilityView: this.#capabilityView } : {}),
     };
-    // Start known orchestration programs with the longer deadline. Calls
-    // reached through generic or computed refs are classified again at the
-    // host bridge and can extend the active sandbox deadline before they run.
-    const orchestrationTimeoutMs = Math.max(
-      this.config.executor.timeoutMs,
-      this.config.agents.timeoutMs,
-    );
-    const effectiveTimeoutMs = codeUsesOrchestration(options.code)
-      ? orchestrationTimeoutMs
-      : this.config.executor.timeoutMs;
     const minimumTimeoutMsForHostCall = (
       ref: string,
       args: Record<string, unknown>,
     ): number | undefined => {
-      const targetRef =
-        ref === "fabric.$call" && typeof args.ref === "string" ? args.ref : ref;
+      const targetRef = ref === "fabric.$call" && typeof args.ref === "string" ? args.ref : ref;
       const targetArgs =
         ref === "fabric.$call" &&
         typeof args.args === "object" &&
@@ -372,33 +323,20 @@ export class FabricExecutionService {
         !Array.isArray(args.args)
           ? (args.args as Record<string, unknown>)
           : args;
-      if (targetRef === "pi.bash") {
-        const seconds = targetArgs.timeout;
-        const milliseconds = targetArgs.timeoutMs;
-        const requested =
-          typeof seconds === "number" && Number.isFinite(seconds)
-            ? seconds * 1_000
-            : typeof milliseconds === "number" && Number.isFinite(milliseconds)
-              ? milliseconds
-              : 0;
-        if (requested > 0) {
-          return Math.max(
-            this.config.executor.timeoutMs,
-            Math.min(Math.floor(requested) + 5_000, MAX_AGENT_TIMEOUT_MS),
-          );
-        }
-      }
-      if (!isBlockingOrchestrationRef(targetRef)) return undefined;
-      const requestedTimeoutMs =
-        targetRef === "agents.run" &&
-        typeof targetArgs.timeoutMs === "number" &&
-        Number.isFinite(targetArgs.timeoutMs)
-          ? Math.max(
-              MIN_AGENT_TIMEOUT_MS,
-              Math.min(Math.floor(targetArgs.timeoutMs), MAX_AGENT_TIMEOUT_MS),
-            )
-          : 0;
-      return Math.max(orchestrationTimeoutMs, requestedTimeoutMs);
+      if (targetRef !== "pi.bash") return undefined;
+      const seconds = targetArgs.timeout;
+      const milliseconds = targetArgs.timeoutMs;
+      const requested =
+        typeof seconds === "number" && Number.isFinite(seconds)
+          ? seconds * 1_000
+          : typeof milliseconds === "number" && Number.isFinite(milliseconds)
+            ? milliseconds
+            : 0;
+      if (requested <= 0) return undefined;
+      return Math.max(
+        this.config.executor.timeoutMs,
+        Math.min(Math.floor(requested) + 5_000, MAX_HOST_CALL_TIMEOUT_MS),
+      );
     };
     const traceAttempt = async <T>(
       ref: string,
@@ -427,7 +365,6 @@ export class FabricExecutionService {
       const traceOperation = traceRecorder.issueCall(ref, args);
       try {
         guardFullCodeRef(ref);
-        guardAgentCall(ref);
       } catch (error) {
         traceOperation.fail(
           "guard",
@@ -458,6 +395,7 @@ export class FabricExecutionService {
         observeInvocation,
       });
     };
+
     let sandboxResult: FabricSandboxResult;
     try {
       const runtimeKind = this.config.executor.runtime;
@@ -485,9 +423,7 @@ export class FabricExecutionService {
                       Object.values(callContext.capabilityView.bindings)
                         .some((binding) => binding.provider === provider.name),
                     )
-                    .filter(
-                      (provider) => effectiveFullCodeMode || !fullCodeProvider(provider.name),
-                    ),
+                    .filter((provider) => effectiveFullCodeMode || !fullCodeProvider(provider.name)),
               );
             case "fabric.$catalog":
               return traceAttempt(
@@ -510,8 +446,7 @@ export class FabricExecutionService {
               const operation = traceRecorder.issueCall("fabric.discovery.models", args);
               const registry = options.context.modelRegistry;
               try {
-                const available =
-                  typeof registry?.getAvailable === "function" ? registry.getAvailable() : [];
+                const available = typeof registry?.getAvailable === "function" ? registry.getAvailable() : [];
                 const models = available.map((model) => ({
                   provider: String(model.provider),
                   id: String(model.id),
@@ -521,11 +456,7 @@ export class FabricExecutionService {
                 operation.succeed(undefined);
                 return models;
               } catch (error) {
-                operation.fail(
-                  "invoke",
-                  error,
-                  executionOutcomeFromError(error, runtimeSignal),
-                );
+                operation.fail("invoke", error, executionOutcomeFromError(error, runtimeSignal));
                 return [];
               }
             }
@@ -536,9 +467,7 @@ export class FabricExecutionService {
                 runtimeSignal,
                 async (setStage) => {
                   setStage("guard");
-                  if (typeof args.provider === "string") {
-                    guardFullCodeRef(`${args.provider}.*`);
-                  }
+                  if (typeof args.provider === "string") guardFullCodeRef(`${args.provider}.*`);
                   setStage(
                     typeof args.provider === "string" && !this.registry.has(args.provider)
                       ? "resolve"
@@ -553,9 +482,7 @@ export class FabricExecutionService {
                     },
                     callContext,
                   );
-                  return actions.filter(
-                    (action) => effectiveFullCodeMode || !fullCodeProvider(action.provider),
-                  );
+                  return actions.filter((action) => effectiveFullCodeMode || !fullCodeProvider(action.provider));
                 },
               );
             case "fabric.$search":
@@ -569,9 +496,7 @@ export class FabricExecutionService {
                     callContext,
                     typeof args.limit === "number" ? args.limit : undefined,
                   );
-                  return actions.filter(
-                    (action) => effectiveFullCodeMode || !fullCodeProvider(action.provider),
-                  );
+                  return actions.filter((action) => effectiveFullCodeMode || !fullCodeProvider(action.provider));
                 },
               );
             case "fabric.$describe":
@@ -592,109 +517,21 @@ export class FabricExecutionService {
                 typeof args.args === "object" && args.args !== null && !Array.isArray(args.args)
                   ? (args.args as Record<string, unknown>)
                   : {};
-              const targetRef = String(args.ref ?? "");
-              return invokeAction(targetRef, callArgs, callContext);
+              return invokeAction(String(args.ref ?? ""), callArgs, callContext);
             }
             case "fabric.$progress":
               return traceAttempt(
-                "fabric.workflow.progress",
+                "fabric.execution.progress",
                 args,
                 runtimeSignal,
                 () => update(String(args.message ?? "Working")),
               );
-            case "fabric.$configure":
-              return traceAttempt(
-                "fabric.workflow.configure",
-                args,
-                runtimeSignal,
-                () => {
-                  const display: FabricRunDisplay = {
-                    ...(typeof args.name === "string" ? { name: args.name } : {}),
-                    ...(typeof args.description === "string" ? { description: args.description } : {}),
-                  };
-                  return this.activity?.configure(options.parentToolCallId, display) ?? display;
-                },
-              );
-            case "fabric.$phase":
-              return traceAttempt(
-                "fabric.workflow.phase",
-                args,
-                runtimeSignal,
-                (setStage) => {
-                  setStage("validate");
-                  const name =
-                    typeof args.name === "string" ? args.name.trim() : "";
-                  if (!name) throw new Error("Workflow phase name must be a non-empty string");
-                  phases.push(name);
-                  const phaseIndex = phases.length - 1;
-                  const phaseInput: FabricPhaseInput = {
-                    name,
-                    ...(typeof args.id === "string" ? { id: args.id } : {}),
-                    ...(typeof args.description === "string" ? { description: args.description } : {}),
-                    ...(typeof args.total === "number" ? { total: args.total } : {}),
-                  };
-                  setStage("invoke");
-                  const activityPhase = this.activity?.phase(options.parentToolCallId, phaseInput);
-                  update(`Phase: ${name}`);
-                  return {
-                    name,
-                    index: phaseIndex,
-                    ...(activityPhase ? { id: activityPhase.id } : {}),
-                  };
-                },
-              );
-            case "fabric.$item":
-              return traceAttempt(
-                "fabric.workflow.item",
-                args,
-                runtimeSignal,
-                () => {
-                  const item = args as unknown as FabricActivityItemInput;
-                  return this.activity?.upsertItem(options.parentToolCallId, item) ?? item;
-                },
-              );
-            case "fabric.$event":
-              return traceAttempt(
-                "fabric.workflow.event",
-                args,
-                runtimeSignal,
-                () => {
-                  const event = args as unknown as FabricActivityEventInput;
-                  this.activity?.event(options.parentToolCallId, event);
-                },
-              );
-            case "fabric.$spanStart": {
-              const id = typeof args.id === "string" ? args.id : "";
-              const kind = args.kind;
-              if (!id || (kind !== "parallel" && kind !== "pipeline")) {
-                throw new Error("Invalid internal workflow span start");
-              }
-              if (workflowSpans.has(id)) throw new Error("Duplicate internal workflow span");
-              const operation = traceRecorder.issueCall(`fabric.workflow.${kind}`, args);
-              workflowSpans.set(id, { kind, operation });
-              return undefined;
-            }
-            case "fabric.$spanEnd": {
-              const id = typeof args.id === "string" ? args.id : "";
-              const span = workflowSpans.get(id);
-              if (!span) throw new Error("Unknown internal workflow span");
-              workflowSpans.delete(id);
-              if (args.outcome === "succeeded") span.operation.succeed(undefined);
-              else {
-                span.operation.fail(
-                  "invoke",
-                  undefined,
-                  executionOutcomeFromError(new Error("Workflow span failed"), runtimeSignal),
-                );
-              }
-              return undefined;
-            }
             default:
               return invokeAction(ref, args, callContext);
           }
         },
         {
-          timeoutMs: effectiveTimeoutMs,
+          timeoutMs: this.config.executor.timeoutMs,
           memoryLimitBytes: this.config.executor.memoryLimitBytes,
           maxLogChars: this.config.executor.maxOutputChars,
           minimumTimeoutMsForHostCall,
@@ -723,14 +560,10 @@ export class FabricExecutionService {
       logs: sandboxResult.logs,
       audits,
       phases,
-      // Guest and provider error text may embed tool output or source
-      // literals, so the durable trace records only safe causes.
       trace: traceRecorder.seal(runOutcome, phases),
       elapsedMs: performance.now() - startedAt,
       ...(sandboxResult.error ? { error: sandboxResult.error } : {}),
-      ...(classifierUsages.length > 0
-        ? { usage: aggregateUsage(classifierUsages) }
-        : {}),
+      ...(classifierUsages.length > 0 ? { usage: aggregateUsage(classifierUsages) } : {}),
     };
   }
 }
