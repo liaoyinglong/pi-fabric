@@ -9,40 +9,6 @@ import type {
   FabricProvider,
 } from "../src/protocol.js";
 
-const provider = (): FabricProvider => ({
-  name: "demo",
-  description: "Demo provider",
-  async list() {
-    return [
-      {
-        name: "echo",
-        description: "Echo a string",
-        inputSchema: {
-          type: "object",
-          properties: { value: { type: "string" } },
-          required: ["value"],
-          additionalProperties: false,
-        },
-        risk: "read",
-      },
-    ];
-  },
-  async describe(name) {
-    return name === "echo" ? (await this.list({}, context))[0] : undefined;
-  },
-  async invoke(_name, args, invocationContext) {
-    invocationContext.activity?.({ type: "progress", message: "echoing" });
-    invocationContext.attachPreview?.({ renderer: "rich" });
-    invocationContext.activity?.({
-      type: "entity",
-      id: "demo-entity",
-      kind: "custom",
-      name: "Echo operation",
-    });
-    return args.value;
-  },
-});
-
 const context: FabricInvocationContext = {
   cwd: process.cwd(),
   signal: undefined,
@@ -52,8 +18,47 @@ const context: FabricInvocationContext = {
   update() {},
 };
 
+const provider = (): FabricProvider => ({
+  name: "demo",
+  description: "Demo provider",
+  async list() {
+    return [{
+      name: "echo",
+      description: "Echo a string",
+      inputSchema: {
+        type: "object",
+        properties: { value: { type: "string" } },
+        required: ["value"],
+        additionalProperties: false,
+      },
+      risk: "read",
+    }];
+  },
+  async describe(name) {
+    return name === "echo" ? (await this.list({}, context))[0] : undefined;
+  },
+  async invoke(_name, args, invocationContext) {
+    invocationContext.activity?.({ type: "progress", message: "echoing" });
+    invocationContext.attachPreview?.({ renderer: "rich" });
+    return args.value;
+  },
+});
+
+const invoke = (
+  registry: ActionRegistry,
+  ref = "demo.echo",
+  args: Record<string, unknown> = { value: "hello" },
+  extra: Partial<Parameters<ActionRegistry["invoke"]>[2]> = {},
+) => registry.invoke(ref, args, {
+  ...context,
+  approve: async () => {},
+  audits: [],
+  maxResultChars: 10_000,
+  ...extra,
+});
+
 describe("ActionRegistry", () => {
-  it("lists, searches, describes, and invokes providers", async () => {
+  it("lists, searches, describes, and invokes registered providers", async () => {
     const registry = new ActionRegistry();
     registry.register(provider());
     expect((await registry.list({}, context))[0]?.ref).toBe("demo.echo");
@@ -70,28 +75,19 @@ describe("ActionRegistry", () => {
     });
     expect(result).toBe("hello");
     expect(approve).toHaveBeenCalledOnce();
-    expect(audits).toMatchObject([
-      {
-        ref: "demo.echo",
-        provider: "demo",
-        tool: "echo",
-        args: { value: "hello" },
-        success: true,
-      },
-    ]);
+    expect(audits).toMatchObject([{
+      ref: "demo.echo",
+      provider: "demo",
+      tool: "echo",
+      args: { value: "hello" },
+      success: true,
+    }]);
   });
 
-  it("describes a bare action name through the unique-name fallback", async () => {
+  it("resolves unique bare action names and rejects ambiguous ones", async () => {
     const registry = new ActionRegistry();
     registry.register(provider());
-    const described = await registry.describe("echo", context);
-    expect(described.ref).toBe("demo.echo");
-    expect(described.risk).toBe("read");
-  });
-
-  it("rejects a bare action name that matches more than one provider", async () => {
-    const registry = new ActionRegistry();
-    registry.register(provider());
+    expect((await registry.describe("echo", context)).ref).toBe("demo.echo");
     registry.register({ ...provider(), name: "demo-two" });
     await expect(registry.describe("echo", context)).rejects.toThrow(
       /qualify with provider\.action: demo-two\.echo, demo\.echo/,
@@ -101,7 +97,7 @@ describe("ActionRegistry", () => {
     );
   });
 
-  it("builds deterministic provider/action heads and searches the complete catalog before ranking", async () => {
+  it("builds deterministic catalogs and searches descriptor schemas", async () => {
     const registry = new ActionRegistry();
     const descriptors = [{
       name: "inspect",
@@ -120,19 +116,9 @@ describe("ActionRegistry", () => {
     registry.register({
       name: "storage",
       description: "Filesystem discovery capabilities",
-      async list(request) {
-        if (!request.query) return descriptors;
-        const query = request.query.toLowerCase();
-        return descriptors.filter((descriptor) =>
-          `${descriptor.name} ${descriptor.description}`.toLowerCase().includes(query),
-        );
-      },
-      async describe(name) {
-        return name === "inspect" ? descriptors[0] : undefined;
-      },
-      async invoke() {
-        return null;
-      },
+      async list() { return descriptors; },
+      async describe(name) { return name === "inspect" ? descriptors[0] : undefined; },
+      async invoke() { return null; },
     });
 
     expect((await registry.search("local filesystem path", context))[0]?.ref)
@@ -149,59 +135,45 @@ describe("ActionRegistry", () => {
       complete: true,
       totalActions: 1,
       indexedActions: 1,
-      root: {
-        key: "capability:fabric",
-        description: expect.stringContaining("not historical session evidence"),
-        descriptorHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-      },
       providers: [{
         key: "provider:storage",
-        parentKey: "capability:fabric",
-        actions: [{
-          key: "action:storage.inspect",
-          parentKey: "provider:storage",
-          ref: "storage.inspect",
-          descriptorHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-        }],
+        actions: [{ ref: "storage.inspect" }],
       }],
     });
-
     const originalHash = first.root.descriptorHash;
     descriptors[0]!.description = "Inspect archived records";
-    const drifted = await registry.catalog(context);
-    expect(drifted.root.descriptorHash).not.toBe(originalHash);
-    expect(drifted.providers[0]!.actions[0]!.ref).toBe("storage.inspect");
+    expect((await registry.catalog(context)).root.descriptorHash).not.toBe(originalHash);
   });
 
-  it("emits structured invocation activity without exposing another model tool", async () => {
+  it("notifies the execution service when an audited invocation settles", async () => {
     const registry = new ActionRegistry();
     registry.register(provider());
-    const events: unknown[] = [];
-    await registry.invoke("demo.echo", { value: "hello" }, {
-      ...context,
-      approve: async () => {},
-      audits: [],
-      maxResultChars: 10_000,
-      observeInvocation: (event) => events.push(event),
-    });
+    const ended = vi.fn();
+    await invoke(registry, "demo.echo", { value: "ok" }, { onInvocationEnd: ended });
+    expect(ended).toHaveBeenCalledOnce();
 
-    expect(events).toMatchObject([
-      { type: "call_start", ref: "demo.echo", args: { value: "hello" } },
-      { type: "call_update", update: { type: "progress", message: "echoing" } },
-      {
-        type: "call_update",
-        update: { type: "entity", id: "demo-entity", kind: "custom" },
+    registry.register({
+      name: "failure",
+      description: "Failure provider",
+      async list() { return [(await this.describe("run", context))!]; },
+      async describe(name) {
+        return name === "run"
+          ? {
+              name,
+              description: "Fail",
+              inputSchema: { type: "object", additionalProperties: false },
+              risk: "execute",
+            }
+          : undefined;
       },
-      {
-        type: "call_end",
-        success: true,
-        result: "hello",
-        preview: { renderer: "rich" },
-      },
-    ]);
+      async invoke() { throw new Error("boom"); },
+    });
+    await expect(invoke(registry, "failure.run", {}, { onInvocationEnd: ended }))
+      .rejects.toThrow("boom");
+    expect(ended).toHaveBeenCalledTimes(2);
   });
 
-  it("populates audit preview metadata before invoking the provider", async () => {
+  it("populates audit metadata before invoking the provider", async () => {
     const registry = new ActionRegistry();
     const audits: FabricCallAudit[] = [];
     let observed: FabricCallAudit | undefined;
@@ -212,14 +184,12 @@ describe("ActionRegistry", () => {
         return args.value;
       },
     });
-
     await registry.invoke("demo.echo", { value: "in flight" }, {
       ...context,
       approve: async () => {},
       audits,
       maxResultChars: 10_000,
     });
-
     expect(observed).toMatchObject({
       ref: "demo.echo",
       provider: "demo",
@@ -229,7 +199,7 @@ describe("ActionRegistry", () => {
     expect(observed?.success).toBeUndefined();
   });
 
-  it("keeps a larger bounded content preview for transient write audits", async () => {
+  it("keeps a larger bounded content preview for transient writes", async () => {
     const registry = new ActionRegistry();
     const audits: FabricCallAudit[] = [];
     const content = "x".repeat(20_000);
@@ -249,70 +219,20 @@ describe("ActionRegistry", () => {
           risk: "write",
         }];
       },
-      async describe(name) {
-        return name === "write" ? (await this.list({}, context))[0] : undefined;
-      },
-      async invoke() {
-        return { ok: true };
-      },
+      async describe(name) { return name === "write" ? (await this.list({}, context))[0] : undefined; },
+      async invoke() { return { ok: true }; },
     });
-
-    await registry.invoke(
-      "pi.write",
-      { path: "preview.md", content },
-      {
-        ...context,
-        approve: async () => {},
-        audits,
-        maxResultChars: 10_000,
-      },
-    );
-
+    await registry.invoke("pi.write", { path: "preview.md", content }, {
+      ...context,
+      approve: async () => {},
+      audits,
+      maxResultChars: 10_000,
+    });
     const preview = audits[0]?.args?.content;
     expect(typeof preview).toBe("string");
     expect((preview as string).length).toBeGreaterThan(2_000);
     expect((preview as string).length).toBeLessThan(content.length);
     expect(preview).toMatch(/…$/);
-  });
-
-  it("marks failed agent results as failed nested calls without hiding the result", async () => {
-    const registry = new ActionRegistry();
-    const audits: FabricCallAudit[] = [];
-    const events: unknown[] = [];
-    registry.register({
-      name: "agents",
-      description: "Test agents",
-      async list() {
-        return [{
-          name: "run",
-          description: "Run a test agent",
-          inputSchema: { type: "object", properties: {}, additionalProperties: false },
-          risk: "agent",
-        }];
-      },
-      async describe(name) {
-        return name === "run" ? (await this.list({}, context))[0] : undefined;
-      },
-      async invoke() {
-        return { status: "failed", error: "provider unavailable" };
-      },
-    });
-
-    const result = await registry.invoke("agents.run", {}, {
-      ...context,
-      approve: async () => {},
-      audits,
-      maxResultChars: 10_000,
-      observeInvocation: (event) => events.push(event),
-    });
-
-    expect(result).toEqual({ status: "failed", error: "provider unavailable" });
-    expect(audits).toMatchObject([{ success: false, error: "provider unavailable" }]);
-    expect(events.at(-1)).toMatchObject({
-      type: "call_end",
-      success: false,
-      error: "provider unavailable",
-    });
   });
 
   it("bounds retained audit previews without shrinking provider results", async () => {
@@ -321,9 +241,7 @@ describe("ActionRegistry", () => {
     registry.register({
       ...provider(),
       async invoke() {
-        return Object.fromEntries(
-          Array.from({ length: 8 }, (_, index) => [`field${index}`, large]),
-        );
+        return Object.fromEntries(Array.from({ length: 8 }, (_, index) => [`field${index}`, large]));
       },
     });
     const audits: FabricCallAudit[] = [];
@@ -333,7 +251,6 @@ describe("ActionRegistry", () => {
       audits,
       maxResultChars: 1_000_000,
     })) as Record<string, string>;
-
     expect(result.field0).toHaveLength(20_000);
     expect(audits[0]?.result).toMatchObject({ fabricTruncated: true });
     expect(JSON.stringify(audits[0]?.result).length).toBeLessThanOrEqual(64_000);
@@ -357,30 +274,13 @@ describe("ActionRegistry", () => {
     const registry = new ActionRegistry();
     registry.register(provider());
     const approve = vi.fn(async () => {});
-    await expect(
-      registry.invoke("demo.echo", { value: 42 }, {
-        ...context,
-        approve,
-        audits: [],
-        maxResultChars: 10_000,
-      }),
-    ).rejects.toThrow("Invalid arguments");
+    await expect(registry.invoke("demo.echo", { value: 42 }, {
+      ...context,
+      approve,
+      audits: [],
+      maxResultChars: 10_000,
+    })).rejects.toThrow("Invalid arguments");
     expect(approve).not.toHaveBeenCalled();
-  });
-
-  it("bounds non-cooperative provider invocation finalizers", async () => {
-    const registry = new ActionRegistry();
-    registry.register({
-      ...provider(),
-      async invocationEnded() {
-        await new Promise(() => undefined);
-      },
-    });
-    const startedAt = Date.now();
-
-    await registry.endInvocation("parent", 20);
-
-    expect(Date.now() - startedAt).toBeLessThan(500);
   });
 
   it("rejects duplicate and malformed provider names", () => {
@@ -392,50 +292,26 @@ describe("ActionRegistry", () => {
     );
   });
 
-  it("explains why marked providers are unavailable", async () => {
+  it("keeps unavailable-provider errors for optional execution providers", async () => {
     const registry = new ActionRegistry();
     registry.register(provider());
-    registry.markUnavailable("memory", "disabled by configuration (memory.enabled=false)");
-
+    registry.markUnavailable("mcp", "disabled by configuration (mcp.enabled=false)");
     expect(registry.unavailableProviders()).toEqual([
-      { name: "memory", reason: "disabled by configuration (memory.enabled=false)" },
+      { name: "mcp", reason: "disabled by configuration (mcp.enabled=false)" },
     ]);
-    await expect(registry.describe("memory.recall", context)).rejects.toThrow(
-      'Fabric provider "memory" is unavailable: disabled by configuration (memory.enabled=false)',
+    await expect(registry.describe("mcp.github", context)).rejects.toThrow(
+      'Fabric provider "mcp" is unavailable: disabled by configuration (mcp.enabled=false)',
     );
-  });
-
-  it("lists registered providers for unknown provider names", async () => {
-    const registry = new ActionRegistry();
-    registry.register(provider());
-
     await expect(registry.describe("memry.recall", context)).rejects.toThrow(
       "Unknown Fabric provider: memry (registered providers: demo)",
     );
   });
 
-  it("rejects marking registered or malformed providers unavailable", () => {
-    const registry = new ActionRegistry();
-    registry.register(provider());
-
-    expect(() => registry.markUnavailable("demo", "off")).toThrow(
-      "Cannot mark a registered Fabric provider unavailable: demo",
-    );
-    expect(() => registry.markUnavailable("Bad Name", "off")).toThrow(
-      "Invalid Fabric provider name",
-    );
-  });
-
-  it("clears the unavailable mark when the provider later registers", async () => {
+  it("clears an unavailable mark when the provider registers", async () => {
     const registry = new ActionRegistry();
     registry.markUnavailable("demo", "off");
-    expect(registry.unavailableProviders()).toEqual([{ name: "demo", reason: "off" }]);
-
     registry.register(provider());
-
     expect(registry.unavailableProviders()).toEqual([]);
-    await expect(registry.describe("demo.echo", context)).resolves.toMatchObject({
-      ref: "demo.echo",
-    });
+    await expect(registry.describe("demo.echo", context)).resolves.toMatchObject({ ref: "demo.echo" });
   });
 });

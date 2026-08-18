@@ -13,7 +13,6 @@ import {
 import {
   ActionRegistry,
   type FabricCallAudit,
-  type FabricRegistryActivityEvent,
 } from "./core/action-registry.js";
 import {
   ApprovalController,
@@ -207,9 +206,6 @@ export class FabricExecutionService {
       currentProgress = message;
       emit();
     };
-    const observeInvocation = (event: FabricRegistryActivityEvent): void => {
-      if (event.type === "call_end") emit();
-    };
     const baseContext = {
       cwd: options.context.cwd,
       signal: options.signal,
@@ -277,7 +273,7 @@ export class FabricExecutionService {
         audits,
         maxResultChars: this.config.executor.maxNestedResultChars,
         traceOperation,
-        observeInvocation,
+        onInvocationEnd: emit,
       });
     };
 
@@ -391,7 +387,6 @@ export class FabricExecutionService {
         },
       );
     } finally {
-      await this.registry.endInvocation(options.parentToolCallId);
       flushEmit();
     }
 
