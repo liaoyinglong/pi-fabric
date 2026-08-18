@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
   defaultFabricExecutionGuidance,
@@ -33,17 +35,70 @@ const shippedDocs = [
   "docs/subagents-and-workflows.md",
 ] as const;
 
+const internalPolicyAgents = [
+  "fabric-inspect",
+  "fabric-execute",
+  "fabric-modify",
+] as const;
+
+const tarString = (block: Buffer, start: number, length: number): string => {
+  const raw = block.subarray(start, start + length).toString("utf8");
+  return raw.slice(0, raw.indexOf("\0") >= 0 ? raw.indexOf("\0") : raw.length).trim();
+};
+
+const tarFiles = (archive: Buffer): Set<string> => {
+  const tar = gunzipSync(archive);
+  const files = new Set<string>();
+  let offset = 0;
+
+  while (offset + 512 <= tar.length) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) break;
+
+    const name = tarString(header, 0, 100);
+    const prefix = tarString(header, 345, 155);
+    if (name) files.add(prefix ? `${prefix}/${name}` : name);
+
+    const sizeText = tarString(header, 124, 12);
+    const size = Number.parseInt(sizeText || "0", 8);
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+
+  return files;
+};
+
+const packFiles = (): Set<string> => {
+  const destination = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fabric-pack-"));
+  try {
+    const command = process.platform === "win32" ? process.env.ComSpec ?? "cmd.exe" : "pnpm";
+    const args = process.platform === "win32"
+      ? ["/d", "/s", "/c", "pnpm", "pack", "--config.ignore-scripts=true", "--pack-destination", destination]
+      : ["pack", "--config.ignore-scripts=true", "--pack-destination", destination];
+    execFileSync(command, args, { cwd: process.cwd(), encoding: "utf8" });
+
+    const tarballs = fs.readdirSync(destination).filter((entry) => entry.endsWith(".tgz"));
+    expect(tarballs).toHaveLength(1);
+    return tarFiles(fs.readFileSync(path.join(destination, tarballs[0]!)));
+  } finally {
+    fs.rmSync(destination, { recursive: true, force: true });
+  }
+};
+
 describe("lean Fabric skill surface", () => {
   it("registers only exec, subagents, and workflow with Pi", () => {
     const manifest = JSON.parse(fs.readFileSync("package.json", "utf8")) as {
       files: string[];
       pi: { skills: string[] };
+      "pi-subagents": { agents: string[] };
     };
 
     expect(manifest.pi.skills).toEqual(
       shippedSkills.map((name) => `./skills/${name}`),
     );
     expect(manifest.files).not.toContain("skills/");
+    expect(manifest.files).not.toContain("agents/");
+    expect(manifest.files).toContain("internal/pi-subagents/agents/");
+    expect(manifest["pi-subagents"].agents).toEqual(["./internal/pi-subagents/agents"]);
     for (const name of shippedSkills) {
       expect(manifest.files).toContain(`skills/${name}/`);
     }
@@ -132,25 +187,23 @@ describe("lean Fabric skill surface", () => {
     expect(skill).not.toContain("Persistent actors");
   });
 
-  it("packs the lean skills and user documentation", () => {
-    const packed = JSON.parse(execFileSync(
-      process.platform === "win32" ? process.env.ComSpec ?? "cmd.exe" : "npm",
-      process.platform === "win32"
-        ? ["/d", "/s", "/c", "npm", "pack", "--ignore-scripts", "--dry-run", "--json"]
-        : ["pack", "--ignore-scripts", "--dry-run", "--json"],
-      { cwd: process.cwd(), encoding: "utf8" },
-    )) as Array<{ files: Array<{ path: string }> }>;
-
-    const files = new Set(packed[0]!.files.map((entry) => entry.path));
+  it("packs the lean surface and bundled pi-subagents runtime", () => {
+    const files = packFiles();
     for (const name of shippedSkills) {
-      expect(files).toContain(`skills/${name}/SKILL.md`);
+      expect(files).toContain(`package/skills/${name}/SKILL.md`);
     }
     for (const file of shippedDocs) {
-      expect(files).toContain(file);
+      expect(files).toContain(`package/${file}`);
     }
     for (const name of legacySkills) {
-      expect(files).not.toContain(`skills/${name}/SKILL.md`);
+      expect(files).not.toContain(`package/skills/${name}/SKILL.md`);
     }
+    for (const name of internalPolicyAgents) {
+      expect(files).toContain(`package/internal/pi-subagents/agents/${name}.md`);
+      expect(files).not.toContain(`package/agents/${name}.md`);
+    }
+    expect(files).toContain("package/node_modules/pi-subagents/package.json");
+    expect(files).toContain("package/node_modules/pi-subagents/index.ts");
   }, 30_000);
 
   it("keeps delegation skills visible to the ambient model catalog", () => {
