@@ -70,7 +70,7 @@ export const buildLeanSystemPrompt = ({
 
 export default async function leanFabricExtension(pi: ExtensionAPI): Promise<void> {
   const capturedTools = new CapturedToolCatalog();
-  const runtime = new LeanCodeModeRuntime(pi, capturedTools, extensionPath);
+  const runtime = new LeanCodeModeRuntime(pi, capturedTools);
   const fabricTool = createLeanFabricExecTool(runtime);
   let savedActiveTools: string[] | undefined;
 
