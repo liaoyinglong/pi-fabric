@@ -18,7 +18,7 @@ describe("Lean guest contract alignment", () => {
     },
   );
 
-  it("removes historical orchestration globals before author code executes", async () => {
+  it("does not install historical orchestration globals", async () => {
     const result = await new QuickJsRuntime().execute(
       `return {
   agents: typeof globalThis.agents,
@@ -29,6 +29,7 @@ describe("Lean guest contract alignment", () => {
   phase: typeof globalThis.phase,
   budget: typeof globalThis.budget,
   all: typeof globalThis.all,
+  fabricTokenBudget: typeof globalThis.__fabricTokenBudget,
 };`,
       async () => undefined,
       runtimeOptions,
@@ -44,6 +45,7 @@ describe("Lean guest contract alignment", () => {
       phase: "undefined",
       budget: "undefined",
       all: "undefined",
+      fabricTokenBudget: "undefined",
     });
   });
 
@@ -51,6 +53,7 @@ describe("Lean guest contract alignment", () => {
     const result = await new QuickJsRuntime().execute(
       `return {
   tools: typeof tools,
+  toolsModels: typeof tools.models,
   pi: typeof pi,
   extensions: typeof extensions,
   mcp: typeof mcp,
@@ -64,6 +67,7 @@ describe("Lean guest contract alignment", () => {
     expect(result.error).toBeUndefined();
     expect(result.value).toEqual({
       tools: "object",
+      toolsModels: "undefined",
       pi: "object",
       extensions: "object",
       mcp: "object",

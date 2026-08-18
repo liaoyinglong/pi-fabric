@@ -22,7 +22,6 @@ export interface FabricSandboxOptions {
   memoryLimitBytes: number;
   maxLogChars?: number;
   strings?: Record<string, string>;
-  tokenBudget?: number;
   signal?: AbortSignal;
   minimumTimeoutMsForHostCall?(
     ref: string,
@@ -47,7 +46,7 @@ const quickJsModule = (): Promise<QuickJsModule> => {
   return quickJsModulePromise;
 };
 
-export const GUEST_SETUP = `
+const GUEST_SETUP = `
 (() => {
 const __fabricBridge = globalThis.__fabricHostCall;
 delete globalThis.__fabricHostCall;
@@ -67,7 +66,6 @@ const __toolsBase = {
   describe: (args) => __call("fabric.$describe", args),
   call: (args) => __call("fabric.$call", args),
   progress: (args) => __call("fabric.$progress", args),
-  models: () => __call("fabric.$models", {}),
 };
 // tools is discovery + generic calls only. The proxy keeps the seven discovery
 // methods and turns a core-tool name (read/bash/edit/...) into an actionable
@@ -80,7 +78,7 @@ globalThis.tools = new Proxy(__toolsBase, {
     if (__piToolNames.indexOf(name) >= 0) {
       return () => {
         throw new Error(
-          "tools." + name + " is not available on the discovery API. tools is discovery + generic calls only (providers/catalog/list/search/describe/call/models). For the Pi core tool, call pi." + name + "(args), e.g. pi." + name + "({ ... })."
+          "tools." + name + " is not available on the discovery API. tools is discovery + generic calls only (providers/catalog/list/search/describe/call/progress). For the Pi core tool, call pi." + name + "(args), e.g. pi." + name + "({ ... })."
         );
       };
     }
@@ -391,32 +389,14 @@ globalThis["π"] = new Proxy(__piStrings, {
   getOwnPropertyDescriptor(target, prop) { return Reflect.getOwnPropertyDescriptor(target, prop); },
   has(target, prop) { return Object.prototype.hasOwnProperty.call(target, prop); }
 });
-// Stable providers share a lazy dispatch proxy; the guest declarations keep
-// their known actions typed while the registry remains the runtime authority.
-// extensions' per-tool surface is additionally rendered from the captured
-// catalog by guestTypeDeclarations (runtime/dynamic-guest-types.ts).
-const __providerProxy = (provider) => new Proxy({}, {
+// extensions' per-tool surface is rendered from the captured catalog by
+// guestTypeDeclarations (runtime/dynamic-guest-types.ts). The registry remains
+// the runtime authority for invocation and validation.
+globalThis.extensions = new Proxy({}, {
   get(_target, property) {
     if (property === "then" || typeof property === "symbol") return undefined;
-    return (args = {}) => __call(provider + "." + String(property), args);
+    return (args = {}) => __call("extensions." + String(property), args);
   },
-});
-globalThis.extensions = __providerProxy("extensions");
-globalThis.agents = Object.freeze({
-  run: (args) => __call("agents.run", args),
-  spawn: (args) => __call("agents.spawn", args),
-  wait: (args) => __call("agents.wait", args),
-  status: (args) => __call("agents.status", args),
-  list: (args = {}) => __call("agents.list", args),
-  roles: (args = {}) => __call("agents.roles", args),
-  models: (args = {}) => __call("agents.models", args),
-  stop: (args) => __call("agents.stop", args),
-  cleanup: (args) => __call("agents.cleanup", args),
-  steer: (args) => __call("agents.steer", args),
-  followUp: (args) => __call("agents.followUp", args),
-  setSteeringMode: (args) => __call("agents.setSteeringMode", args),
-  setFollowUpMode: (args) => __call("agents.setFollowUpMode", args),
-  compact: (args) => __call("agents.compact", args),
 });
 // The mcp proxy itself stays schema-less — the registry validates args at
 // dispatch — but guestTypeDeclarations renders per-server argument types from
@@ -437,140 +417,6 @@ globalThis.mcp = new Proxy({}, {
     });
   },
 });
-let __workflowSpentTokens = 0;
-const __workflowBudgetTotal = Number.isFinite(globalThis.__fabricTokenBudget)
-  ? Math.max(0, globalThis.__fabricTokenBudget)
-  : Number.POSITIVE_INFINITY;
-const __recordAgentUsage = (result) => {
-  const usage = result && result.usage;
-  if (usage) __workflowSpentTokens += Number(usage.input || 0) + Number(usage.output || 0);
-  return result;
-};
-const __workflowAgent = async (prompt, options = {}) => {
-  if (__workflowSpentTokens >= __workflowBudgetTotal) {
-    throw new Error("Fabric workflow token budget exhausted");
-  }
-  const { label, ...agentOptions } = options;
-  const workerName = String(label || agentOptions.name || "Fabric workflow agent");
-  const result = __recordAgentUsage(await agents.run({
-    ...agentOptions,
-    ...(label && !agentOptions.name ? { name: label } : {}),
-    task: prompt,
-  }));
-  if (!result || result.status !== "completed") {
-    const reason = result && result.error ? result.error : "agent did not complete";
-    throw new Error(workerName + " failed: " + reason);
-  }
-  return result.value !== undefined ? result.value : result.text;
-};
-let __nextWorkflowSpanId = 0;
-const __workflowSpanMetadata = (kind, items, options, stageCount) => {
-  const itemCount = Array.isArray(items) ? items.length : undefined;
-  let concurrency;
-  if (kind === "parallel" && itemCount !== undefined) {
-    if (itemCount === 0) concurrency = 0;
-    else {
-      const concurrencyOpt = typeof options === "number" ? { concurrency: options } : options ?? {};
-      const requested = Number(concurrencyOpt.concurrency ?? itemCount);
-      if (Number.isFinite(requested) && requested >= 1) {
-        concurrency = Math.max(1, Math.min(itemCount, Math.floor(requested)));
-      }
-    }
-  }
-  return {
-    kind,
-    ...(itemCount !== undefined ? { itemCount } : {}),
-    ...(stageCount !== undefined ? { stageCount } : {}),
-    ...(concurrency !== undefined ? { concurrency } : {}),
-  };
-};
-const __withWorkflowSpan = async (metadata, body) => {
-  const id = "span-" + __nextWorkflowSpanId++;
-  await __call("fabric.$spanStart", { id, ...metadata });
-  try {
-    const value = await body();
-    await __call("fabric.$spanEnd", { id, outcome: "succeeded" });
-    return value;
-  } catch (error) {
-    try { await __call("fabric.$spanEnd", { id, outcome: "failed" }); } catch { /* preserve the workflow error */ }
-    throw error;
-  }
-};
-const __runParallel = async (thunks, options) => {
-  if (!Array.isArray(thunks) || thunks.some((thunk) => typeof thunk !== "function")) {
-    throw new TypeError("workflow.parallel expects an array of functions or (items, mapper)");
-  }
-  if (thunks.length === 0) return [];
-  const concurrencyOpt = typeof options === "number" ? { concurrency: options } : options ?? {};
-  const requestedConcurrency = Number(concurrencyOpt.concurrency ?? thunks.length);
-  if (!Number.isFinite(requestedConcurrency) || requestedConcurrency < 1) {
-    throw new RangeError("workflow.parallel concurrency must be a positive finite number");
-  }
-  const concurrency = Math.max(1, Math.min(thunks.length || 1, Math.floor(requestedConcurrency)));
-  const results = new Array(thunks.length);
-  let cursor = 0;
-  await Promise.all(Array.from({ length: concurrency }, async () => {
-    while (cursor < thunks.length) {
-      const index = cursor++;
-      results[index] = await thunks[index]();
-    }
-  }));
-  return results;
-};
-const __workflowParallel = async (items, arg2, arg3) => {
-  const options = typeof arg2 === "function" ? arg3 : arg2;
-  return __withWorkflowSpan(
-    __workflowSpanMetadata("parallel", items, options),
-    async () => {
-      if (typeof arg2 === "function") {
-        if (!Array.isArray(items)) throw new TypeError("workflow.parallel expects an array as the first argument");
-        return __runParallel(items.map((item, index) => () => arg2(item, index)), arg3);
-      }
-      return __runParallel(items, arg2);
-    },
-  );
-};
-const __workflowPipeline = async (items, ...stages) =>
-  __withWorkflowSpan(
-    __workflowSpanMetadata("pipeline", items, undefined, stages.length),
-    async () => {
-      if (!Array.isArray(items) || stages.some((stage) => typeof stage !== "function")) {
-        throw new TypeError("workflow.pipeline expects an array followed by stage functions");
-      }
-      return __workflowParallel(items.map((original, index) => async () => {
-        let value = original;
-        for (const stage of stages) value = await stage(value, original, index);
-        return value;
-      }));
-    },
-  );
-globalThis.workflow = Object.freeze({
-  agent: __workflowAgent,
-  parallel: __workflowParallel,
-  pipeline: __workflowPipeline,
-  configure: (args) => __call("fabric.$configure", args),
-  phase: (nameOrInput, options = {}) => {
-    const input =
-      nameOrInput && typeof nameOrInput === "object" && !Array.isArray(nameOrInput)
-        ? { ...nameOrInput }
-        : { ...options, name: nameOrInput };
-    return __call("fabric.$phase", input);
-  },
-  item: (args) => __call("fabric.$item", args),
-  event: (args) => __call("fabric.$event", args),
-  log: (...values) => print(...values),
-  budget: Object.freeze({
-    total: __workflowBudgetTotal,
-    spent: () => __workflowSpentTokens,
-    remaining: () => Math.max(0, __workflowBudgetTotal - __workflowSpentTokens),
-  }),
-});
-globalThis.agent = __workflowAgent;
-globalThis.parallel = __workflowParallel;
-globalThis.pipeline = __workflowPipeline;
-globalThis.phase = workflow.phase;
-globalThis.log = workflow.log;
-globalThis.budget = workflow.budget;
 globalThis.console = Object.freeze({ log: print, info: print, warn: print, error: print });
 const __timerCallbacks = new Map();
 let __nextTimerId = 1;
@@ -842,9 +688,6 @@ export class QuickJsRuntime {
       const strings = jsonHandle(context, jsonObject, jsonParse, options.strings ?? {});
       context.setProp(context.global, "π", strings);
       strings.dispose();
-      const tokenBudget = context.newNumber(options.tokenBudget ?? Number.POSITIVE_INFINITY);
-      context.setProp(context.global, "__fabricTokenBudget", tokenBudget);
-      tokenBudget.dispose();
 
       const setupResult = context.evalCode(GUEST_SETUP, "pi-fabric-setup.js");
       if (setupResult.error) {

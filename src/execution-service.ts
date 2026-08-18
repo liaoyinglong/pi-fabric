@@ -91,7 +91,6 @@ export interface FabricExecutionOptions {
   signal: AbortSignal | undefined;
   parentToolCallId: string;
   context: ExtensionContext;
-  tokenBudget?: number;
   onPartial(snapshot: FabricExecutionPartial): void;
 }
 
@@ -388,7 +387,6 @@ export class FabricExecutionService {
           ...(checked.javascript ? { transpiledCode: checked.javascript } : {}),
           ...(checked.sourceMap ? { transpiledSourceMap: checked.sourceMap } : {}),
           ...(options.strings ? { strings: options.strings } : {}),
-          ...(options.tokenBudget !== undefined ? { tokenBudget: options.tokenBudget } : {}),
           ...(options.signal ? { signal: options.signal } : {}),
         },
       );
