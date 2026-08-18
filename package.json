@@ -17,7 +17,7 @@
   },
   "files": [
     "dist/",
-    "agents/",
+    "internal/pi-subagents/agents/",
     "skills/fabric-exec/",
     "skills/fabric-subagents/",
     "skills/fabric-workflow/",
@@ -75,7 +75,7 @@
   },
   "pi-subagents": {
     "agents": [
-      "./agents"
+      "./internal/pi-subagents/agents"
     ]
   },
   "dependencies": {
