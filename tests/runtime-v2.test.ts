@@ -56,7 +56,7 @@ return { file, suffix: π.suffix };
     });
     expect(result.terminationReason).toBe("completed");
     expect(result.value).toEqual({
-      host: ["bash", "grep", "mcp", "read"],
+      host: ["bash", "dispatch", "grep", "mcp", "read"],
       strings: "object",
       print: "function",
       console: "object",
