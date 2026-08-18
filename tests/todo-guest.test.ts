@@ -1,5 +1,5 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_FABRIC_CONFIG } from "../src/config.js";
 import { ActionRegistry } from "../src/core/action-registry.js";
 import { FabricExecutionService } from "../src/execution-service.js";
@@ -11,11 +11,15 @@ import {
   TODO_MAX_ITEMS,
   TodoStore,
 } from "../src/todo-store.js";
-import { renderLeanTodoLines } from "../src/ui/lean-todo-render.js";
+import {
+  renderLeanTodoWidgetLines,
+  TODO_WIDGET_ID,
+} from "../src/ui/lean-todo-render.js";
 
 const plainTheme = {
   fg: (_color: string, text: string) => text,
   bold: (text: string) => text,
+  strikethrough: (text: string) => text,
 } as unknown as Theme;
 
 describe("fabric_exec todo built-in", () => {
@@ -125,7 +129,53 @@ return "done";
     expect(store.snapshot()).toEqual([]);
   });
 
-  it("renders a compact Claude-style checklist and bounds collapsed output", () => {
+  it("updates a persistent below-editor widget and clears it with an empty list", async () => {
+    const setWidget = vi.fn();
+    const context = {
+      hasUI: true,
+      ui: {
+        theme: plainTheme,
+        setWidget,
+      },
+    } as unknown as ExtensionContext;
+    const provider = new TodoProvider(new TodoStore());
+
+    await provider.invoke(
+      "replace",
+      {
+        todos: [
+          { content: "Inspect runtime", status: "completed" },
+          { content: "Implement widget", status: "in_progress", activeForm: "Implementing widget" },
+          { content: "Run verification", status: "pending" },
+        ],
+      },
+      { extensionContext: context } as never,
+    );
+
+    expect(setWidget).toHaveBeenLastCalledWith(
+      TODO_WIDGET_ID,
+      [
+        "Todos · 1/3 done · 1 active",
+        "✓ Inspect runtime",
+        "◆ Implementing widget",
+        "○ Run verification",
+      ],
+      { placement: "belowEditor" },
+    );
+
+    await provider.invoke(
+      "replace",
+      { todos: [] },
+      { extensionContext: context } as never,
+    );
+    expect(setWidget).toHaveBeenLastCalledWith(
+      TODO_WIDGET_ID,
+      undefined,
+      { placement: "belowEditor" },
+    );
+  });
+
+  it("bounds the fixed widget without expand-only hints", () => {
     const todos = [
       { content: "Inspect runtime", status: "completed" as const },
       { content: "Implement todo", status: "in_progress" as const, activeForm: "Implementing todo UI" },
@@ -134,13 +184,13 @@ return "done";
         status: "pending" as const,
       })),
     ];
-    const collapsed = renderLeanTodoLines(todos, plainTheme, false).join("\n");
-    const expanded = renderLeanTodoLines(todos, plainTheme, true).join("\n");
+    const widget = renderLeanTodoWidgetLines(todos, plainTheme).join("\n");
 
-    expect(collapsed).toContain("todo · 1/10 done · 1 active");
-    expect(collapsed).toContain("✓ Inspect runtime");
-    expect(collapsed).toContain("◆ Implementing todo UI");
-    expect(collapsed).toContain("… 2 more · Ctrl+O to expand");
-    expect(expanded).toContain("Task 10");
+    expect(widget).toContain("Todos · 1/10 done · 1 active");
+    expect(widget).toContain("✓ Inspect runtime");
+    expect(widget).toContain("◆ Implementing todo UI");
+    expect(widget).toContain("… 2 more");
+    expect(widget).not.toContain("Ctrl+O");
+    expect(widget).not.toContain("Task 10");
   });
 });

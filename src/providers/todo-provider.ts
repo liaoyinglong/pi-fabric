@@ -11,6 +11,7 @@ import {
   TODO_STATUSES,
   TodoStore,
 } from "../todo-store.js";
+import { updateLeanTodoWidget } from "../ui/lean-todo-render.js";
 
 const replaceSchema = {
   type: "object",
@@ -59,10 +60,12 @@ export class TodoProvider implements FabricProvider {
   async invoke(
     actionName: string,
     args: Record<string, unknown>,
-    _context: FabricInvocationContext,
+    context: FabricInvocationContext,
   ): Promise<unknown> {
     if (actionName !== "replace") throw new Error(`Unknown todo action: ${actionName}`);
     if (!Array.isArray(args.todos)) throw new Error("todo() expects a complete todos array");
-    return this.store.replace(args.todos);
+    const todos = this.store.replace(args.todos);
+    updateLeanTodoWidget(context.extensionContext, todos);
+    return todos;
   }
 }

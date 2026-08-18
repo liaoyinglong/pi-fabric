@@ -83,7 +83,7 @@ Lean keeps useful Code Mode visibility without restoring the old control-plane s
 
 - generated TypeScript is visible in the `fabric_exec` call card;
 - `Ctrl+O` expands the complete program;
-- the current Todo checklist is rendered in the same card;
+- the current Todo checklist stays in a persistent widget below the editor and updates on every `todo(...)` replacement;
 - running nested calls show concise tool/agent headlines;
 - `write` and `edit` calls show bounded diff previews;
 - `/fabric` shows the current one-shot/recursive worker tree and live output.
@@ -105,6 +105,8 @@ await todo([
 ```
 
 Each call replaces the complete current list. Use `await todo([])` to clear it. The list is session-local and resets on session start/shutdown. `content` is capped at 200 characters, `activeForm` at 120 characters, and the list at 64 items so Todo stays bounded coordination state.
+
+When Pi has an interactive UI, Todo renders in a fixed `belowEditor` widget. Completed items are dimmed and struck through, the active item uses `activeForm` when provided, and the widget keeps the latest list across turns. The widget is removed when `todo([])` clears the list or the session ends. The fixed view shows at most eight items plus a bounded remainder count.
 
 Main only receives the `fabric_exec` Pi tool. The Todo backing provider stays inside Code Mode, while the public guest method gives generated TypeScript the small API it needs.
 
