@@ -2,7 +2,7 @@
 name: fabric-exec
 description: >-
   Advanced reference for Pi Code Mode / `fabric_exec`. Use when a program needs
-  exact Pi, MCP, captured-extension, tier/policy subagent, or error-recovery
+  exact Pi, MCP, captured-extension, tier/policy subagent, todo, or error-recovery
   contracts; routine tool calling should rely on compact ambient guidance.
 ---
 
@@ -10,7 +10,27 @@ description: >-
 
 `fabric_exec` runs one type-checked TypeScript program in an isolated executor. Compose related calls in that program and return only the bounded value Main needs. `print()` and `console.log()` are diagnostics, not the returned result.
 
-The TUI always keeps generated TypeScript observable: collapsed cards show the first 15 lines, `Ctrl+O` expands the program, live nested calls show concise headlines, and write/edit activity includes a bounded diff preview.
+The TUI always keeps generated TypeScript observable: collapsed cards show the first 15 lines, `Ctrl+O` expands the program, live nested calls show concise headlines, write/edit activity includes a bounded diff preview, and the current Todo list is rendered inside the same card.
+
+## Built-in Todo
+
+For non-trivial multi-step work, maintain the session-local task list from inside `fabric_exec` with `todo(...)`.
+
+```ts
+await todo([
+  { content: "Inspect runtime", status: "completed" },
+  {
+    content: "Implement guest todo API",
+    status: "in_progress",
+    activeForm: "Implementing guest todo API",
+  },
+  { content: "Run verification", status: "pending" },
+]);
+```
+
+Each call replaces the complete current list. Use `await todo([])` to clear it. Items use `pending`, `in_progress`, or `completed`. `activeForm` is optional and should be a short present-progress label.
+
+Todo is a Code Mode built-in. Main does not receive a separate Pi `todo` tool. Keep simple one-step requests free of Todo bookkeeping; use it when several meaningful steps need visible progress.
 
 ## Pi tools
 
@@ -51,7 +71,7 @@ return result;
 
 Core overrides remain on `pi.*`. For example, FFF override mode is reached through `pi.find` / `pi.grep`, not `extensions.fffind` / `extensions.ffgrep`.
 
-If the exact tool or schema is unknown, discover it rather than guessing.
+If the exact tool or schema is unknown, discover it before calling it.
 
 ## MCP
 
@@ -65,7 +85,7 @@ Use `tools.search`, `tools.describe`, and `tools.call` for unknown or computed r
 
 ## Tier/policy subagents
 
-Main creates the temporary role and chooses execution semantics instead of selecting a configured profile:
+Main creates the temporary role and chooses execution semantics without selecting a configured profile:
 
 ```ts
 const finding = await agents.run({
@@ -111,4 +131,4 @@ When an argument shape fails:
 2. Use `tools.describe({ ref })` if the schema is not known.
 3. Correct and retry only the failed call.
 
-Do not guess provider names or fall back to removed Full Fabric surfaces. Lean V2 is Code Mode + captured/MCP tools + Main-routed tier/policy one-shot subagents + thin workflow + bounded recursive Pi delegation.
+Do not guess provider names or fall back to removed Full Fabric surfaces. Lean V2 is Code Mode + built-in Todo + captured/MCP tools + Main-routed tier/policy one-shot subagents + thin workflow + bounded recursive Pi delegation.

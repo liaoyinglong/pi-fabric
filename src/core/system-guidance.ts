@@ -1,6 +1,6 @@
 export const fabricExecutionKernelGuidance = (fullCodeMode: boolean): string =>
   fullCodeMode
-    ? "Pi Code Mode: use `fabric_exec` as the model-facing execution gateway. Pi core actions are `pi.read`, `pi.bash`, `pi.edit`, `pi.write`, `pi.grep`, `pi.find`, and `pi.ls`; run shell commands with `pi.bash` (`pi.exec` does not exist). Core ABI: `pi.read`/`pi.grep`/`pi.find`/`pi.ls` resolve to strings; `pi.bash`/`pi.edit`/`pi.write` resolve to `{ok,output,details}` envelopes. The sandbox is not Node.js: `process` and `require` are unavailable. Compose related operations in one program and return only the bounded result needed by the caller."
+    ? "Pi Code Mode: use `fabric_exec` as the model-facing execution gateway. Pi core actions are `pi.read`, `pi.bash`, `pi.edit`, `pi.write`, `pi.grep`, `pi.find`, and `pi.ls`; run shell commands with `pi.bash` (`pi.exec` does not exist). Core ABI: `pi.read`/`pi.grep`/`pi.find`/`pi.ls` resolve to strings; `pi.bash`/`pi.edit`/`pi.write` resolve to `{ok,output,details}` envelopes. For non-trivial multi-step work, maintain the session task list inside the program with `await todo([...])`; each call replaces the complete list and `await todo([])` clears it. The sandbox is not Node.js: `process` and `require` are unavailable. Compose related operations in one program and return only the bounded result needed by the caller."
     : "Pi Fabric is in orchestration-only mode. Pi core and registered extension tools remain on their native direct execution path.";
 
 const dependencyAwareCompositionGuidance =
@@ -24,6 +24,7 @@ export const defaultFabricExecutionGuidance = (
     "use `pi.*` for Pi core tools",
     "`extensions.*` for captured extension tools",
     ...(mcpEnabled ? ["`mcp.<server>.<tool>(args)` for known MCP tools"] : []),
+    "`todo([...])` for the session-local task list",
   ].join(", ");
   const discovery = mcpEnabled
     ? " Use `tools.search`/`tools.describe` for discovery and `tools.call({ref,args})` only for computed or dynamic refs."

@@ -4,11 +4,11 @@ A focused Programmatic Tool Calling runtime for Pi.
 
 Lean V2 keeps three product surfaces:
 
-1. **Code Mode (`fabric_exec`)**: one type-checked TypeScript program can call many tools, branch, loop, fan out, aggregate intermediate values, and return one bounded result to the model.
+1. **Code Mode (`fabric_exec`)**: one type-checked TypeScript program can call many tools, branch, loop, fan out, aggregate intermediate values, maintain Todo state, and return one bounded result to the model.
 2. **Main-routed one-shot subagents**: Main decides whether to delegate, creates a temporary role, and selects `fast` / `balance` / `strong` plus an explicit capability policy.
 3. **Thin workflow composition**: ordinary TypeScript plus `agent`, `parallel`, `pipeline`, and phase helpers orchestrate the same one-shot substrate. If plain TypeScript is clearer, use plain TypeScript.
 
-Main also gets one deliberately small coordination primitive: a built-in `todo` tool for bounded session-local task tracking. It stays separate from Code Mode and does not recreate Fabric State/Mesh.
+Todo is a deliberately small `fabric_exec` built-in for bounded session-local task tracking. It does not add another model-facing Pi tool and does not recreate Fabric State/Mesh.
 
 A small `agents.recurse({ tier, policy, role, task })` primitive is retained for bounded recursive Pi delegation. It is separate from the removed RLM provider and workflow systems.
 
@@ -18,13 +18,13 @@ Lean V2 physically removes the persistent Fabric product systems outside this sc
 
 ```text
 Pi Main
-  |-- todo          session-local task tracking
   `-- fabric_exec
-      |-- pi.*          Pi core tools
-      |-- extensions.*  captured Pi extension tools
-      |-- mcp.*         MCP tools when enabled
-      |-- agents.*      Main-routed tier/policy workers when enabled
-      `-- workflow      thin TypeScript orchestration helpers
+      |-- todo(...)      session-local task tracking
+      |-- pi.*           Pi core tools
+      |-- extensions.*   captured Pi extension tools
+      |-- mcp.*          MCP tools when enabled
+      |-- agents.*       Main-routed tier/policy workers when enabled
+      `-- workflow       thin TypeScript orchestration helpers
       |
       v
   bounded result
@@ -61,7 +61,7 @@ Requires Node.js 24+ and Pi 0.80.6+.
 
 ## Code Mode
 
-The model-facing execution gateway for programmatic tool calling is `fabric_exec`. The built-in `todo` tool is a separate direct Main tool. Nested Code Mode actions stay under `fabric_exec`.
+The model-facing execution gateway for programmatic tool calling is `fabric_exec`. Todo is one of its built-in guest methods, alongside the workflow helpers used inside the TypeScript program.
 
 ```ts
 const [manifest, sources] = await Promise.all([
@@ -83,31 +83,30 @@ Lean keeps useful Code Mode visibility without restoring the old control-plane s
 
 - generated TypeScript is visible in the `fabric_exec` call card;
 - `Ctrl+O` expands the complete program;
+- the current Todo checklist is rendered in the same card;
 - running nested calls show concise tool/agent headlines;
 - `write` and `edit` calls show bounded diff previews;
 - `/fabric` shows the current one-shot/recursive worker tree and live output.
 
 ## Built-in todo
 
-`todo` is a Lean-owned, directly model-facing tool for non-trivial multi-step work. It is intentionally not part of `fabric_exec`, is not captured as an extension tool, and is re-asserted alongside `fabric_exec` when Full Code Mode refreshes the active tool set.
+For non-trivial multi-step work, update the current list from inside `fabric_exec`:
 
-Each call submits the complete current list:
-
-```json
-{
-  "todos": [
-    { "content": "Inspect runtime", "status": "completed" },
-    {
-      "content": "Implement todo ownership",
-      "status": "in_progress",
-      "activeForm": "Implementing todo ownership"
-    },
-    { "content": "Run verification", "status": "pending" }
-  ]
-}
+```ts
+await todo([
+  { content: "Inspect runtime", status: "completed" },
+  {
+    content: "Implement guest todo API",
+    status: "in_progress",
+    activeForm: "Implementing guest todo API",
+  },
+  { content: "Run verification", status: "pending" },
+]);
 ```
 
-Use an empty `todos` array to clear the list. The list is session-local and resets on session start/shutdown. `content` is capped at 200 characters, `activeForm` at 120 characters, and the list at 64 items so Todo remains bounded coordination state and does not become another scratchpad.
+Each call replaces the complete current list. Use `await todo([])` to clear it. The list is session-local and resets on session start/shutdown. `content` is capped at 200 characters, `activeForm` at 120 characters, and the list at 64 items so Todo stays bounded coordination state.
+
+Main only receives the `fabric_exec` Pi tool. The Todo backing provider stays inside Code Mode, while the public guest method gives generated TypeScript the small API it needs.
 
 The MVP deliberately has no persistence, task IDs, dependencies, priorities, or `/todo` editing commands.
 
@@ -295,7 +294,13 @@ CLI adapters are one-shot in V1: no recursive Fabric, steer/follow-up, or Fabric
 
 ## Package surface
 
-The package registers only:
+The package registers only one Lean model-facing tool:
+
+```text
+fabric_exec
+```
+
+The package also ships:
 
 ```text
 dist/lean-index.js

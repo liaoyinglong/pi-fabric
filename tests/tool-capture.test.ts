@@ -196,12 +196,10 @@ describe("registered extension tool capture", () => {
     expect(refreshes).toBe(2);
   });
 
-  it("keeps Lean-owned model tools visible when capture refreshes", async () => {
+  it("keeps only fabric_exec model-facing when capture refreshes", async () => {
     const fabricTool = tool("fabric_exec");
-    const todoTool = tool("todo");
     const runner = runnerWith(
       registered(fabricTool, "/extensions/pi-fabric/index.ts"),
-      registered(todoTool, "/extensions/pi-fabric/index.ts"),
       registered(tool("deploy_release"), "/extensions/pi-deploy/index.ts"),
     );
     const catalog = new CapturedToolCatalog();
@@ -221,6 +219,6 @@ describe("registered extension tool capture", () => {
     runner.getAllRegisteredTools();
 
     expect(catalog.list().map((entry) => entry.name)).toEqual(["deploy_release"]);
-    expect(active).toEqual(["fabric_exec", "todo"]);
+    expect(active).toEqual(["fabric_exec"]);
   });
 });

@@ -15,7 +15,6 @@ import {
 } from "./core/system-guidance.js";
 import { createLeanFabricExecTool } from "./lean-exec-tool.js";
 import { LeanCodeModeRuntime } from "./lean-runtime.js";
-import { createLeanTodoTool, TodoStore } from "./todo-tool.js";
 
 const extensionPath = fileURLToPath(import.meta.url);
 const entryDir = path.dirname(extensionPath);
@@ -26,7 +25,7 @@ const leanSkillPaths = [
   path.join(skillsRoot, "fabric-workflow"),
 ];
 
-export const LEAN_MODEL_FACING_TOOL_NAMES = ["fabric_exec", "todo"] as const;
+export const LEAN_MODEL_FACING_TOOL_NAMES = ["fabric_exec"] as const;
 
 export const resolveLeanActiveTools = (
   active: readonly string[],
@@ -61,8 +60,6 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
   const capturedTools = new CapturedToolCatalog();
   const runtime = new LeanCodeModeRuntime(pi, capturedTools, extensionPath);
   const fabricTool = createLeanFabricExecTool(runtime);
-  const todoStore = new TodoStore();
-  const todoTool = createLeanTodoTool(todoStore);
   let savedActiveTools: string[] | undefined;
 
   registerLeanFabricCommand(pi, runtime);
@@ -95,17 +92,15 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
   });
 
   pi.registerTool(fabricTool);
-  pi.registerTool(todoTool);
 
   pi.on("resources_discover", async () => ({ skillPaths: getLeanFabricSkillPaths() }));
 
   pi.on("session_start", async (_event, context) => {
     savedActiveTools = undefined;
-    todoStore.reset();
+    runtime.resetSessionState();
     await runtime.initialize(context);
     toolCapture.setPolicy(runtime.config.capture);
     pi.registerTool(fabricTool);
-    pi.registerTool(todoTool);
     applyToolOwnership();
   });
 
@@ -130,7 +125,7 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
 
   pi.on("session_shutdown", async () => {
     toolCapture.setPolicy(inactiveCapturePolicy);
-    todoStore.reset();
+    runtime.resetSessionState();
     await runtime.close();
     if (savedActiveTools) {
       const registered = new Set(pi.getAllTools().map((tool) => tool.name));

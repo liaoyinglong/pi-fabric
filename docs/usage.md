@@ -2,11 +2,11 @@
 
 Lean V2 is a focused Programmatic Tool Calling runtime for Pi with three surfaces:
 
-1. `fabric_exec` for one type-checked TypeScript program that composes many tool calls.
+1. `fabric_exec` for one type-checked TypeScript program that composes many tool calls and built-in coordination helpers.
 2. Main-routed one-shot subagents using `fast` / `balance` / `strong` plus explicit capability policies.
 3. Thin workflow helpers over the same one-shot runtime.
 
-Main also receives a small built-in `todo` coordination tool. It is directly model-facing, session-local, and intentionally separate from the Code Mode action registry so task tracking does not recreate Fabric State/Mesh.
+Todo is a small `fabric_exec` built-in for session-local coordination. Main receives only the `fabric_exec` Pi tool; task tracking stays inside the Code Mode program and does not recreate Fabric State/Mesh.
 
 A small `agents.recurse` primitive supports bounded recursive Pi delegation. Persistent Actor, Mesh, State, Memory, standalone RLM/Council/Swarm, Prewalk, resident-host, trajectory-handoff, and the legacy dashboard/control-plane runtime are not part of Lean V2. `/fabric` is a lightweight view over the retained `AgentManager` only.
 
@@ -97,7 +97,7 @@ Use sequential `await` when one result determines the next operation. Use `Promi
 
 ### TUI
 
-The `fabric_exec` card keeps generated code visible. `/fabric` opens a lightweight overlay over the current `AgentManager`, showing top-level and recursive workers plus live output.
+The `fabric_exec` card keeps generated code visible. Its result area also renders the current Todo checklist when the program uses `todo(...)`. `/fabric` opens a lightweight overlay over the current `AgentManager`, showing top-level and recursive workers plus live output.
 
 Focused commands remain available:
 
@@ -110,25 +110,29 @@ Focused commands remain available:
 
 ### Built-in todo
 
-`todo` is a second Lean-owned Main tool for non-trivial multi-step work. It is not a `fabric_exec` action and is not routed through `extensions.*`. Lean re-asserts both `fabric_exec` and `todo` whenever Full Code Mode refreshes model-facing tools, while captured extension tools can still be hidden.
+For non-trivial multi-step work, call `todo(...)` from inside the `fabric_exec` program:
 
-Every update replaces the complete current list:
-
-```json
-{
-  "todos": [
-    { "content": "Inspect runtime", "status": "completed" },
-    {
-      "content": "Implement todo ownership",
-      "status": "in_progress",
-      "activeForm": "Implementing todo ownership"
-    },
-    { "content": "Run verification", "status": "pending" }
-  ]
-}
+```ts
+await todo([
+  { content: "Inspect runtime", status: "completed" },
+  {
+    content: "Implement guest todo API",
+    status: "in_progress",
+    activeForm: "Implementing guest todo API",
+  },
+  { content: "Run verification", status: "pending" },
+]);
 ```
 
-Statuses are `pending`, `in_progress`, and `completed`. `activeForm` is optional and is intended as a short present-progress label for an active item. Send `{ "todos": [] }` to clear the list.
+Every call replaces the complete current list. `await todo([])` clears it. The object form is also accepted:
+
+```ts
+await todo({
+  todos: [{ content: "Run verification", status: "in_progress" }],
+});
+```
+
+Statuses are `pending`, `in_progress`, and `completed`. `activeForm` is optional and is intended as a short present-progress label for an active item.
 
 Todo stays deliberately bounded:
 
@@ -138,7 +142,7 @@ Todo stays deliberately bounded:
 - state is in memory only and resets at session start/shutdown;
 - no task IDs, priorities, dependencies, persistence, or `/todo` editing commands.
 
-The tool is for coordination, not a scratchpad or replacement state system.
+The built-in is for coordination and is not a scratchpad or replacement state system.
 
 ## 4. Pi core and captured tools
 
@@ -155,7 +159,7 @@ Additive Pi extension tools hidden from Main remain callable through `extensions
 
 If an exact schema is unknown, use `tools.search` and `tools.describe`.
 
-`capture.keepVisible` applies to captured extension tools. Built-in Lean tools such as `fabric_exec` and `todo` are owned separately and do not depend on capture visibility.
+`capture.keepVisible` applies to captured extension tools. Lean owns `fabric_exec` directly; Todo is a guest built-in within that single model-facing tool.
 
 ## 5. MCP
 

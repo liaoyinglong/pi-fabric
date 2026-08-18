@@ -35,11 +35,12 @@ export const createLeanFabricExecTool = (
   name: "fabric_exec",
   label: "Code Mode",
   description:
-    "Execute one type-checked TypeScript program that can compose Pi core tools, captured Pi extension tools, MCP tools, named subagents, and workflow helpers. Intermediate values stay inside the runtime; return only the bounded value needed by the caller.",
+    "Execute one type-checked TypeScript program that can compose Pi core tools, captured Pi extension tools, MCP tools, tier-routed subagents, workflow helpers, and the built-in todo() task list. Intermediate values stay inside the runtime; return only the bounded value needed by the caller.",
   promptSnippet: "programmatic tool calling through one bounded TypeScript execution",
   promptGuidelines: [
     "Batch related tool operations inside one fabric_exec program. Use sequential await when one result determines the next step and parallel/all only for independent work.",
-    "Use pi.* for Pi core coding tools, extensions.* for captured Pi extension tools, mcp.* for known MCP tools, and agents.* or workflow agent(...) for one-shot subagents.",
+    "Use pi.* for Pi core coding tools, extensions.* for captured Pi extension tools, mcp.* for known MCP tools, agents.* or workflow agent(...) for one-shot subagents, and todo([...]) for non-trivial multi-step task tracking.",
+    "todo([...]) replaces the complete session-local list. Mark active work in_progress before starting it, completed only after it finishes, and pass [] to clear the list.",
     "Return compact decisions, evidence, or changed results. Keep raw logs and unused intermediate values inside the program.",
   ],
   parameters: Type.Object({
@@ -89,6 +90,7 @@ export const createLeanFabricExecTool = (
           details: {
             audits: snapshot.audits,
             phases: snapshot.phases,
+            todos: snapshot.todos,
             ...(snapshot.progress ? { progress: snapshot.progress } : {}),
           },
         } as never);
@@ -108,6 +110,7 @@ export const createLeanFabricExecTool = (
         elapsedMs: result.elapsedMs,
         phases: result.phases,
         audits: result.audits,
+        todos: runtime.todoSnapshot(),
         trace: result.trace,
         ...(result.usage ? { usage: result.usage } : {}),
       },
