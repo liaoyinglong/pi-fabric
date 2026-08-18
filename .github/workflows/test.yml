@@ -5,7 +5,7 @@ on:
   push:
     branches: [release, "agent/**"]
   pull_request:
-    branches: [release]
+    branches: [release, "agent/code-mode-runtime-v2"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
