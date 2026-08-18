@@ -6,6 +6,8 @@ Lean V2 is a focused Programmatic Tool Calling runtime for Pi with three surface
 2. Main-routed one-shot subagents using `fast` / `balance` / `strong` plus explicit capability policies.
 3. Thin workflow helpers over the same one-shot runtime.
 
+Main also receives a small built-in `todo` coordination tool. It is directly model-facing, session-local, and intentionally separate from the Code Mode action registry so task tracking does not recreate Fabric State/Mesh.
+
 A small `agents.recurse` primitive supports bounded recursive Pi delegation. Persistent Actor, Mesh, State, Memory, standalone RLM/Council/Swarm, Prewalk, resident-host, trajectory-handoff, and the legacy dashboard/control-plane runtime are not part of Lean V2. `/fabric` is a lightweight view over the retained `AgentManager` only.
 
 ## 1. Install
@@ -106,6 +108,38 @@ Focused commands remain available:
 /fabric stop <id>
 ```
 
+### Built-in todo
+
+`todo` is a second Lean-owned Main tool for non-trivial multi-step work. It is not a `fabric_exec` action and is not routed through `extensions.*`. Lean re-asserts both `fabric_exec` and `todo` whenever Full Code Mode refreshes model-facing tools, while captured extension tools can still be hidden.
+
+Every update replaces the complete current list:
+
+```json
+{
+  "todos": [
+    { "content": "Inspect runtime", "status": "completed" },
+    {
+      "content": "Implement todo ownership",
+      "status": "in_progress",
+      "activeForm": "Implementing todo ownership"
+    },
+    { "content": "Run verification", "status": "pending" }
+  ]
+}
+```
+
+Statuses are `pending`, `in_progress`, and `completed`. `activeForm` is optional and is intended as a short present-progress label for an active item. Send `{ "todos": [] }` to clear the list.
+
+Todo stays deliberately bounded:
+
+- maximum 64 items;
+- `content`: maximum 200 characters;
+- `activeForm`: maximum 120 characters;
+- state is in memory only and resets at session start/shutdown;
+- no task IDs, priorities, dependencies, persistence, or `/todo` editing commands.
+
+The tool is for coordination, not a scratchpad or replacement state system.
+
 ## 4. Pi core and captured tools
 
 Use `pi.*` inside Full Code Mode:
@@ -120,6 +154,8 @@ return { source, matches, test: test.output };
 Additive Pi extension tools hidden from Main remain callable through `extensions.*`. Core overrides remain on core names. With FFF override mode, use `pi.find` / `pi.grep`; do not call `extensions.fffind` / `extensions.ffgrep` for core overrides.
 
 If an exact schema is unknown, use `tools.search` and `tools.describe`.
+
+`capture.keepVisible` applies to captured extension tools. Built-in Lean tools such as `fabric_exec` and `todo` are owned separately and do not depend on capture visibility.
 
 ## 5. MCP
 

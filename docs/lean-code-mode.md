@@ -4,19 +4,23 @@ Pi Fabric Lean V2 is a Programmatic Tool Calling runtime for Pi. Its runtime bou
 
 ```text
 lean-index
+  -> direct Main tools
+     -> fabric_exec
+        -> LeanCodeModeRuntime
+           -> ActionRegistry
+              -> pi.*
+              -> extensions.*
+              -> mcp.* when enabled
+              -> agents.* when enabled
+           -> FabricExecutionService
+              -> QuickJS / node-process executor
+              -> thin workflow helpers
+     -> todo
+        -> session-local TodoStore
   -> registered-tool capture
-  -> LeanCodeModeRuntime
-     -> ActionRegistry
-        -> pi.*
-        -> extensions.*
-        -> mcp.* when enabled
-        -> agents.* when enabled
-     -> FabricExecutionService
-        -> QuickJS / node-process executor
-        -> thin workflow helpers
 ```
 
-Only the bounded program return is intended to reach Main. Intermediate tool results, loops, filtering, branching, and fan-out stay inside the execution runtime.
+Only the bounded program return is intended to reach Main from Code Mode. Intermediate tool results, loops, filtering, branching, and fan-out stay inside the execution runtime. `todo` is intentionally outside that runtime because it is lightweight Main coordination state; programmatic actions stay in `fabric_exec`.
 
 ## Retained product systems
 
@@ -25,6 +29,16 @@ Only the bounded program return is intended to reach Main. Intermediate tool res
 `fabric_exec` is the model-facing execution gateway over Pi core tools, captured Pi extension tools, optional MCP, and optional one-shot agents.
 
 The Lean TUI renderer shows generated TypeScript, live nested tool headlines/progress, bounded write/edit diffs, and a concise completion result.
+
+### Built-in Todo
+
+`todo` is the only additional Lean-owned Main tool. It maintains a bounded in-memory list for non-trivial multi-step work and deliberately does not introduce a second execution or state subsystem.
+
+The contract uses complete-list replacement. Each item contains `content`, `status`, and optional `activeForm`; an empty list clears state. `content` is capped at 200 characters, `activeForm` at 120 characters, and the list at 64 items.
+
+Todo state belongs to the current session lifecycle only and resets on session start/shutdown. There are no IDs, dependencies, priorities, persistence files, or command surface. This keeps Todo as coordination metadata and leaves the removed Fabric State/Mesh systems out of Lean.
+
+`fabric_exec` and `todo` are both re-asserted in the active model-facing tool set whenever Lean ownership runs. Because both are registered by the same Fabric extension source, the capture layer excludes them from `extensions.*`; captured third-party tools can still be hidden independently.
 
 ### Lean dashboard
 
@@ -195,6 +209,8 @@ fabric-subagents
 fabric-workflow
 ```
 
+The built-in `todo` capability ships directly from `dist/lean-index.js`; it is a tool, not another skill or provider.
+
 Pi's normal external/user skill catalog remains available in Full Code Mode, with progressive loading adapted to `pi.read` inside `fabric_exec`.
 
 ## Configuration boundary
@@ -230,5 +246,7 @@ src/lean-index.ts
 src/protocol.ts
 src/worker.ts
 ```
+
+`src/todo-tool.ts` and `src/ui/lean-todo-render.ts` are reachable only through the Lean entrypoint; they do not add another distributable root or runtime subsystem.
 
 esbuild and declaration generation follow those roots. Build assertions reject reachability of removed heavyweight product modules. Lean-specific runtime/type tests lock the absence of removed guest globals and the tier/policy-only model-facing agent contract.

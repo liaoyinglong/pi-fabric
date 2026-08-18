@@ -12,6 +12,7 @@ import {
   type RegisteredToolCaptureController,
 } from "../src/capture/interceptor.js";
 import { DEFAULT_FABRIC_CONFIG } from "../src/config.js";
+import { resolveLeanActiveTools } from "../src/lean-index.js";
 
 const controllers: RegisteredToolCaptureController[] = [];
 
@@ -193,5 +194,33 @@ describe("registered extension tool capture", () => {
     controller.dispose();
     runner.getAllRegisteredTools();
     expect(refreshes).toBe(2);
+  });
+
+  it("keeps Lean-owned model tools visible when capture refreshes", async () => {
+    const fabricTool = tool("fabric_exec");
+    const todoTool = tool("todo");
+    const runner = runnerWith(
+      registered(fabricTool, "/extensions/pi-fabric/index.ts"),
+      registered(todoTool, "/extensions/pi-fabric/index.ts"),
+      registered(tool("deploy_release"), "/extensions/pi-deploy/index.ts"),
+    );
+    const catalog = new CapturedToolCatalog();
+    let active = ["read", "deploy_release"];
+    const controller = await installRegisteredToolCapture({
+      anchorDefinition: fabricTool,
+      catalog,
+      onCatalogRefresh: () => {
+        active = resolveLeanActiveTools(
+          active,
+          new Set(catalog.list().map((entry) => entry.name)),
+        );
+      },
+    });
+    controllers.push(controller);
+
+    runner.getAllRegisteredTools();
+
+    expect(catalog.list().map((entry) => entry.name)).toEqual(["deploy_release"]);
+    expect(active).toEqual(["fabric_exec", "todo"]);
   });
 });

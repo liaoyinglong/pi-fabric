@@ -8,6 +8,8 @@ Lean V2 keeps three product surfaces:
 2. **Main-routed one-shot subagents**: Main decides whether to delegate, creates a temporary role, and selects `fast` / `balance` / `strong` plus an explicit capability policy.
 3. **Thin workflow composition**: ordinary TypeScript plus `agent`, `parallel`, `pipeline`, and phase helpers orchestrate the same one-shot substrate. If plain TypeScript is clearer, use plain TypeScript.
 
+Main also gets one deliberately small coordination primitive: a built-in `todo` tool for bounded session-local task tracking. It stays separate from Code Mode and does not recreate Fabric State/Mesh.
+
 A small `agents.recurse({ tier, policy, role, task })` primitive is retained for bounded recursive Pi delegation. It is separate from the removed RLM provider and workflow systems.
 
 Lean V2 physically removes the persistent Fabric product systems outside this scope: Actor, Mesh, State, Schema runtime, Memory, RLM skills/providers, Prewalk, resident hosts, Component supervision, trajectory handoff, the legacy Fabric control plane, and main-session Fabric compaction.
@@ -16,20 +18,19 @@ Lean V2 physically removes the persistent Fabric product systems outside this sc
 
 ```text
 Pi Main
-  |
-  v
-fabric_exec
-  |-- pi.*          Pi core tools
-  |-- extensions.*  captured Pi extension tools
-  |-- mcp.*         MCP tools when enabled
-  |-- agents.*      Main-routed tier/policy workers when enabled
-  `-- workflow      thin TypeScript orchestration helpers
-  |
-  v
-bounded result
-  |
-  v
-Pi Main
+  |-- todo          session-local task tracking
+  `-- fabric_exec
+      |-- pi.*          Pi core tools
+      |-- extensions.*  captured Pi extension tools
+      |-- mcp.*         MCP tools when enabled
+      |-- agents.*      Main-routed tier/policy workers when enabled
+      `-- workflow      thin TypeScript orchestration helpers
+      |
+      v
+  bounded result
+      |
+      v
+  Pi Main
 ```
 
 Mechanical tool orchestration stays inside one runtime execution. Intermediate reads, searches, loops, filtering, and aggregation do not require a model round trip for every tool call.
@@ -53,14 +54,14 @@ Requires Node.js 24+ and Pi 0.80.6+.
 
 ## Start here
 
-- **[Usage Guide](docs/usage.md)**: Code Mode, autonomous subagent routing, direct AGY/Droid adapters, workflows, recursion, troubleshooting.
+- **[Usage Guide](docs/usage.md)**: Code Mode, built-in Todo, autonomous subagent routing, direct AGY/Droid adapters, workflows, recursion, troubleshooting.
 - **[Subagents & Workflows Guide](docs/subagents-and-workflows.md)**: Main-owned delegation, tier/policy rules, fan-out, and lifecycle.
 - **[Configuration Reference](docs/configuration.md)**: every Lean V2 configuration field plus tier/policy overrides.
 - **[Architecture](docs/lean-code-mode.md)**: implementation boundaries and removed systems.
 
 ## Code Mode
 
-The model-facing execution gateway is `fabric_exec`.
+The model-facing execution gateway for programmatic tool calling is `fabric_exec`. The built-in `todo` tool is a separate direct Main tool. Nested Code Mode actions stay under `fabric_exec`.
 
 ```ts
 const [manifest, sources] = await Promise.all([
@@ -85,6 +86,30 @@ Lean keeps useful Code Mode visibility without restoring the old control-plane s
 - running nested calls show concise tool/agent headlines;
 - `write` and `edit` calls show bounded diff previews;
 - `/fabric` shows the current one-shot/recursive worker tree and live output.
+
+## Built-in todo
+
+`todo` is a Lean-owned, directly model-facing tool for non-trivial multi-step work. It is intentionally not part of `fabric_exec`, is not captured as an extension tool, and is re-asserted alongside `fabric_exec` when Full Code Mode refreshes the active tool set.
+
+Each call submits the complete current list:
+
+```json
+{
+  "todos": [
+    { "content": "Inspect runtime", "status": "completed" },
+    {
+      "content": "Implement todo ownership",
+      "status": "in_progress",
+      "activeForm": "Implementing todo ownership"
+    },
+    { "content": "Run verification", "status": "pending" }
+  ]
+}
+```
+
+Use an empty `todos` array to clear the list. The list is session-local and resets on session start/shutdown. `content` is capped at 200 characters, `activeForm` at 120 characters, and the list at 64 items so Todo remains bounded coordination state and does not become another scratchpad.
+
+The MVP deliberately has no persistence, task IDs, dependencies, priorities, or `/todo` editing commands.
 
 ## Captured Pi extension tools
 
