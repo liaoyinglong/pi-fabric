@@ -43,7 +43,7 @@ const failedDetails = (
   }
   return createFabricPersistedExecutionDetails({
     success: false,
-    trace: recorder.seal(outcome, [], `${outcome} execution`),
+    trace: recorder.seal(outcome, `${outcome} execution`),
   });
 };
 
@@ -123,7 +123,7 @@ describe("Fabric outer tool lifecycle", () => {
     const recorder = new FabricExecutionTraceRecorder();
     const details = createFabricPersistedExecutionDetails({
       success: true,
-      trace: recorder.seal("succeeded", []),
+      trace: recorder.seal("succeeded"),
     });
     const { final, toolErrors } = await executeThroughPiLifecycle(details);
     expect(final.isError).toBe(false);

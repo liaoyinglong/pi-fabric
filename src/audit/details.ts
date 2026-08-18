@@ -1,5 +1,5 @@
 import {
-  isFabricExecutionTraceV1,
+  readFabricExecutionTraceV1,
   type FabricExecutionTraceOperationV1,
   type FabricExecutionTraceV1,
 } from "./trace.js";
@@ -9,20 +9,14 @@ export const FABRIC_EXECUTION_DETAILS_MAX_BYTES = 512 * 1024;
 export interface FabricPersistedExecutionDetailsV1 {
   success: boolean;
   trace: FabricExecutionTraceV1;
-  /** Rich render audits persisted verbatim (minus in-memory media) so a resumed transcript re-renders — and expands — exactly like the live one. */
+  /** Rich render audits persisted verbatim (minus in-memory media). */
   audits: FabricLegacyRenderAudit[];
-  phases: string[];
   error?: string;
   outputFormat?: "yaml" | "json";
   outputFormatStartLine?: number;
   outputFormatLines?: number;
 }
 
-/**
- * The audit fields that cross into the session record; read back by
- * {@link legacyAudit}. In-memory-only payloads (image blocks, media notes,
- * correlation ids) never persist.
- */
 export interface FabricPersistableAuditInput {
   ref: string;
   tool?: string;
@@ -47,7 +41,7 @@ export interface FabricLegacyRenderAudit {
   result?: unknown;
   resultTruncated?: boolean;
   preview?: unknown;
-  /** Set only when reconstructed from the durable trace: args are privacy-projected and results/previews are not retained. */
+  /** Set only when reconstructed from the durable trace. */
   fromTrace?: boolean;
   startedAt?: number;
   endedAt?: number;
@@ -60,7 +54,6 @@ export interface FabricExecutionRenderDetails {
   outputFormat?: "yaml" | "json";
   outputFormatStartLine?: number;
   outputFormatLines?: number;
-  phases: string[];
   audits: FabricLegacyRenderAudit[];
 }
 
@@ -85,20 +78,10 @@ const persistableAudit = (audit: FabricPersistableAuditInput): FabricLegacyRende
     ...(audit.endedAt !== undefined ? { endedAt: audit.endedAt } : {}),
   });
 
-/**
- * Creates the only object stored in final fabric_exec details. The
- * privacy-projected trace stays the functional record for compaction and tool
- * ownership; rich call audits persist verbatim (minus in-memory media) so a
- * resumed transcript re-renders and expands exactly like the live one — the
- * collapsed display, not the session record, is the visual boundary. The
- * aggregate object, not each member independently, is bound; display-only
- * audits trim before the functional trace.
- */
 export const createFabricPersistedExecutionDetails = (input: {
   success: boolean;
   trace: FabricExecutionTraceV1;
   audits?: readonly FabricPersistableAuditInput[];
-  phases?: readonly string[];
   error?: string;
   outputFormat?: "yaml" | "json";
   outputFormatStartLine?: number;
@@ -108,7 +91,6 @@ export const createFabricPersistedExecutionDetails = (input: {
     success: input.success,
     trace: cloneTrace(input.trace),
     audits: (input.audits ?? []).map(persistableAudit),
-    phases: (input.phases ?? []).filter((phase): phase is string => typeof phase === "string"),
     ...(typeof input.error === "string" && input.error ? { error: input.error } : {}),
     ...(input.outputFormat ? { outputFormat: input.outputFormat } : {}),
     ...(input.outputFormatStartLine !== undefined
@@ -130,19 +112,6 @@ export const createFabricPersistedExecutionDetails = (input: {
   ) {
     details.trace.operations.pop();
     details.trace.counts.droppedOperations++;
-  }
-  while (
-    serializedBytes(details) > FABRIC_EXECUTION_DETAILS_MAX_BYTES &&
-    details.phases.length > 0
-  ) {
-    details.phases.pop();
-  }
-  while (
-    serializedBytes(details) > FABRIC_EXECUTION_DETAILS_MAX_BYTES &&
-    details.trace.phases.length > 0
-  ) {
-    details.trace.phases.pop();
-    details.trace.counts.droppedValues++;
   }
   if (serializedBytes(details) > FABRIC_EXECUTION_DETAILS_MAX_BYTES) {
     delete details.trace.error;
@@ -187,21 +156,14 @@ const auditFromOperation = (
   ...(operation.resultTruncated === true ? { resultTruncated: true } : {}),
 });
 
-/**
- * Adapts both old audit-bearing session details and current trace-only details
- * for rendering. Legacy audits win when present so old transcripts retain
- * their historical rich previews.
- */
+/** Adapts legacy audit-bearing details and current trace details for rendering. */
 export const readFabricExecutionRenderDetails = (
   value: unknown,
 ): FabricExecutionRenderDetails => {
-  if (!isRecord(value)) return { audits: [], phases: [] };
-  const trace = isFabricExecutionTraceV1(value.trace) ? value.trace : undefined;
+  if (!isRecord(value)) return { audits: [] };
+  const trace = readFabricExecutionTraceV1(value.trace);
   const oldAudits = Array.isArray(value.audits)
     ? value.audits.map(legacyAudit).filter((audit): audit is FabricLegacyRenderAudit => audit !== undefined)
-    : undefined;
-  const oldPhases = Array.isArray(value.phases)
-    ? value.phases.filter((phase): phase is string => typeof phase === "string")
     : undefined;
   return {
     ...(typeof value.success === "boolean"
@@ -228,7 +190,6 @@ export const readFabricExecutionRenderDetails = (
       value.outputFormatLines >= 0
       ? { outputFormatLines: Math.floor(value.outputFormatLines) }
       : {}),
-    phases: oldPhases ?? trace?.phases ?? [],
     audits: oldAudits ?? trace?.operations.map(auditFromOperation) ?? [],
   };
 };

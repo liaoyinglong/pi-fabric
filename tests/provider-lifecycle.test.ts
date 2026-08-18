@@ -4,7 +4,7 @@ import { ActionRegistry } from "../src/core/action-registry.js";
 import type {
   FabricInvocationContext,
   FabricProvider,
-} from "../src/protocol.js";
+} from "../src/core/execution-types.js";
 
 const context: FabricInvocationContext = {
   cwd: process.cwd(),
@@ -55,7 +55,7 @@ const invoke = (
 });
 
 describe("provider lifecycle and capability views", () => {
-  it("pins committed actions to the registered provider and rejects descriptor drift", async () => {
+  it("pins committed actions by provider and descriptor hash", async () => {
     const registry = new ActionRegistry();
     let description = "before";
     registry.register({
@@ -72,12 +72,12 @@ describe("provider lifecycle and capability views", () => {
       },
     });
 
-    const pinned = await registry.acquireCapabilityView(["demo.echo"], context);
+    const pinned = await registry.resolveCapabilities(["demo.echo"], context);
     expect(pinned.satisfied).toBe(true);
-    expect(pinned.view?.bindings["demo.echo"]).toMatchObject({
+    expect(pinned.view).toMatchObject({ digest: expect.any(String) });
+    expect(pinned.view?.bindings["demo.echo"]).toEqual({
+      ref: "demo.echo",
       provider: "demo",
-      generation: 1,
-      providerBindingId: expect.any(String),
       descriptorHash: expect.any(String),
     });
     await expect(registry.describe("demo.uncommitted", {
@@ -89,7 +89,6 @@ describe("provider lifecycle and capability views", () => {
     description = "after";
     await expect(invoke(registry, { ...context, capabilityView: pinned.view! }))
       .rejects.toThrow("Fabric capability descriptor changed: demo.echo");
-    await pinned.release();
     await registry.close();
   });
 
@@ -202,33 +201,6 @@ describe("provider lifecycle and capability views", () => {
     release();
     await first;
     await registry.close();
-  });
-
-  it("rejects scoped provider effects because Lean has no acquisition runtime", async () => {
-    const registry = new ActionRegistry();
-    registry.register({
-      name: "lease",
-      description: "Scoped lease",
-      async list() { return []; },
-      async describe(name) {
-        return name === "open"
-          ? {
-              name,
-              description: "Open a lease",
-              inputSchema: { type: "object", additionalProperties: false },
-              risk: "execute",
-              effect: { kind: "scoped", resources: ["lease:key"], ordering: "ordered" },
-            }
-          : undefined;
-      },
-      async invoke() { return "unexpected"; },
-    });
-    await expect(registry.invoke("lease.open", {}, {
-      ...context,
-      approve: async () => {},
-      audits: [],
-      maxResultChars: 10_000,
-    })).rejects.toThrow("unsupported by the Lean execution runtime");
   });
 
   it("owns provider shutdown exactly once", async () => {

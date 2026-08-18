@@ -1,4 +1,4 @@
-import type { FabricDynamicGuestDeclarations } from "../protocol.js";
+import type { FabricDynamicGuestDeclarations } from "../core/execution-types.js";
 
 export const PI_CORE_COMPATIBILITY_ARGUMENT_TYPE_NAMES = {
   read: "PiReadCompatibilityArgument",
@@ -24,7 +24,7 @@ export const GUEST_TYPE_DECLARATIONS = `
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 interface FabricActionEffect {
-  kind: "none" | "scoped" | "transactional" | "emission";
+  kind: "none" | "transactional" | "emission";
   resources?: string[];
   ordering?: "commutative" | "ordered" | "unknown";
 }
@@ -35,7 +35,7 @@ interface FabricAction {
   description: string;
   inputSchema: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
-  risk: "read" | "write" | "execute" | "network" | "agent";
+  risk: "read" | "write" | "execute" | "network";
   namespace?: string;
   effect?: FabricActionEffect;
 }
@@ -46,7 +46,7 @@ interface FabricCapabilityActionHead {
   name: string;
   description: string;
   descriptorHash: string;
-  risk: "read" | "write" | "execute" | "network" | "agent";
+  risk: "read" | "write" | "execute" | "network";
   namespace?: string;
   effect?: FabricActionEffect;
 }
@@ -310,16 +310,10 @@ export const guestTypeDeclarations = (
     GUEST_TYPE_DECLARATIONS,
   );
   if (options.coreOverrides && result.includes(PI_LOOSE_DECLARATION)) {
-    result = result.replace(
-      PI_LOOSE_DECLARATION,
-      terminatedDeclaration(options.coreOverrides),
-    );
+    result = result.replace(PI_LOOSE_DECLARATION, terminatedDeclaration(options.coreOverrides));
   }
   if (options.dynamic?.mcp && result.includes(MCP_LOOSE_DECLARATION)) {
-    result = result.replace(
-      MCP_LOOSE_DECLARATION,
-      terminatedDeclaration(options.dynamic.mcp),
-    );
+    result = result.replace(MCP_LOOSE_DECLARATION, terminatedDeclaration(options.dynamic.mcp));
   }
   if (options.dynamic?.extensions && result.includes(EXTENSIONS_LOOSE_DECLARATION)) {
     result = result.replace(

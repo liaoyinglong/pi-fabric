@@ -4,7 +4,7 @@ import { build } from "esbuild";
 const result = await build({
   entryPoints: {
     "lean-index": "src/lean-index.ts",
-    protocol: "src/protocol.ts",
+    "public-protocol": "src/public-protocol.ts",
   },
   outdir: "dist",
   entryNames: "[name]",

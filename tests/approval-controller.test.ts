@@ -20,7 +20,6 @@ const policies = {
   write: "ask" as const,
   execute: "deny" as const,
   network: "ask" as const,
-  agent: "ask" as const,
 };
 
 const tuiContext = (

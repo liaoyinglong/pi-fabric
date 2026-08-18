@@ -11,8 +11,8 @@
       "import": "./dist/lean-index.js"
     },
     "./protocol": {
-      "types": "./dist/protocol.d.ts",
-      "import": "./dist/protocol.js"
+      "types": "./dist/public-protocol.d.ts",
+      "import": "./dist/public-protocol.js"
     }
   },
   "files": [
