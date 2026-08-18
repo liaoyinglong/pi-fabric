@@ -215,7 +215,7 @@ export class LeanCodeModeRuntime {
           );
         },
       });
-      registry.register(new LeanAgentsProvider(agents));
+      registry.register(new LeanAgentsProvider(agents, this.pi));
     } else {
       registry.markUnavailable("agents", "One-shot agents are disabled in Fabric configuration");
     }

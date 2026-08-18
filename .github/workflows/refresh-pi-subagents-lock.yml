@@ -1,0 +1,33 @@
+name: Refresh pi-subagents lockfile
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["agent/pi-subagents-backend"]
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: ${{ !contains(github.event.head_commit.message, 'refresh pi-subagents lockfile') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - run: pnpm install --no-frozen-lockfile
+      - name: Commit lockfile
+        shell: bash
+        run: |
+          if git diff --quiet -- pnpm-lock.yaml; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add pnpm-lock.yaml
+          git commit -m "chore: refresh pi-subagents lockfile"
+          git push

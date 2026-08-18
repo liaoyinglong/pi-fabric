@@ -1,3 +1,4 @@
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type {
   FabricActionDescriptor,
   FabricInvocationContext,
@@ -7,11 +8,13 @@ import type {
 import { AgentManager, effectiveAgentTimeoutMs } from "./agents/manager.js";
 import type { AgentRunRequest, AgentRunResult, FabricSteeringMode } from "./agents/types.js";
 import { isFabricThinking } from "./thinking.js";
+import { PiSubagentsBridge } from "./pi-subagents-bridge.js";
 import {
   describeSubagentRouting,
   resolveSubagentRouting,
   SUBAGENT_POLICIES,
   SUBAGENT_TIERS,
+  type SubagentPolicy,
 } from "./subagents/routing.js";
 
 const emptySchema = { type: "object", properties: {}, additionalProperties: false };
@@ -121,12 +124,17 @@ const strings = (value: unknown): string[] | undefined =>
 const projectTrusted = (context: FabricInvocationContext): boolean =>
   context.extensionContext.isProjectTrusted();
 
+interface RoutedRunRequest {
+  request: AgentRunRequest;
+  policy: SubagentPolicy;
+}
+
 const runRequest = (
   raw: Record<string, unknown>,
   context: FabricInvocationContext,
   manager: AgentManager,
-): AgentRunRequest => {
-  const { args } = resolveSubagentRouting(raw, manager.cwd, {
+): RoutedRunRequest => {
+  const { args, policy } = resolveSubagentRouting(raw, manager.cwd, {
     projectTrusted: projectTrusted(context),
   });
   const runner = args.runner === "pi" || args.runner === "claude" || args.runner === "cli"
@@ -149,21 +157,24 @@ const runRequest = (
   const thinking = isFabricThinking(args.thinking) ? args.thinking : undefined;
   const tools = strings(args.tools);
   return {
-    task: String(args.task ?? ""),
-    runner,
-    ...(cli ? { cli } : {}),
-    ...(typeof args.name === "string" ? { name: args.name } : {}),
-    ...(transport ? { transport } : {}),
-    ...(typeof args.model === "string" ? { model: args.model } : inheritedModel ? { model: inheritedModel } : {}),
-    ...(thinking ? { thinking } : {}),
-    ...(tools ? { tools } : {}),
-    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-    ...(typeof args.extensions === "boolean" ? { extensions: args.extensions } : {}),
-    ...(typeof args.recursive === "boolean" ? { recursive: args.recursive } : {}),
-    ...(typeof args.worktree === "boolean" ? { worktree: args.worktree } : {}),
-    ...(typeof args.schema === "object" && args.schema !== null && !Array.isArray(args.schema)
-      ? { schema: args.schema as Record<string, unknown> }
-      : {}),
+    policy,
+    request: {
+      task: String(args.task ?? ""),
+      runner,
+      ...(cli ? { cli } : {}),
+      ...(typeof args.name === "string" ? { name: args.name } : {}),
+      ...(transport ? { transport } : {}),
+      ...(typeof args.model === "string" ? { model: args.model } : inheritedModel ? { model: inheritedModel } : {}),
+      ...(thinking ? { thinking } : {}),
+      ...(tools ? { tools } : {}),
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      ...(typeof args.extensions === "boolean" ? { extensions: args.extensions } : {}),
+      ...(typeof args.recursive === "boolean" ? { recursive: args.recursive } : {}),
+      ...(typeof args.worktree === "boolean" ? { worktree: args.worktree } : {}),
+      ...(typeof args.schema === "object" && args.schema !== null && !Array.isArray(args.schema)
+        ? { schema: args.schema as Record<string, unknown> }
+        : {}),
+    },
   };
 };
 
@@ -182,8 +193,14 @@ const compactRecursiveResult = (result: AgentRunResult): Record<string, unknown>
 export class LeanAgentsProvider implements FabricProvider {
   readonly name = "agents";
   readonly description = "Main-routed subagents using fast/balance/strong tiers and explicit capability policies";
+  readonly bridge: PiSubagentsBridge;
 
-  constructor(readonly manager: AgentManager) {}
+  constructor(
+    readonly manager: AgentManager,
+    pi: ExtensionAPI,
+  ) {
+    this.bridge = new PiSubagentsBridge(pi);
+  }
 
   async list(request: FabricProviderListRequest): Promise<FabricActionDescriptor[]> {
     const query = request.query?.toLowerCase();
@@ -202,17 +219,24 @@ export class LeanAgentsProvider implements FabricProvider {
     context: FabricInvocationContext,
   ): Promise<unknown> {
     switch (actionName) {
-      case "run":
-        return this.manager.run(runRequest(args, context, this.manager), context.signal);
-      case "spawn":
-        return this.manager.spawn(runRequest(args, context, this.manager), context.signal);
+      case "run": {
+        const routed = runRequest(args, context, this.manager);
+        if (this.bridge.supports(routed.request, routed.policy)) {
+          return this.bridge.run(routed.request, routed.policy, context);
+        }
+        return this.manager.run(routed.request, context.signal);
+      }
+      case "spawn": {
+        const routed = runRequest(args, context, this.manager);
+        return this.manager.spawn(routed.request, context.signal);
+      }
       case "recurse": {
-        const request = runRequest(args, context, this.manager);
-        if (request.runner !== "pi") {
+        const routed = runRequest(args, context, this.manager);
+        if (routed.request.runner !== "pi") {
           throw new Error("Recursive subagent tier must resolve to runner: pi");
         }
         return compactRecursiveResult(
-          await this.manager.run({ ...request, recursive: true }, context.signal),
+          await this.manager.run({ ...routed.request, recursive: true }, context.signal),
         );
       }
       case "wait":
