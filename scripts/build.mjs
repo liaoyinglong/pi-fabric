@@ -6,6 +6,7 @@ const result = await build({
     "lean-index": "src/lean-index.ts",
     protocol: "src/protocol.ts",
     "runtime-v2": "src/runtime-v2.ts",
+    "fabric-runtime-v2": "src/fabric-runtime-v2.ts",
     worker: "src/worker-dispatch.ts",
   },
   outdir: "dist",
