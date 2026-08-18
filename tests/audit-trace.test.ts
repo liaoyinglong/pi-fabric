@@ -52,7 +52,7 @@ const execute = async (provider: FabricProvider, code: string) => {
 };
 
 describe("Fabric execution trace V1", () => {
-  it("records a successful provider call without persisting argument values", async () => {
+  it("records a successful provider call without persisting argument values in the trace", async () => {
     const result = await execute(
       demoProvider(),
       'return tools.call({ ref: "demo.echo", args: { value: "secret-value" } });',
@@ -91,7 +91,7 @@ describe("Fabric execution trace V1", () => {
     expect(JSON.stringify(result.trace)).not.toContain("hidden");
   });
 
-  it("records provider invocation failures without leaking provider errors", async () => {
+  it("keeps provider failure details in rich audits while the functional trace stays safe", async () => {
     const result = await execute(
       demoProvider({
         async invoke() {
@@ -108,7 +108,12 @@ describe("Fabric execution trace V1", () => {
       failureStage: "invoke",
       args: {},
     });
-    expect(JSON.stringify(createFabricPersistedExecutionDetails(result))).not.toContain("secret");
+    expect(JSON.stringify(result.trace)).not.toContain("secret");
+    const persisted = createFabricPersistedExecutionDetails(result);
+    expect(persisted.audits[0]).toMatchObject({
+      error: "provider-secret",
+      args: { value: "argument-secret" },
+    });
   });
 
   it("round-trips trace data through persisted render details", async () => {
@@ -123,11 +128,11 @@ describe("Fabric execution trace V1", () => {
     expect(readFabricExecutionTraceV1(persisted.trace)).toEqual(result.trace);
   });
 
-  it("maps abort and timeout-like errors to stable outcomes", () => {
+  it("maps aborted signals and ordinary errors to stable outcomes", () => {
     const controller = new AbortController();
     controller.abort(new Error("cancelled"));
     expect(executionOutcomeFromError(new Error("x"), controller.signal)).toBe("aborted");
-    expect(executionOutcomeFromError(new Error("Execution timed out after 50ms"), undefined)).toBe("timed_out");
+    expect(executionOutcomeFromError(new Error("ordinary failure"), undefined)).toBe("failed");
   });
 
   it("seals manually issued operations in sequence", () => {
