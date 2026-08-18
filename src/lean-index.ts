@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, Skill } from "@earendil-works/pi-coding-agent";
 import { CapturedToolCatalog } from "./capture/catalog.js";
 import { installRegisteredToolCapture } from "./capture/interceptor.js";
 import { registerLeanFabricCommand } from "./commands/lean-fabric.js";
@@ -43,6 +43,41 @@ export const resolveLeanActiveTools = (
 
 export const getLeanFabricSkillPaths = (): string[] =>
   leanSkillPaths.filter((skillPath) => existsSync(skillPath));
+
+export interface LeanSystemPromptInput {
+  systemPrompt: string;
+  skills: readonly Skill[];
+  capturedTools: CapturedToolCatalog;
+  agentsEnabled: boolean;
+  mcpEnabled: boolean;
+}
+
+/**
+ * Build only turn-stable system guidance. Current-turn skill expansion,
+ * capability steering, orchestration hints, and other prompt-derived content
+ * must use the message channel instead so provider prefix caches can reuse the
+ * same system prefix across ordinary turns.
+ */
+export const buildLeanSystemPrompt = ({
+  systemPrompt,
+  skills,
+  capturedTools,
+  agentsEnabled,
+  mcpEnabled,
+}: LeanSystemPromptInput): string => {
+  const restoredSystemPrompt = restoreSkillsForFullCodePrompt(systemPrompt, skills);
+  const overrideGuidance = coreOverridePromptGuidance(capturedTools).trim();
+  const guidance = [
+    fabricExecutionKernelGuidance(true),
+    defaultFabricExecutionGuidance(true, {
+      agentsEnabled,
+      mcpEnabled,
+    }),
+    overrideGuidance || undefined,
+  ].filter((value): value is string => Boolean(value)).join("\n\n");
+
+  return `${restoredSystemPrompt}\n\n${guidance}`;
+};
 
 /**
  * Ordinary Pi subagents still discover extensions so dynamically registered
@@ -109,20 +144,17 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
   pi.on("before_agent_start", async (event) => {
     if (!runtime.ready || !pi.getActiveTools().includes("fabric_exec")) return;
     applyToolOwnership();
-    const systemPrompt = restoreSkillsForFullCodePrompt(
-      event.systemPrompt,
-      event.systemPromptOptions.skills ?? [],
-    );
-    const overrideGuidance = coreOverridePromptGuidance(capturedTools).trim();
-    const guidance = [
-      fabricExecutionKernelGuidance(true),
-      defaultFabricExecutionGuidance(true, {
+    // Deliberately do not pass event.prompt here. Anything derived from the
+    // current turn belongs in a persistent message, not the system prompt.
+    return {
+      systemPrompt: buildLeanSystemPrompt({
+        systemPrompt: event.systemPrompt,
+        skills: event.systemPromptOptions.skills ?? [],
+        capturedTools,
         agentsEnabled: runtime.config.agents.enabled,
         mcpEnabled: runtime.config.mcp.enabled,
       }),
-      overrideGuidance || undefined,
-    ].filter((value): value is string => Boolean(value)).join("\n\n");
-    return { systemPrompt: `${systemPrompt}\n\n${guidance}` };
+    };
   });
 
   pi.on("session_shutdown", async (_event, context) => {
