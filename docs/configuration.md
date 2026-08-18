@@ -83,4 +83,6 @@ Lean forces capture on and hides captured tools from the model unless they are l
 
 ## Removed configuration
 
-Lean V2 no longer reads or exposes Fabric-owned agent runner, tier/policy routing, workflow, child-run retention, session export, todo, or model-driven approval configuration. Legacy keys are ignored by normalization and can be removed from existing config files.
+Lean V2 always exposes Pi core tools and captured extension tools inside `fabric_exec`; the legacy `fullCodeMode` switch and `schema.mode` orchestration mode are ignored and no longer appear in normalized configuration.
+
+Lean V2 also no longer reads or exposes Fabric-owned agent runner, tier/policy routing, workflow, child-run retention, session export, todo, or model-driven approval configuration. Legacy keys are ignored by normalization and can be removed from existing config files.

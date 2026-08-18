@@ -1,7 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   FabricExecutionTraceRecorder,
-  FabricTraceSafeError,
   executionOutcomeFromError,
   type FabricExecutionFailureStageV1,
   type FabricExecutionTraceV1,
@@ -90,10 +89,6 @@ interface FabricExecutionPartial {
   progress?: string | undefined;
 }
 
-export interface FabricExecutionAuthorizer {
-  authorize(ref: string, parentToolCallId: string): Promise<void>;
-}
-
 export interface FabricExecutionOptions {
   code: string;
   strings?: Record<string, string>;
@@ -112,7 +107,6 @@ export class FabricExecutionService {
   constructor(
     readonly registry: ActionRegistry,
     readonly config: FabricConfig,
-    readonly authorizer?: FabricExecutionAuthorizer,
     readonly sessionApprovals = new FabricSessionApprovals(),
     readonly capturedTools?: CapturedToolCatalog,
   ) {}
@@ -126,8 +120,6 @@ export class FabricExecutionService {
     const traceRecorder = new FabricExecutionTraceRecorder();
 
     const dependencies = await loadRuntimeDependencies();
-    const effectiveFullCodeMode =
-      this.config.fullCodeMode || this.config.schema.mode === "enforce";
     const unavailable = new Map(
       this.registry.unavailableProviders().map((entry) => [entry.name, entry.reason]),
     );
@@ -140,17 +132,15 @@ export class FabricExecutionService {
       update() {},
       ...(this.#capabilityView ? { capabilityView: this.#capabilityView } : {}),
     });
-    const coreOverrideDeclarations = effectiveFullCodeMode
-      ? dependencies.buildCoreOverrideGuestDeclarations(
-          this.capturedTools?.list().map((entry) => ({
-            name: entry.name,
-            inputSchema: entry.definition.parameters,
-          })) ?? [],
-        )
-      : undefined;
+    const coreOverrideDeclarations = dependencies.buildCoreOverrideGuestDeclarations(
+      this.capturedTools?.list().map((entry) => ({
+        name: entry.name,
+        inputSchema: entry.definition.parameters,
+      })) ?? [],
+    );
     const checked = dependencies.typeCheckFabricCode(
       options.code,
-      dependencies.guestTypeDeclarations(effectiveFullCodeMode, {
+      dependencies.guestTypeDeclarations({
         excludeGlobals: [...unavailable.keys()],
         dynamic: dependencies.buildDynamicGuestDeclarations(guestTypeSources),
         ...(coreOverrideDeclarations ? { coreOverrides: coreOverrideDeclarations } : {}),
@@ -188,20 +178,6 @@ export class FabricExecutionService {
     );
     const audits: FabricCallAudit[] = [];
     const phases: string[] = [];
-
-    const fullCodeProvider = (value: string): "pi" | "extensions" | undefined => {
-      const separator = value.indexOf(".");
-      const provider = separator > 0 ? value.slice(0, separator) : value;
-      return provider === "pi" || provider === "extensions" ? provider : undefined;
-    };
-    const guardFullCodeRef = (ref: string): void => {
-      if (effectiveFullCodeMode) return;
-      const provider = fullCodeProvider(ref);
-      if (!provider) return;
-      throw new FabricTraceSafeError(
-        `Fabric full code mode is disabled; call ${provider === "pi" ? "Pi core" : "registered extension"} tools directly outside fabric_exec`,
-      );
-    };
 
     let currentProgress: string | undefined;
     let emitPending = false;
@@ -301,32 +277,9 @@ export class FabricExecutionService {
       callContext: typeof baseContext & { signal: AbortSignal },
     ): Promise<unknown> => {
       const traceOperation = traceRecorder.issueCall(ref, args);
-      try {
-        guardFullCodeRef(ref);
-      } catch (error) {
-        traceOperation.fail(
-          "guard",
-          error,
-          executionOutcomeFromError(error, callContext.signal),
-        );
-        throw error;
-      }
       return this.registry.invoke(ref, args, {
         ...callContext,
-        ...(this.authorizer
-          ? {
-              authorize: (action) =>
-                this.authorizer!.authorize(action.ref, options.parentToolCallId),
-            }
-          : {}),
-        approve: async (action, preparedArgs) => {
-          if (action.ref === "schema.commit") {
-            await approval.approve({ ...action, risk: "write" }, preparedArgs);
-            await approval.approve({ ...action, risk: "execute" }, preparedArgs);
-            return;
-          }
-          await approval.approve(action, preparedArgs);
-        },
+        approve: (action, preparedArgs) => approval.approve(action, preparedArgs),
         audits,
         maxResultChars: this.config.executor.maxNestedResultChars,
         traceOperation,
@@ -360,8 +313,7 @@ export class FabricExecutionService {
                       !callContext.capabilityView ||
                       Object.values(callContext.capabilityView.bindings)
                         .some((binding) => binding.provider === provider.name),
-                    )
-                    .filter((provider) => effectiveFullCodeMode || !fullCodeProvider(provider.name)),
+                    ),
               );
             case "fabric.$catalog":
               return traceAttempt(
@@ -370,13 +322,10 @@ export class FabricExecutionService {
                 runtimeSignal,
                 async (setStage) => {
                   const provider = typeof args.provider === "string" ? args.provider : undefined;
-                  setStage("guard");
-                  if (provider) guardFullCodeRef(`${provider}.*`);
                   setStage(provider && !this.registry.has(provider) ? "resolve" : "invoke");
                   return this.registry.catalog(callContext, {
                     ...(provider ? { provider } : {}),
                     ...(typeof args.limit === "number" ? { limit: args.limit } : {}),
-                    includeProvider: (name) => effectiveFullCodeMode || !fullCodeProvider(name),
                   });
                 },
               );
@@ -386,14 +335,12 @@ export class FabricExecutionService {
                 args,
                 runtimeSignal,
                 async (setStage) => {
-                  setStage("guard");
-                  if (typeof args.provider === "string") guardFullCodeRef(`${args.provider}.*`);
                   setStage(
                     typeof args.provider === "string" && !this.registry.has(args.provider)
                       ? "resolve"
                       : "invoke",
                   );
-                  const actions = await this.registry.list(
+                  return this.registry.list(
                     {
                       ...(typeof args.provider === "string" ? { provider: args.provider } : {}),
                       ...(typeof args.namespace === "string" ? { namespace: args.namespace } : {}),
@@ -402,7 +349,6 @@ export class FabricExecutionService {
                     },
                     callContext,
                   );
-                  return actions.filter((action) => effectiveFullCodeMode || !fullCodeProvider(action.provider));
                 },
               );
             case "fabric.$search":
@@ -410,14 +356,12 @@ export class FabricExecutionService {
                 "fabric.discovery.search",
                 args,
                 runtimeSignal,
-                async () => {
-                  const actions = await this.registry.search(
+                () =>
+                  this.registry.search(
                     String(args.query ?? ""),
                     callContext,
                     typeof args.limit === "number" ? args.limit : undefined,
-                  );
-                  return actions.filter((action) => effectiveFullCodeMode || !fullCodeProvider(action.provider));
-                },
+                  ),
               );
             case "fabric.$describe":
               return traceAttempt(
@@ -425,11 +369,8 @@ export class FabricExecutionService {
                 args,
                 runtimeSignal,
                 async (setStage) => {
-                  const targetRef = String(args.ref ?? "");
-                  setStage("guard");
-                  guardFullCodeRef(targetRef);
                   setStage("resolve");
-                  return this.registry.describe(targetRef, callContext);
+                  return this.registry.describe(String(args.ref ?? ""), callContext);
                 },
               );
             case "fabric.$call": {
