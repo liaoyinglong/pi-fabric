@@ -23,4 +23,14 @@ describe("approval config normalization", () => {
     });
     expect("model" in config.approvals).toBe(false);
   });
+
+  it("does not expose legacy code-mode or schema switches", () => {
+    const config = normalizeFabricConfig({
+      fullCodeMode: false,
+      schema: { mode: "enforce" },
+    });
+
+    expect("fullCodeMode" in config).toBe(false);
+    expect("schema" in config).toBe(false);
+  });
 });

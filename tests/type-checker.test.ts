@@ -55,17 +55,8 @@ describe("Fabric guest type checker", () => {
     expect(result.errors).toEqual([]);
   });
 
-  it("omits Pi and captured extensions outside full code mode while retaining MCP", () => {
-    const declarations = guestTypeDeclarations(false);
-    expect(declarations).not.toContain("declare const pi: PiToolsApi");
-    expect(declarations).not.toContain("declare const extensions: FabricExtensionsApi");
-    expect(declarations).toContain("declare const mcp: FabricMcpApi");
-    expect(declarations).not.toContain("declare const agents:");
-    expect(declarations).not.toContain("declare const workflow:");
-  });
-
   it("excludes globals for providers marked unavailable", () => {
-    const declarations = guestTypeDeclarations(false, { excludeGlobals: ["mcp"] });
+    const declarations = guestTypeDeclarations({ excludeGlobals: ["mcp"] });
     expect(declarations).not.toContain("declare const mcp: FabricMcpApi;");
     const result = typeCheckFabricCode(
       'return mcp.call({ server: "docs", tool: "lookup" });',

@@ -59,21 +59,16 @@ export interface FabricToolCaptureConfig {
 }
 
 /**
- * Lean V2 config. `fullCodeMode` and `schema.mode` remain broad at the type
- * boundary only so ExecutionService's low-level unit tests can exercise legacy
- * branches. The V2 loader always normalizes them to true/off respectively.
- *
- * Agent runners, workflow scheduling, and transient todo state intentionally
- * do not belong to this config. Those concerns are owned by the calling agent.
+ * Lean V2 configuration contains execution mechanics only.
+ * Agent runners, workflow scheduling, schema orchestration, and transient todo
+ * state are owned by the calling agent rather than Fabric.
  */
 export interface FabricConfig {
-  fullCodeMode: boolean;
   executor: FabricExecutorConfig;
   approvals: FabricApprovalConfig;
   mcp: FabricMcpConfig;
   capture: FabricToolCaptureConfig;
   ui: { updateDebounceMs: number };
-  schema: { mode: "off" | "audit" | "enforce" };
 }
 
 export const MIN_HOST_CALL_TIMEOUT_MS = 1_000;
@@ -90,7 +85,6 @@ export const maxExecutorMemoryLimitBytes = (runtime: FabricExecutorRuntime): num
     : MAX_EXECUTOR_MEMORY_LIMIT_BYTES;
 
 export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
-  fullCodeMode: true,
   executor: {
     runtime: "quickjs",
     timeoutMs: 120_000,
@@ -135,7 +129,6 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
     advisory: { mode: "disabled", threshold: 0.9, maxPerSession: 0, budget: 0 },
   },
   ui: { updateDebounceMs: 100 },
-  schema: { mode: "off" },
 };
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -207,7 +200,6 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
       : "changed";
 
   return {
-    fullCodeMode: true,
     executor: {
       runtime,
       timeoutMs: numberValue(
@@ -265,7 +257,6 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
       advisory: { ...DEFAULT_FABRIC_CONFIG.capture.advisory },
     },
     ui: { updateDebounceMs: 100 },
-    schema: { mode: "off" },
   };
 };
 

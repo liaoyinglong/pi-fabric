@@ -40,7 +40,6 @@ const execute = async (provider: FabricProvider, code: string) => {
   const registry = new ActionRegistry();
   registry.register(provider);
   const config = structuredClone(DEFAULT_FABRIC_CONFIG);
-  config.fullCodeMode = false;
   config.approvals.read = "allow";
   return new FabricExecutionService(registry, config).execute({
     code,

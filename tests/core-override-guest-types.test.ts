@@ -10,7 +10,7 @@ import { typeCheckFabricCode } from "../src/runtime/type-checker.js";
 const declarationsFor = (...sources: FabricCoreOverrideTypeSource[]): string => {
   const coreOverrides = buildCoreOverrideGuestDeclarations(sources);
   if (!coreOverrides) throw new Error("Expected a core override declaration");
-  return guestTypeDeclarations(true, { coreOverrides });
+  return guestTypeDeclarations({ coreOverrides });
 };
 
 describe("captured core override guest declarations", () => {
@@ -170,7 +170,7 @@ return "reachable";
   });
 
   it("leaves the static declarations untouched without overrides", () => {
-    expect(guestTypeDeclarations(true)).toBe(GUEST_TYPE_DECLARATIONS);
+    expect(guestTypeDeclarations()).toBe(GUEST_TYPE_DECLARATIONS);
     expect(buildCoreOverrideGuestDeclarations([])).toBeUndefined();
   });
 });

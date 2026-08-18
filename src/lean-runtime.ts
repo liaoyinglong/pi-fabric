@@ -58,8 +58,6 @@ const leanConfig = (
     agentDir,
     projectTrusted,
   });
-  config.fullCodeMode = true;
-  config.schema.mode = "off";
   config.capture.enabled = true;
   config.capture.hideFromModel = true;
   config.capture.advisory.mode = "disabled";
@@ -135,7 +133,6 @@ export class LeanCodeModeRuntime {
     this.#execution = new FabricExecutionService(
       registry,
       config,
-      undefined,
       undefined,
       this.capturedTools,
     );

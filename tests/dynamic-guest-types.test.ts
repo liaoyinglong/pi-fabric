@@ -39,7 +39,7 @@ describe("buildDynamicGuestDeclarations", () => {
     expect(buildDynamicGuestDeclarations({})).toEqual({});
     expect(buildDynamicGuestDeclarations({ mcpServers: [] })).toEqual({});
     expect(buildDynamicGuestDeclarations({ extensionTools: [] })).toEqual({});
-    const declarations = guestTypeDeclarations(true, {
+    const declarations = guestTypeDeclarations({
       dynamic: buildDynamicGuestDeclarations({}),
     });
     expect(declarations).toContain("declare const mcp: FabricMcpApi;");
@@ -61,7 +61,7 @@ describe("buildDynamicGuestDeclarations", () => {
 
   it("keeps the open-object index signature when additionalProperties is not false", () => {
     const dynamic = buildDynamicGuestDeclarations({ mcpServers: [githubServer] });
-    const declarations = guestTypeDeclarations(true, { dynamic });
+    const declarations = guestTypeDeclarations({ dynamic });
     // search_repositories is open: unexpected extra keys still compile.
     const open = typeCheckFabricCode(
       'await mcp.github.search_repositories({ query: "q", anything: 1 }); return "ok";',
@@ -72,7 +72,7 @@ describe("buildDynamicGuestDeclarations", () => {
 
   it("fails type-check on arity violations for typed mcp tools", () => {
     const dynamic = buildDynamicGuestDeclarations({ mcpServers: [githubServer] });
-    const declarations = guestTypeDeclarations(true, { dynamic });
+    const declarations = guestTypeDeclarations({ dynamic });
     const arity = typeCheckFabricCode(
       'await mcp.github.get_repo(); return "never";',
       declarations,
@@ -93,7 +93,7 @@ describe("buildDynamicGuestDeclarations", () => {
 
   it("fails type-check on unexpected keys for closed mcp tool schemas", () => {
     const dynamic = buildDynamicGuestDeclarations({ mcpServers: [githubServer] });
-    const declarations = guestTypeDeclarations(true, { dynamic });
+    const declarations = guestTypeDeclarations({ dynamic });
     const extra = typeCheckFabricCode(
       'await mcp.github.get_repo({ owner: "o", repo: "r", branchs: "main" }); return "never";',
       declarations,
@@ -106,7 +106,7 @@ describe("buildDynamicGuestDeclarations", () => {
 
   it("accepts correctly-shaped mcp calls and keeps management verbs typed", () => {
     const dynamic = buildDynamicGuestDeclarations({ mcpServers: [githubServer] });
-    const declarations = guestTypeDeclarations(true, { dynamic });
+    const declarations = guestTypeDeclarations({ dynamic });
     const ok = typeCheckFabricCode(
       `
 const repo = await mcp.github.get_repo({ owner: "octo", repo: "hello" });
@@ -122,7 +122,7 @@ return { repo, one };
 
   it("leaves unknown servers and tools as runtime-resolved calls", () => {
     const dynamic = buildDynamicGuestDeclarations({ mcpServers: [githubServer] });
-    const declarations = guestTypeDeclarations(true, { dynamic });
+    const declarations = guestTypeDeclarations({ dynamic });
     // Unknown server/tool names are property-miss diagnostics, suppressed by
     // design — they resolve or reject at dispatch exactly like the loose
     // declarations before this feature.
@@ -155,7 +155,7 @@ return { repo, one };
     expect(dynamic.mcp).toContain(`  "my-server": FabricMcpServer_my_server;`);
     expect(dynamic.mcp).toContain("  do_thing(args?: { q?: string })");
     expect(dynamic.mcp).toContain('  "do-thing"(args?: { q?: string })');
-    const declarations = guestTypeDeclarations(true, { dynamic });
+    const declarations = guestTypeDeclarations({ dynamic });
     const viaSanitized = typeCheckFabricCode(
       'await mcp.my_server.do_thing({ q: "x" }); return "ok";',
       declarations,
@@ -224,7 +224,7 @@ return { repo, one };
     );
   });
 
-  it("types extension tools with their captured parameters in full code mode", () => {
+  it("types extension tools with their captured parameters", () => {
     const dynamic = buildDynamicGuestDeclarations({
       extensionTools: [
         {
@@ -239,7 +239,7 @@ return { repo, one };
     });
     expect(dynamic.extensions).toContain("interface FabricExtensionsApiDynamic {");
     expect(dynamic.extensions).toContain("verbose?: boolean");
-    const declarations = guestTypeDeclarations(true, { dynamic });
+    const declarations = guestTypeDeclarations({ dynamic });
     expect(declarations).toContain("declare const extensions: FabricExtensionsApiDynamic;");
     const bad = typeCheckFabricCode(
       "await extensions.project_status({ verbise: true }); return 'never';",
@@ -254,30 +254,9 @@ return { repo, one };
     expect(good.errors).toEqual([]);
   });
 
-  it("ignores the extensions replacement in orchestration-only mode", () => {
-    const dynamic = buildDynamicGuestDeclarations({
-      extensionTools: [
-        {
-          name: "project_status",
-          inputSchema: { type: "object", properties: {}, additionalProperties: false },
-        },
-      ],
-    });
-    const declarations = guestTypeDeclarations(false, { dynamic });
-    expect(declarations).not.toContain("FabricExtensionsApiDynamic");
-    expect(declarations).not.toContain("declare const extensions:");
-  });
-
-  it("still applies the mcp replacement in orchestration-only mode", () => {
-    const dynamic = buildDynamicGuestDeclarations({ mcpServers: [githubServer] });
-    const declarations = guestTypeDeclarations(false, { dynamic });
-    expect(declarations).toContain("} & FabricMcpManagement;");
-    expect(declarations).not.toContain("declare const mcp: FabricMcpApi;");
-  });
-
   it("keeps the loose surface when the mcp global is excluded", () => {
     const dynamic = buildDynamicGuestDeclarations({ mcpServers: [githubServer] });
-    const declarations = guestTypeDeclarations(true, {
+    const declarations = guestTypeDeclarations({
       excludeGlobals: ["mcp"],
       dynamic,
     });
@@ -307,7 +286,7 @@ return { repo, one };
     expect(dynamic.extensions).toContain("tags?: Array<string>");
     expect(dynamic.extensions).toContain("pair?: [string, number]");
     expect(dynamic.extensions).toContain("maybe?: string | null");
-    const declarations = guestTypeDeclarations(true, { dynamic });
+    const declarations = guestTypeDeclarations({ dynamic });
     const ok = typeCheckFabricCode(
       'await extensions.mixed({ mode: "fast", tags: ["a"], pair: ["x", 1], maybe: null }); return "ok";',
       declarations,
@@ -316,6 +295,6 @@ return { repo, one };
   });
 
   it("leaves the static declarations untouched when no dynamic option is given", () => {
-    expect(guestTypeDeclarations(true)).toBe(GUEST_TYPE_DECLARATIONS);
+    expect(guestTypeDeclarations()).toBe(GUEST_TYPE_DECLARATIONS);
   });
 });

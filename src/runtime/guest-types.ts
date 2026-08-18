@@ -286,11 +286,6 @@ declare function setInterval(handler: (...args: any[]) => void, timeout?: number
 declare function clearInterval(handle: number): void;
 `;
 
-const FULL_CODE_GLOBAL_DECLARATIONS = [
-  "declare const pi: PiToolsApi;\n",
-  "declare const extensions: FabricExtensionsApi;\n",
-];
-
 const PI_LOOSE_DECLARATION = "declare const pi: PiToolsApi;\n";
 const MCP_LOOSE_DECLARATION = "declare const mcp: FabricMcpApi;\n";
 const EXTENSIONS_LOOSE_DECLARATION = "declare const extensions: FabricExtensionsApi;\n";
@@ -308,20 +303,13 @@ const terminatedDeclaration = (block: string): string =>
   block.endsWith("\n") ? block : `${block}\n`;
 
 export const guestTypeDeclarations = (
-  fullCodeMode: boolean,
   options: FabricGuestDeclarationOptions = {},
 ): string => {
-  const base = fullCodeMode
-    ? GUEST_TYPE_DECLARATIONS
-    : FULL_CODE_GLOBAL_DECLARATIONS.reduce(
-        (declarations, declaration) => declarations.replace(declaration, ""),
-        GUEST_TYPE_DECLARATIONS,
-      );
   let result = (options.excludeGlobals ?? []).reduce(
     (declarations, name) => declarations.replace(globalDeclarationLine(name), ""),
-    base,
+    GUEST_TYPE_DECLARATIONS,
   );
-  if (fullCodeMode && options.coreOverrides && result.includes(PI_LOOSE_DECLARATION)) {
+  if (options.coreOverrides && result.includes(PI_LOOSE_DECLARATION)) {
     result = result.replace(
       PI_LOOSE_DECLARATION,
       terminatedDeclaration(options.coreOverrides),

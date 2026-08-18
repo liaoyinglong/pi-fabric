@@ -141,7 +141,6 @@ describe("FabricExecutionService", () => {
       },
     });
     const config = structuredClone(DEFAULT_FABRIC_CONFIG);
-    config.fullCodeMode = false;
     config.executor.timeoutMs = 50;
     config.approvals.read = "allow";
     const result = await new FabricExecutionService(registry, config).execute({
