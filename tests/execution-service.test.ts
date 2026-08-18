@@ -39,7 +39,7 @@ describe("FabricExecutionService", () => {
     const registry = new ActionRegistry();
     const config = structuredClone(DEFAULT_FABRIC_CONFIG);
     config.ui.updateDebounceMs = 0;
-    const partials: Array<{ progress?: string }> = [];
+    const partials: Array<{ progress?: string | undefined }> = [];
 
     const result = await new FabricExecutionService(registry, config).execute({
       code: 'await tools.progress({ message: "Halfway" }); return "done";',
