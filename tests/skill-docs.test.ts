@@ -66,13 +66,9 @@ const packFiles = (): Set<string> => {
   try {
     const command = process.platform === "win32" ? process.env.ComSpec ?? "cmd.exe" : "pnpm";
     const args = process.platform === "win32"
-      ? ["/d", "/s", "/c", "pnpm", "pack", "--pack-destination", destination]
-      : ["pack", "--pack-destination", destination];
-    execFileSync(command, args, {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      env: { ...process.env, npm_config_ignore_scripts: "true" },
-    });
+      ? ["/d", "/s", "/c", "pnpm", "pack", "--config.ignore-scripts=true", "--pack-destination", destination]
+      : ["pack", "--config.ignore-scripts=true", "--pack-destination", destination];
+    execFileSync(command, args, { cwd: process.cwd(), encoding: "utf8" });
 
     const tarballs = fs.readdirSync(destination).filter((entry) => entry.endsWith(".tgz"));
     expect(tarballs).toHaveLength(1);
