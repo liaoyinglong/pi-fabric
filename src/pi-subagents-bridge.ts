@@ -22,6 +22,18 @@ export const PI_SUBAGENT_POLICY_AGENTS: Partial<Record<SubagentPolicy, string>> 
   modify: "fabric-modify",
 };
 
+const PI_SUBAGENT_POLICY_TOOLS: Partial<Record<SubagentPolicy, readonly string[]>> = {
+  inspect: ["read", "grep", "find", "ls"],
+  execute: ["read", "grep", "find", "ls", "bash"],
+  modify: ["read", "grep", "find", "ls", "bash", "edit", "write"],
+};
+
+const sameToolset = (actual: readonly string[] | undefined, expected: readonly string[]): boolean => {
+  if (!actual || actual.length !== expected.length) return false;
+  const actualSet = new Set(actual);
+  return expected.every((tool) => actualSet.has(tool));
+};
+
 const completedStatus = (
   status: SubagentDelegationResponse["status"],
 ): AgentRunResult["status"] => {
@@ -60,7 +72,7 @@ const responseText = (response: SubagentDelegationResponse): {
   if (!("result" in response) || !response.result) return { text: "" };
   if (response.result.kind === "text") return { text: response.result.text };
   return {
-    text: JSON.stringify(response.result.value),
+    text: JSON.stringify(response.result.value) ?? "null",
     value: response.result.value,
   };
 };
@@ -113,12 +125,17 @@ export class PiSubagentsBridge {
   constructor(readonly pi: ExtensionAPI) {}
 
   supports(request: AgentRunRequest, policy: SubagentPolicy): boolean {
+    const expectedTools = PI_SUBAGENT_POLICY_TOOLS[policy];
     return (
       policy !== "isolated" &&
       request.runner === "pi" &&
       request.recursive !== true &&
       request.worktree !== true &&
-      PI_SUBAGENT_POLICY_AGENTS[policy] !== undefined
+      request.extensions === undefined &&
+      (request.transport === undefined || request.transport === "process") &&
+      PI_SUBAGENT_POLICY_AGENTS[policy] !== undefined &&
+      expectedTools !== undefined &&
+      sameToolset(request.tools, expectedTools)
     );
   }
 

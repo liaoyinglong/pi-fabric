@@ -53,6 +53,9 @@ describe("PiSubagentsBridge", () => {
 
     expect(bridge.supports(run, "inspect")).toBe(true);
     expect(bridge.supports({ ...run, worktree: true }, "isolated")).toBe(false);
+    expect(bridge.supports({ ...run, tools: ["read"] }, "inspect")).toBe(false);
+    expect(bridge.supports({ ...run, transport: "herdr" }, "inspect")).toBe(false);
+    expect(bridge.supports({ ...run, extensions: false }, "inspect")).toBe(false);
   });
 
   it("delegates a Fabric run through the structured pi-subagents event contract", async () => {
