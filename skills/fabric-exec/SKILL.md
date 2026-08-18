@@ -2,7 +2,7 @@
 name: fabric-exec
 description: >-
   Advanced reference for Pi Code Mode / `fabric_exec`. Use when a program needs
-  exact Pi, MCP, captured-extension, profile-subagent, or error-recovery
+  exact Pi, MCP, captured-extension, tier/policy subagent, or error-recovery
   contracts; routine tool calling should rely on compact ambient guidance.
 ---
 
@@ -63,36 +63,43 @@ return mcp.some_server.some_tool({ query: "..." });
 
 Use `tools.search`, `tools.describe`, and `tools.call` for unknown or computed refs. See `<skill-dir>/references/mcp.md` for MCP naming/management details.
 
-## Profile-based subagents
+## Tier/policy subagents
 
-Choose semantics, not model ids:
+Main creates the temporary role and chooses execution semantics instead of selecting a configured profile:
 
 ```ts
 const finding = await agents.run({
-  profile: "research",
+  tier: "fast",
+  policy: "inspect",
+  role: "repository scout",
+  instructions: "Return concrete file references and keep the result compact.",
   task: "Collect bounded evidence for this question.",
 });
 return finding;
 ```
 
-Discover profiles with `agents.profiles({})`. `name` is display-only in new code. Load `fabric-subagents` for profile files, runner policy, spawn/wait/steer controls, or bounded recursion.
+Tiers are `fast`, `balance`, and `strong`. Capability policies are `inspect`, `execute`, `modify`, and `isolated`. Load `fabric-subagents` for the routing policy, default mappings, configuration overrides, spawn/wait/steer controls, or bounded recursion.
+
+Use `agents.routing({})` only when active tier/policy overrides need inspection; ordinary calls should choose from the known semantic names directly.
 
 When one child context is genuinely insufficient:
 
 ```ts
 return agents.recurse({
-  profile: "deep",
+  tier: "strong",
+  policy: "inspect",
+  role: "problem decomposer",
   task: "Recursively decompose this cross-module problem and return the verified conclusion.",
 });
 ```
 
-Recursive profiles must resolve to Pi and remain bounded by configured depth, call, token, timeout, and cost guards.
+The selected tier must resolve to Pi. Recursion remains bounded by configured depth, call, token, timeout, cost, and policy guards.
 
 ## Thin workflow composition
 
 For dependent work, use ordinary sequential `await`. For a few independent operations, `Promise.all(...)` is usually clearest. Use `parallel(...)`, `pipeline(...)`, or phases only when they reduce orchestration noise.
 
-Workflow workers select the same semantic `profile` used by `agents.run`; workflow code should not choose raw model/runner/thinking policy.
+Workflow workers use the same `tier`, `policy`, and temporary `role` semantics as `agents.run`; workflow code should not choose raw model/runner/thinking/tool settings.
 
 Load `fabric-workflow` when multi-item bounded concurrency, repeated stages, or explicit phase progress makes the program clearer than plain TypeScript.
 
@@ -104,4 +111,4 @@ When an argument shape fails:
 2. Use `tools.describe({ ref })` if the schema is not known.
 3. Correct and retry only the failed call.
 
-Do not guess provider names or fall back to removed Full Fabric surfaces. Lean V2 is Code Mode + captured/MCP tools + profile-based one-shot subagents + thin workflow + bounded recursive Pi delegation.
+Do not guess provider names or fall back to removed Full Fabric surfaces. Lean V2 is Code Mode + captured/MCP tools + Main-routed tier/policy one-shot subagents + thin workflow + bounded recursive Pi delegation.

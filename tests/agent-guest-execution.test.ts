@@ -5,9 +5,9 @@ import { ActionRegistry } from "../src/core/action-registry.js";
 import { FabricExecutionService } from "../src/execution-service.js";
 import type { FabricActionDescriptor, FabricProvider } from "../src/protocol.js";
 
-const profilesDescriptor: FabricActionDescriptor = {
-  name: "profiles",
-  description: "profiles",
+const routingDescriptor: FabricActionDescriptor = {
+  name: "routing",
+  description: "routing",
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
   risk: "read",
 };
@@ -16,8 +16,13 @@ const recurseDescriptor: FabricActionDescriptor = {
   description: "recurse",
   inputSchema: {
     type: "object",
-    properties: { profile: { type: "string" }, task: { type: "string" } },
-    required: ["profile", "task"],
+    properties: {
+      tier: { type: "string", enum: ["fast", "balance", "strong"] },
+      policy: { type: "string", enum: ["inspect", "execute", "modify", "isolated"] },
+      role: { type: "string" },
+      task: { type: "string" },
+    },
+    required: ["tier", "policy", "task"],
     additionalProperties: false,
   },
   risk: "agent",
@@ -27,24 +32,31 @@ const agentsProvider = (): FabricProvider => ({
   name: "agents",
   description: "agent fixture",
   async list() {
-    return [profilesDescriptor, recurseDescriptor];
+    return [routingDescriptor, recurseDescriptor];
   },
   async describe(name) {
-    if (name === "profiles") return profilesDescriptor;
+    if (name === "routing") return routingDescriptor;
     if (name === "recurse") return recurseDescriptor;
     return undefined;
   },
   async invoke(name, args) {
-    if (name === "profiles") {
+    if (name === "routing") {
       return {
-        profiles: [{ name: "research", description: "read only" }],
-        sources: ["global"],
+        tiers: [
+          { name: "fast", description: "cheap evidence" },
+          { name: "balance", description: "routine work" },
+          { name: "strong", description: "difficult reasoning" },
+        ],
+        policies: [
+          { name: "inspect", description: "read only", tools: ["read"], worktree: false },
+        ],
+        sources: ["built-in"],
       };
     }
     if (name === "recurse") {
       return {
         id: "child-1",
-        name: String(args.profile),
+        name: String(args.role ?? `${args.tier}:${args.policy}`),
         status: "completed",
         text: String(args.task),
         turns: 1,
@@ -58,7 +70,7 @@ const agentsProvider = (): FabricProvider => ({
 
 describe("canonical agents guest execution", () => {
   it.each(["quickjs", "node-process"] as const)(
-    "dispatches agents.profiles and agents.recurse through %s ExecutionService",
+    "dispatches agents.routing and tier/policy recurse through %s ExecutionService",
     async (runtime) => {
       const registry = new ActionRegistry();
       registry.register(agentsProvider());
@@ -70,22 +82,29 @@ describe("canonical agents guest execution", () => {
       const service = new FabricExecutionService(registry, config);
       const context = { cwd: process.cwd(), hasUI: false } as ExtensionContext;
 
-      const profiles = await service.execute({
-        code: "return agents.profiles({});",
+      const routing = await service.execute({
+        code: "return agents.routing({});",
         signal: undefined,
-        parentToolCallId: `profiles-${runtime}`,
+        parentToolCallId: `routing-${runtime}`,
         context,
         onPartial() {},
       });
-      expect(profiles.success).toBe(true);
-      expect(profiles.value).toEqual({
-        profiles: [{ name: "research", description: "read only" }],
-        sources: ["global"],
+      expect(routing.success).toBe(true);
+      expect(routing.value).toEqual({
+        tiers: [
+          { name: "fast", description: "cheap evidence" },
+          { name: "balance", description: "routine work" },
+          { name: "strong", description: "difficult reasoning" },
+        ],
+        policies: [
+          { name: "inspect", description: "read only", tools: ["read"], worktree: false },
+        ],
+        sources: ["built-in"],
       });
-      expect(profiles.audits.map((audit) => audit.ref)).toEqual(["agents.profiles"]);
+      expect(routing.audits.map((audit) => audit.ref)).toEqual(["agents.routing"]);
 
       const recurse = await service.execute({
-        code: 'return agents.recurse({ profile: "deep", task: "inspect" });',
+        code: 'return agents.recurse({ tier: "strong", policy: "inspect", role: "decomposer", task: "inspect" });',
         signal: undefined,
         parentToolCallId: `recurse-${runtime}`,
         context,
@@ -94,7 +113,7 @@ describe("canonical agents guest execution", () => {
       expect(recurse.success).toBe(true);
       expect(recurse.value).toMatchObject({
         id: "child-1",
-        name: "deep",
+        name: "decomposer",
         status: "completed",
         text: "inspect",
       });

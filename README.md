@@ -5,12 +5,12 @@ A focused Programmatic Tool Calling runtime for Pi.
 Lean V2 keeps three product surfaces:
 
 1. **Code Mode (`fabric_exec`)**: one type-checked TypeScript program can call many tools, branch, loop, fan out, aggregate intermediate values, and return one bounded result to the model.
-2. **Profile-based one-shot subagents**: semantic profiles such as `research`, `explore`, `deep`, and `review` keep runner/model/thinking/tool policy in configuration and keep those choices out of call sites.
+2. **Main-routed one-shot subagents**: Main decides whether to delegate, creates a temporary role, and selects `fast` / `balance` / `strong` plus an explicit capability policy.
 3. **Thin workflow composition**: ordinary TypeScript plus `agent`, `parallel`, `pipeline`, and phase helpers orchestrate the same one-shot substrate. If plain TypeScript is clearer, use plain TypeScript.
 
-A small `agents.recurse({ profile, task })` primitive is retained for bounded recursive Pi delegation. It is a primitive separate from the removed RLM provider and workflow systems.
+A small `agents.recurse({ tier, policy, role, task })` primitive is retained for bounded recursive Pi delegation. It is separate from the removed RLM provider and workflow systems.
 
-Lean V2 physically removes the persistent Fabric product systems outside this scope: Actor, Mesh, State, Schema runtime, Memory, RLM skills/providers, Prewalk, resident hosts, Component supervision, trajectory handoff, the Fabric dashboard, and main-session Fabric compaction.
+Lean V2 physically removes the persistent Fabric product systems outside this scope: Actor, Mesh, State, Schema runtime, Memory, RLM skills/providers, Prewalk, resident hosts, Component supervision, trajectory handoff, the legacy Fabric control plane, and main-session Fabric compaction.
 
 ## Runtime shape
 
@@ -22,7 +22,7 @@ fabric_exec
   |-- pi.*          Pi core tools
   |-- extensions.*  captured Pi extension tools
   |-- mcp.*         MCP tools when enabled
-  |-- agents.*      profile-based one-shot workers when enabled
+  |-- agents.*      Main-routed tier/policy workers when enabled
   `-- workflow      thin TypeScript orchestration helpers
   |
   v
@@ -53,9 +53,9 @@ Requires Node.js 24+ and Pi 0.80.6+.
 
 ## Start here
 
-- **[Usage Guide](docs/usage.md)**: installation, Code Mode, FFF/captured tools, MCP, profiles, direct AGY/Droid CLI adapters, workflow, recursion, troubleshooting.
-- **[Subagents & Workflows Guide](docs/subagents-and-workflows.md)**: chat triggering, automatic model delegation, workflow fan-out, and execution lifecycle.
-- **[Configuration Reference](docs/configuration.md)**: every Lean V2 configuration field and default.
+- **[Usage Guide](docs/usage.md)**: Code Mode, autonomous subagent routing, direct AGY/Droid adapters, workflows, recursion, troubleshooting.
+- **[Subagents & Workflows Guide](docs/subagents-and-workflows.md)**: Main-owned delegation, tier/policy rules, fan-out, and lifecycle.
+- **[Configuration Reference](docs/configuration.md)**: every Lean V2 configuration field plus tier/policy overrides.
 - **[Architecture](docs/lean-code-mode.md)**: implementation boundaries and removed systems.
 
 ## Code Mode
@@ -78,46 +78,92 @@ Use sequential `await` when a result determines the next operation. Use `Promise
 
 ### TUI observability
 
-Lean keeps the useful original Code Mode visibility without restoring the old dashboard stack:
+Lean keeps useful Code Mode visibility without restoring the old control-plane stack:
 
-- generated TypeScript is always visible in the `fabric_exec` call card;
-- collapsed cards show the first 8 lines; `Ctrl+O` expands the complete program;
-- running nested calls show concise tool headlines such as `pi.find`, `pi.bash`, and captured/MCP refs;
-- `write` and `edit` calls show a bounded diff preview;
-- a successful program with no returned value shows only the completion/activity summary and does not create a synthetic `(no output)` result.
+- generated TypeScript is visible in the `fabric_exec` call card;
+- `Ctrl+O` expands the complete program;
+- running nested calls show concise tool/agent headlines;
+- `write` and `edit` calls show bounded diff previews;
+- `/fabric` shows the current one-shot/recursive worker tree and live output.
 
 ## Captured Pi extension tools
 
-The original Fabric capture layer is retained because it solves a core Code Mode problem: invoking executable Pi extension tools while preserving Pi's registered-tool lifecycle.
-
-Additive extension tools remain callable through `extensions.*`:
+Additive Pi extension tools remain callable through `extensions.*`:
 
 ```ts
 const files = await extensions.fffind({ pattern: "auth", path: "src" });
 return files;
 ```
 
-Core overrides remain on the core surface. With FFF override mode, use:
+Core overrides remain on the core surface. With FFF override mode, use `pi.find` / `pi.grep` inside `fabric_exec`.
 
-```ts
-const files = await pi.find({ pattern: "auth", path: "src" });
-const hits = await pi.grep({ pattern: "refreshToken", path: "src" });
-return { files, hits };
+## Main-routed subagents
+
+Main owns delegation. The user does not have to predeclare `research`, `review`, or other roles. Main creates the role needed for the current child call.
+
+Execution tier:
+
+```text
+fast     cheap bounded search/evidence/repetitive inspection
+balance  routine reasoning/debugging/implementation/verification
+strong   ambiguous/high-impact/difficult reasoning/independent review
 ```
 
-Captured tools remain registered in Pi so permission, audit, and lifecycle extensions can still observe them. Full Code Mode hides captured tools from the main model unless listed in `capture.keepVisible`.
+Capability policy:
 
-## Semantic subagent profiles
+```text
+inspect   read/search only
+execute   inspect + bash, no edits
+modify    scoped edits in current workspace
+isolated  scoped edits in a separate worktree
+```
 
-Profile definitions remain under `roles:` in configuration files for compatibility. Runtime selection uses the explicit `profile` field.
+Built-in default routing:
 
-Global profiles:
+```text
+fast     -> Pi gpt-5.6-luna, medium thinking
+balance  -> Pi gpt-5.6-terra, medium thinking
+strong   -> Pi gpt-5.6-sol, medium thinking
+```
+
+AGY and Droid remain available as CLI runner overrides; they are no longer part of the built-in tier mapping.
+
+Example:
+
+```ts
+const evidence = await agents.run({
+  tier: "fast",
+  policy: "inspect",
+  role: "repository scout",
+  instructions: "Return concrete file references and uncertainty only.",
+  task: "Find the files and call chain involved in this bug.",
+});
+
+const decision = await agents.run({
+  tier: "strong",
+  policy: "inspect",
+  role: "architecture critic",
+  task: `Challenge the likely fix using this evidence:\n${evidence.text}`,
+});
+
+return decision.text;
+```
+
+Main should prefer the lowest tier that can reliably finish the bounded task and escalate only when evidence or reasoning quality is insufficient.
+
+The public run/spawn surface intentionally excludes raw runner/model/thinking/tool/worktree routing. Those details come from tier and policy configuration.
+
+## Routing configuration
+
+Built-in defaults work with no `subagents.yaml`.
+
+Optional global override:
 
 ```text
 ~/.pi/agent/fabric/subagents.yaml
 ```
 
-Trusted project profiles:
+Optional trusted project override:
 
 ```text
 .pi/fabric/subagents.yaml
@@ -126,81 +172,71 @@ Trusted project profiles:
 Example:
 
 ```yaml
-roles:
-  research:
-    description: Cheap bounded research
-    runner: cli
-    cli: agy
-    thinking: low
-    tools: [read, grep, find, ls]
-
-  explore:
-    description: Repository exploration
+tiers:
+  fast:
     runner: pi
     model: azure-openai-responses/gpt-5.6-luna
-    thinking: low
-    tools: [read, grep, find, ls]
+    thinking: medium
 
-  deep:
-    description: Difficult reasoning or implementation
+  balance:
+    runner: pi
+    model: azure-openai-responses/gpt-5.6-terra
+    thinking: medium
+
+  strong:
     runner: pi
     model: azure-openai-responses/gpt-5.6-sol
-    thinking: high
+    thinking: medium
 
-  review:
-    description: Strong independent verification
-    runner: cli
-    cli: droid
-    thinking: high
+policies:
+  inspect:
     tools: [read, grep, find, ls]
+  execute:
+    tools: [read, grep, find, ls, bash]
+  modify:
+    tools: [read, grep, find, ls, bash, edit, write]
+    worktree: false
+  isolated:
+    tools: [read, grep, find, ls, bash, edit, write]
+    worktree: true
 ```
 
-Discover and use profiles without exposing model routing in ordinary calls:
+Only `tiers:` and `policies:` are routing configuration. There is no `roles:` / profile compatibility layer.
 
-```ts
-const catalog = await agents.profiles({});
+## Autonomous delegation policy
 
-const evidence = await agents.run({
-  profile: "explore",
-  task: "Find the files and call chain involved in this bug.",
-});
+Main delegates when isolation protects Main context, independent work can run in parallel, a cheaper worker is sufficient, independent verification materially helps, or mutation is safer in a worktree.
 
-const decision = await agents.run({
-  profile: "deep",
-  task: `Analyze this evidence and propose the safest fix:\n${evidence.text}`,
-});
+Simple tightly-coupled work stays in Main. Parallel workers must be independent; concurrent mutating workers must not overlap file ownership. Main remains responsible for synthesis, final decisions, and integration.
 
-return { catalog, decision: decision.text };
-```
-
-`name` is now only an optional display name. Older code that used a matching `name` as the selector is accepted as a compatibility fallback. New code should use `profile`.
-
-The public run/spawn surface intentionally excludes raw `runner`, `cli`, `model`, `thinking`, `tools`, or `recursive` routing fields. Change the profile when routing policy changes.
+Subagents return compact results with raw transcripts omitted. They include concrete evidence or validation, surface uncertainty, and stay inside the assigned scope.
 
 ## Minimal recursive delegation
 
-Use recursion only when one isolated child context is insufficient:
+Use recursion only when one child context is insufficient for the task:
 
 ```ts
 return agents.recurse({
-  profile: "deep",
+  tier: "strong",
+  policy: "inspect",
+  role: "problem decomposer",
   task: "Decompose this cross-module problem, delegate bounded evidence gathering as needed, and return the verified conclusion.",
 });
 ```
 
-The resolved profile must use the Pi runner. The child gets Lean Code Mode and may delegate again, subject to `agents.maxDepth`, per-execution agent-call limits, child timeout/token limits, and the shared cost ledger when `agents.budgetUsd` is configured. The result contains only the fields the parent needs and omits the complete internal run record.
-
-This is intentionally a primitive and does not revive the RLM subsystem.
+All three built-in tiers resolve to the Pi runner. Recursion remains bounded by `agents.maxDepth`, per-execution call limits, child timeouts/tokens, policy capabilities, and the shared cost ledger when configured.
 
 ## Thin workflow
 
-Workflow code chooses profiles and keeps model selection in configuration:
+Workflow code uses the same tier/policy/temporary-role contract:
 
 ```ts
 const findings = await parallel(
   ["auth", "routing", "cache"].map((topic) => () =>
     agent(`Inspect ${topic} and return bounded evidence.`, {
-      profile: "explore",
+      tier: "fast",
+      policy: "inspect",
+      role: `${topic} repository scout`,
       label: `inspect ${topic}`,
     })
   ),
@@ -209,49 +245,28 @@ const findings = await parallel(
 
 return agent(
   `Verify these findings and remove unsupported claims:\n${JSON.stringify(findings)}`,
-  { profile: "review", label: "verify" },
+  {
+    tier: "strong",
+    policy: "inspect",
+    role: "independent reviewer",
+    label: "verify",
+  },
 );
 ```
 
-For a few independent workers, plain TypeScript is preferred:
-
-```ts
-const [docs, code] = await Promise.all([
-  agents.run({ profile: "research", task: "Check upstream behavior." }),
-  agents.run({ profile: "explore", task: "Locate the implementation." }),
-]);
-return { docs, code };
-```
-
-Workflow helpers exist only when they make orchestration clearer.
+For a few independent workers, plain `Promise.all` is preferred. Workflow helpers exist only when they make orchestration clearer.
 
 ## Direct CLI adapters
 
-The generic `cli` runner invokes supported headless CLIs directly. The first adapters are `agy` (Antigravity) and `droid` (Factory Droid), so using either no longer requires installing Veda as an intermediary.
+The generic `cli` runner invokes supported headless CLIs directly. The first adapters are `agy` (Antigravity) and `droid` (Factory Droid); no Veda intermediary is required.
 
-Configure defaults in `fabric.json`:
+Tier configuration can override a tier to select a CLI backend. The adapter owns invocation arguments, portable tool mapping, model normalization, and final-result parsing; transport remains independent and can still be `process`, `tmux`, `screen`, `localterm`, or `herdr`.
 
-```json
-{
-  "agents": {
-    "cli": {
-      "adapter": "agy",
-      "agy": { "binary": "agy" },
-      "droid": { "binary": "droid" }
-    }
-  }
-}
-```
-
-Select the adapter in a semantic profile with `runner: cli` and `cli: agy` or `cli: droid`. The adapter contract owns invocation arguments, portable tool mapping, model normalization, and final-result parsing; transport remains independent and can still be `process`, `tmux`, `screen`, `localterm`, or `herdr`.
-
-Droid uses its native per-run tool restriction. Antigravity does not currently provide an equivalent headless per-run allowlist, so Fabric passes the requested tool boundary as an explicit prompt policy and leaves Antigravity's permission configuration authoritative. Fabric never turns on Antigravity's dangerous permission bypass automatically.
-
-CLI adapters are one-shot in V1: no recursive Fabric, steer/follow-up, or Fabric-triggered compaction. Adding another CLI should only require an adapter addition; AgentManager remains unchanged.
+CLI adapters are one-shot in V1: no recursive Fabric, steer/follow-up, or Fabric-triggered compaction.
 
 ## Verification
 
-`pnpm check` is the local release gate: typecheck, distributable build/artifact assertions, full Vitest suite, and dead-code analysis. GitHub Actions runs the repository checks on Ubuntu and Windows.
+`pnpm check` is the release gate: typecheck, distributable build/artifact assertions, full Vitest suite, and dead-code analysis.
 
 ## Package surface
 
@@ -270,4 +285,5 @@ User documentation packed with the package:
 docs/usage.md
 docs/configuration.md
 docs/lean-code-mode.md
+docs/subagents-and-workflows.md
 ```
