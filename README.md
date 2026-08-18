@@ -6,7 +6,7 @@ Pi Fabric is a programmatic tool-calling execution layer for Pi. It exposes one 
 
 Fabric owns execution mechanics:
 
-- sandboxed TypeScript execution with QuickJS or a disposable Node process
+- sandboxed TypeScript execution in QuickJS
 - Pi core dispatch through `pi.*`
 - captured extension dispatch through `extensions.*`
 - MCP dispatch through `mcp.*`

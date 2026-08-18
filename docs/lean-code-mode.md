@@ -41,9 +41,9 @@ Retained globals:
 
 Fabric does not add scheduling helpers. Use sequential `await` for dependency order and `Promise.all(...)` for independent work.
 
-## Executors
+## Executor
 
-QuickJS is the default sandbox. The optional `node-process` executor runs the same generated guest contract in a disposable Node subprocess. Both use the same host dispatch, cancellation, output bounds, and deadline rules.
+Lean V2 uses QuickJS as its single sandbox executor. Host calls, cancellation, output bounds, memory limits, deadline extension, and guest stack remapping are enforced around that one runtime contract.
 
 A long explicit `pi.bash` timeout can raise the enclosing execution deadline enough for that shell call. Generic provider calls do not receive a special orchestration timeout floor.
 
