@@ -61,7 +61,7 @@ Requires Node.js 24+ and Pi 0.80.6+.
 
 ## Code Mode
 
-The model-facing execution gateway for programmatic tool calling is `fabric_exec`. The built-in `todo` tool is a separate direct Main tool rather than a nested Code Mode action.
+The model-facing execution gateway for programmatic tool calling is `fabric_exec`. The built-in `todo` tool is a separate direct Main tool. Nested Code Mode actions stay under `fabric_exec`.
 
 ```ts
 const [manifest, sources] = await Promise.all([

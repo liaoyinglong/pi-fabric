@@ -20,7 +20,7 @@ lean-index
   -> registered-tool capture
 ```
 
-Only the bounded program return is intended to reach Main from Code Mode. Intermediate tool results, loops, filtering, branching, and fan-out stay inside the execution runtime. `todo` is intentionally outside that runtime because it is lightweight Main coordination state rather than a programmatic action provider.
+Only the bounded program return is intended to reach Main from Code Mode. Intermediate tool results, loops, filtering, branching, and fan-out stay inside the execution runtime. `todo` is intentionally outside that runtime because it is lightweight Main coordination state; programmatic actions stay in `fabric_exec`.
 
 ## Retained product systems
 
@@ -34,9 +34,9 @@ The Lean TUI renderer shows generated TypeScript, live nested tool headlines/pro
 
 `todo` is the only additional Lean-owned Main tool. It maintains a bounded in-memory list for non-trivial multi-step work and deliberately does not introduce a second execution or state subsystem.
 
-The contract is complete-list replacement rather than CRUD. Each item contains `content`, `status`, and optional `activeForm`; an empty list clears state. `content` is capped at 200 characters, `activeForm` at 120 characters, and the list at 64 items.
+The contract uses complete-list replacement. Each item contains `content`, `status`, and optional `activeForm`; an empty list clears state. `content` is capped at 200 characters, `activeForm` at 120 characters, and the list at 64 items.
 
-Todo state belongs to the current session lifecycle only and resets on session start/shutdown. There are no IDs, dependencies, priorities, persistence files, or command surface. This keeps it as coordination metadata rather than a replacement for the removed Fabric State/Mesh systems.
+Todo state belongs to the current session lifecycle only and resets on session start/shutdown. There are no IDs, dependencies, priorities, persistence files, or command surface. This keeps Todo as coordination metadata and leaves the removed Fabric State/Mesh systems out of Lean.
 
 `fabric_exec` and `todo` are both re-asserted in the active model-facing tool set whenever Lean ownership runs. Because both are registered by the same Fabric extension source, the capture layer excludes them from `extensions.*`; captured third-party tools can still be hidden independently.
 
