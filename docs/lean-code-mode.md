@@ -1,6 +1,6 @@
 # Lean execution architecture
 
-Pi Fabric is an execution bridge. Planning, delegation, workflows, agent memory, and model selection stay with the calling agent or external extensions.
+Pi Fabric is an execution bridge. Planning, delegation, workflows, agent lifecycle, and model selection stay with the calling agent or external extensions. Fabric may still provide bounded execution capabilities such as caller-scoped context memory, provided they do not create, schedule, or manage agents.
 
 ```text
 Pi model
