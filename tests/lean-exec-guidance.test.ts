@@ -12,8 +12,9 @@ describe("fabric_exec prompt contract", () => {
     expect(guidance).toContain("return strings");
     expect(guidance).toContain("process and require are unavailable");
     expect(guidance).toContain("Promise.all");
-    expect(guidance).toContain('tools.call({ ref: "provider.action", args: {...} })');
-    expect(guidance).toContain("no cwd option");
+    expect(guidance).toContain("tools.call({ref,args})");
+    expect(guidance).toContain("one object");
+    expect(guidance).toContain("not cwd");
     expect(guidance).toContain("settle: true");
     expect(guidance).toContain("no patch or two-argument form");
     expect(guidance).toContain("π.key");
