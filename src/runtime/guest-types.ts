@@ -199,6 +199,7 @@ type PiGrepOptions = {
   ignoreCase?: boolean;
   ic?: boolean;
   caseInsensitive?: boolean;
+  caseSensitive?: boolean;
   literal?: boolean;
   context?: number;
   ctx?: number;
