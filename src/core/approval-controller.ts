@@ -12,11 +12,11 @@ import {
 } from "@earendil-works/pi-tui";
 import { FabricTraceSafeError } from "../audit/trace.js";
 import type { FabricApprovalConfig } from "../config.js";
-import type { FabricRisk } from "../protocol.js";
+import type { FabricRisk } from "./execution-types.js";
 import type { ResolvedFabricAction } from "./action-registry.js";
 
 const inheritedRisks = (): FabricRisk[] => {
-  const allowed = new Set<FabricRisk>(["read", "write", "execute", "network", "agent"]);
+  const allowed = new Set<FabricRisk>(["read", "write", "execute", "network"]);
   return (process.env.PI_FABRIC_GRANTED_RISKS ?? "")
     .split(",")
     .filter((risk): risk is FabricRisk => allowed.has(risk as FabricRisk));

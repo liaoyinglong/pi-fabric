@@ -17,7 +17,6 @@ export interface LeanExecutionRequest {
   context: ExtensionContext;
   onPartial?: (snapshot: {
     audits: unknown[];
-    phases: string[];
     progress?: string | undefined;
   }) => void;
 }

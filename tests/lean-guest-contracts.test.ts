@@ -76,6 +76,13 @@ describe("Lean guest contract alignment", () => {
     });
   });
 
+  it("declares only Lean risk and effect classes", () => {
+    expect(GUEST_TYPE_DECLARATIONS).not.toContain('risk: "read" | "write" | "execute" | "network" | "agent"');
+    expect(GUEST_TYPE_DECLARATIONS).not.toContain('"scoped"');
+    expect(GUEST_TYPE_DECLARATIONS).toContain('risk: "read" | "write" | "execute" | "network"');
+    expect(GUEST_TYPE_DECLARATIONS).toContain('kind: "none" | "transactional" | "emission"');
+  });
+
   it("does not declare the host model registry on the tools API", () => {
     expect(GUEST_TYPE_DECLARATIONS).not.toContain("models():");
     expect(GUEST_TYPE_DECLARATIONS).not.toContain("FabricModelInfo");

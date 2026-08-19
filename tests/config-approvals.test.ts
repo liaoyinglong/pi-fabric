@@ -6,7 +6,7 @@ import {
 } from "../src/config.js";
 
 describe("approval config normalization", () => {
-  it("maps legacy auto approval to explicit ask", () => {
+  it("maps legacy auto approval to explicit ask and ignores removed agent policy", () => {
     const config = normalizeFabricConfig({
       approvals: {
         read: "auto",
@@ -23,9 +23,21 @@ describe("approval config normalization", () => {
       write: "ask",
       execute: "deny",
       network: "allow",
-      agent: "ask",
     });
+    expect("agent" in config.approvals).toBe(false);
     expect("model" in config.approvals).toBe(false);
+  });
+
+  it("maps legacy captured agent risk to the retained execute gate", () => {
+    const config = normalizeFabricConfig({
+      capture: {
+        defaultRisk: "agent",
+        risks: { delegate: "agent" },
+      },
+    });
+
+    expect(config.capture.defaultRisk).toBe("execute");
+    expect(config.capture.risks.delegate).toBe("execute");
   });
 
   it("does not expose legacy code-mode or schema switches", () => {

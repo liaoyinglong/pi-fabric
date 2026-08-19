@@ -38,7 +38,6 @@ const provider = (): FabricProvider => ({
     return name === "echo" ? (await this.list({}, context))[0] : undefined;
   },
   async invoke(_name, args, invocationContext) {
-    invocationContext.activity?.({ type: "progress", message: "echoing" });
     invocationContext.attachPreview?.({ renderer: "rich" });
     return args.value;
   },

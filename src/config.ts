@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { FabricRisk } from "./protocol.js";
+import type { FabricRisk } from "./core/execution-types.js";
 
 export type FabricResultFormat = "auto" | "yaml" | "json" | "text";
 export type FabricConfigScope = "global" | "project";
@@ -22,8 +22,6 @@ export interface FabricApprovalConfig {
   write: FabricApprovalMode;
   execute: FabricApprovalMode;
   network: FabricApprovalMode;
-  /** Generic risk class for third-party actions that delegate to another agent. */
-  agent: FabricApprovalMode;
 }
 
 export interface FabricMcpConfig {
@@ -56,11 +54,7 @@ export interface FabricToolCaptureConfig {
   advisory: FabricCapabilityAdvisoryConfig;
 }
 
-/**
- * Lean V2 configuration contains execution mechanics only.
- * Agent runners, workflow scheduling, schema orchestration, and transient todo
- * state are owned by the calling agent rather than Fabric.
- */
+/** Lean V2 configuration contains execution mechanics only. */
 export interface FabricConfig {
   executor: FabricExecutorConfig;
   approvals: FabricApprovalConfig;
@@ -90,7 +84,6 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
     write: "allow",
     execute: "allow",
     network: "allow",
-    agent: "allow",
   },
   mcp: {
     enabled: true,
@@ -146,29 +139,39 @@ const merge = (base: Record<string, unknown>, override: Record<string, unknown>)
   return result;
 };
 
-const numberValue = (value: unknown, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER): number =>
-  typeof value === "number" && Number.isFinite(value)
-    ? Math.max(min, Math.min(max, value))
-    : fallback;
+const numberValue = (
+  value: unknown,
+  fallback: number,
+  min = 0,
+  max = Number.MAX_SAFE_INTEGER,
+): number => typeof value === "number" && Number.isFinite(value)
+  ? Math.max(min, Math.min(max, value))
+  : fallback;
 const booleanValue = (value: unknown, fallback: boolean): boolean =>
   typeof value === "boolean" ? value : fallback;
 const optionalString = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() ? value.trim() : undefined;
 const stringList = (value: unknown, fallback: string[]): string[] =>
   Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === "string").map((entry) => entry.trim()).filter(Boolean)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim()).filter(Boolean)
     : [...fallback];
 
 const approvalMode = (value: unknown, fallback: FabricApprovalMode): FabricApprovalMode => {
   if (value === "allow" || value === "ask" || value === "deny") return value;
-  // Legacy model-driven auto approval fails safe to explicit approval.
   if (value === "auto") return "ask";
   return fallback;
 };
-const riskValue = (value: unknown, fallback: FabricRisk): FabricRisk =>
-  value === "read" || value === "write" || value === "execute" || value === "network" || value === "agent"
-    ? value
-    : fallback;
+
+const riskValue = (value: unknown, fallback: FabricRisk): FabricRisk => {
+  if (value === "read" || value === "write" || value === "execute" || value === "network") {
+    return value;
+  }
+  // Historical agent risk represented delegated execution. Lean V2 no longer
+  // has an agent provider; map old capture config to the retained execute gate.
+  if (value === "agent") return "execute";
+  return fallback;
+};
 
 export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfig => {
   const executor = isObject(raw.executor) ? raw.executor : {};
@@ -204,8 +207,18 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
         8 * 1024 * 1024,
         MAX_EXECUTOR_MEMORY_LIMIT_BYTES,
       ),
-      maxOutputChars: numberValue(executor.maxOutputChars, DEFAULT_FABRIC_CONFIG.executor.maxOutputChars, 1_000, 10_000_000),
-      maxNestedResultChars: numberValue(executor.maxNestedResultChars, DEFAULT_FABRIC_CONFIG.executor.maxNestedResultChars, 1_000, 20_000_000),
+      maxOutputChars: numberValue(
+        executor.maxOutputChars,
+        DEFAULT_FABRIC_CONFIG.executor.maxOutputChars,
+        1_000,
+        10_000_000,
+      ),
+      maxNestedResultChars: numberValue(
+        executor.maxNestedResultChars,
+        DEFAULT_FABRIC_CONFIG.executor.maxNestedResultChars,
+        1_000,
+        20_000_000,
+      ),
       resultFormat,
     },
     approvals: {
@@ -213,13 +226,15 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
       write: approvalMode(approvals.write, DEFAULT_FABRIC_CONFIG.approvals.write),
       execute: approvalMode(approvals.execute, DEFAULT_FABRIC_CONFIG.approvals.execute),
       network: approvalMode(approvals.network, DEFAULT_FABRIC_CONFIG.approvals.network),
-      agent: approvalMode(approvals.agent, DEFAULT_FABRIC_CONFIG.approvals.agent),
     },
     mcp: {
       enabled: booleanValue(mcp.enabled, DEFAULT_FABRIC_CONFIG.mcp.enabled),
       ...(optionalString(mcp.configPath) ? { configPath: optionalString(mcp.configPath)! } : {}),
       disableOAuth: booleanValue(mcp.disableOAuth, DEFAULT_FABRIC_CONFIG.mcp.disableOAuth),
-      allowDynamicServers: booleanValue(mcp.allowDynamicServers, DEFAULT_FABRIC_CONFIG.mcp.allowDynamicServers),
+      allowDynamicServers: booleanValue(
+        mcp.allowDynamicServers,
+        DEFAULT_FABRIC_CONFIG.mcp.allowDynamicServers,
+      ),
       callTimeoutMs: numberValue(
         mcp.callTimeoutMs,
         DEFAULT_FABRIC_CONFIG.mcp.callTimeoutMs,
@@ -259,10 +274,12 @@ export interface LoadFabricConfigOptions {
   projectTrusted?: boolean;
 }
 
-export const fabricConfigPath = (scope: FabricConfigScope, options: LoadFabricConfigOptions): string =>
-  scope === "global"
-    ? path.join(options.agentDir, "fabric.json")
-    : path.join(options.cwd, ".pi", "fabric.json");
+export const fabricConfigPath = (
+  scope: FabricConfigScope,
+  options: LoadFabricConfigOptions,
+): string => scope === "global"
+  ? path.join(options.agentDir, "fabric.json")
+  : path.join(options.cwd, ".pi", "fabric.json");
 
 export const loadFabricConfig = (options: LoadFabricConfigOptions): FabricConfig => {
   const globalConfig = readObject(fabricConfigPath("global", options)) ?? {};

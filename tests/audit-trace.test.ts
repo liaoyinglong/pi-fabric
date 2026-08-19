@@ -12,8 +12,8 @@ import {
 } from "../src/audit/trace.js";
 import { DEFAULT_FABRIC_CONFIG } from "../src/config.js";
 import { ActionRegistry } from "../src/core/action-registry.js";
+import type { FabricProvider } from "../src/core/execution-types.js";
 import { FabricExecutionService } from "../src/execution-service.js";
-import type { FabricProvider } from "../src/protocol.js";
 
 const descriptor = {
   name: "echo",
@@ -63,9 +63,9 @@ describe("Fabric execution trace V1", () => {
       kind: "pi-fabric.execution",
       version: 1,
       outcome: "succeeded",
-      phases: [],
       operations: [{ ref: "demo.echo", outcome: "succeeded", args: {} }],
     });
+    expect("phases" in result.trace).toBe(false);
     expect(JSON.stringify(result.trace)).not.toContain("secret-value");
     expect(result.audits).toMatchObject([
       { ref: "demo.echo", provider: "demo", tool: "echo", success: true },
@@ -122,9 +122,20 @@ describe("Fabric execution trace V1", () => {
     );
     const persisted = createFabricPersistedExecutionDetails(result);
     const rendered = readFabricExecutionRenderDetails(persisted);
-    expect(rendered).toMatchObject({ success: true, phases: result.phases });
+    expect(rendered).toMatchObject({ success: true });
     expect(rendered.audits).toEqual(persisted.audits);
     expect(readFabricExecutionTraceV1(persisted.trace)).toEqual(result.trace);
+  });
+
+  it("accepts historical V1 traces with phases but normalizes them on read", () => {
+    const recorder = new FabricExecutionTraceRecorder();
+    const legacy = recorder.seal("succeeded") as unknown as Record<string, unknown>;
+    legacy.phases = ["Inspect", "Verify"];
+
+    expect(isFabricExecutionTraceV1(legacy)).toBe(true);
+    const read = readFabricExecutionTraceV1(legacy)!;
+    expect("phases" in read).toBe(false);
+    expect(read.outcome).toBe("succeeded");
   });
 
   it("maps aborted signals and ordinary errors to stable outcomes", () => {
@@ -140,7 +151,7 @@ describe("Fabric execution trace V1", () => {
     const second = recorder.issueCall("demo.two", {});
     first.succeed({ ignored: true });
     second.succeed(undefined);
-    const trace = recorder.seal("succeeded", []);
+    const trace = recorder.seal("succeeded");
     expect(trace.operations.map(({ sequence, ref, outcome }) => ({ sequence, ref, outcome }))).toEqual([
       { sequence: 0, ref: "demo.one", outcome: "succeeded" },
       { sequence: 1, ref: "demo.two", outcome: "succeeded" },

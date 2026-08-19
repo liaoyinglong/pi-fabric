@@ -19,7 +19,6 @@ export const recordedIntegrationTrace = (): FabricExecutionTraceV1 => {
   const mcp = recorder.issueCall("mcp.github.search", { query: "issue" });
   const extension = recorder.issueCall("extensions.preview", { path: "ui.png" });
 
-  // Complete out of issue order to exercise deterministic sequence ordering.
   extension.succeed({ visible: true });
   state.succeed({ value: "ready" });
   read.succeed("export const value = 1;");
@@ -34,9 +33,10 @@ export const recordedIntegrationTrace = (): FabricExecutionTraceV1 => {
   mesh.succeed({ events: 1 });
   mcp.succeed({ issues: 1 });
 
-  const trace = recorder.seal("succeeded", ["Inspect", "Implement", "Verify"]);
-  // Preserve a pre-hardening V1 sample so compaction and memory continue to
-  // prove that already-persisted traces containing command/error prose load.
+  const trace = recorder.seal("succeeded");
+  // Preserve a pre-cleanup V1 sample: old persisted traces may still contain
+  // orchestration refs, phase labels, and pre-hardening command/error prose.
+  (trace as unknown as { phases: string[] }).phases = ["Inspect", "Implement", "Verify"];
   trace.operations[1]!.error = "exact edit failure";
   trace.operations[5]!.args = { command: "pnpm test", timeout: 30 };
   trace.operations[5]!.error = "typed test failure";
@@ -50,5 +50,5 @@ export const recordedParallelTrace = (): FabricExecutionTraceV1 => {
   const second = recorder.issueCall("pi.read", { path: "parallel/second.ts" });
   second.succeed("second");
   first.succeed("first");
-  return recorder.seal("succeeded", ["Parallel"]);
+  return recorder.seal("succeeded");
 };

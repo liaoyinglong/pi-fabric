@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
-const stable = ["lean-index.js", "protocol.js"];
+const stable = ["lean-index.js", "public-protocol.js"];
 const declarations = stable.map((file) => file.replace(/\.js$/, ".d.ts"));
 const required = [
   ...stable,

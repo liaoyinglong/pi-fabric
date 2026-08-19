@@ -64,7 +64,6 @@ export const createLeanFabricExecTool = (
           content: [],
           details: {
             audits: snapshot.audits,
-            phases: snapshot.phases,
             ...(snapshot.progress ? { progress: snapshot.progress } : {}),
           },
         } as never);
@@ -82,7 +81,6 @@ export const createLeanFabricExecTool = (
       details: {
         success: true,
         elapsedMs: result.elapsedMs,
-        phases: result.phases,
         audits: result.audits,
         trace: result.trace,
       },

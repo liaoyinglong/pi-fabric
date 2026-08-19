@@ -5,7 +5,6 @@ export const FABRIC_EXECUTION_TRACE_VERSION = 1 as const;
 export const FABRIC_EXECUTION_TRACE_MAX_BYTES = 512 * 1024;
 
 const MAX_IDENTIFIER_BYTES = 1_024;
-const MAX_PHASE_BYTES = 1_024;
 const MAX_STRING_BYTES = 16 * 1024;
 const MAX_ERROR_BYTES = 8 * 1024;
 const MAX_ARGS_BYTES = 64 * 1024;
@@ -15,7 +14,7 @@ const MAX_KEYS = 128;
 const MAX_ARRAY_ITEMS = 128;
 const MAX_NODES = 8_192;
 const MAX_RECORDED_OPERATIONS = 2_048;
-const MAX_PHASES = 512;
+
 export type FabricTraceJsonPrimitive = string | number | boolean | null;
 export type FabricTraceJsonValue =
   | FabricTraceJsonPrimitive
@@ -56,7 +55,6 @@ export interface FabricExecutionTraceV1 {
   kind: typeof FABRIC_EXECUTION_TRACE_KIND;
   version: typeof FABRIC_EXECUTION_TRACE_VERSION;
   outcome: FabricExecutionOutcomeV1;
-  phases: string[];
   operations: FabricExecutionTraceOperationV1[];
   counts: FabricExecutionTraceCountsV1;
   error?: string;
@@ -356,12 +354,7 @@ const lexicalIdentity = (ref: string): { provider?: string; action?: string } =>
   };
 };
 
-// Errors whose messages contain no tool output, argument payloads, or
-// user/source text and are safe to quote verbatim in durable traces: registry
-// resolution failures, policy denials, and Fabric-generated guard messages.
 export class FabricTraceSafeError extends Error {}
-
-// Thrown by the registry when a provider or action cannot be resolved.
 export class FabricResolutionError extends FabricTraceSafeError {}
 
 const errorCause = (error: unknown): string | undefined => {
@@ -490,24 +483,20 @@ export class FabricExecutionTraceRecorder {
     return new FabricExecutionTraceOperationHandle(this, operation);
   }
 
-  // safeError must contain no guest source text, tool output, or argument
-  // payloads — callers pass it only for Fabric-generated failure summaries
-  // (for example the type-check stage). Guest and provider error text is
-  // deliberately not persisted here.
   seal(
     outcome: FabricExecutionOutcomeV1,
-    phases: readonly string[],
     safeError?: string,
   ): FabricExecutionTraceV1 {
     this.sealed = true;
     for (const operation of this.#operations) {
       if (!operation.outcome) {
-        operation.outcome = outcome === "timed_out" ? "timed_out" : outcome === "aborted" ? "aborted" : "failed";
+        operation.outcome = outcome === "timed_out"
+          ? "timed_out"
+          : outcome === "aborted"
+            ? "aborted"
+            : "failed";
         operation.failureStage ??= "invoke";
       } else if (operation.outcome === "aborted" && outcome === "timed_out") {
-        // Host calls observe an aborted bridge signal for both cancellation and
-        // deadline expiry. The runtime's typed final termination is
-        // authoritative when sealing the durable operation.
         operation.outcome = "timed_out";
       }
       if (operation.outcome !== "succeeded") {
@@ -549,15 +538,6 @@ export class FabricExecutionTraceRecorder {
         ...(operation.resultTruncated === true ? { resultTruncated: true as const } : {}),
       };
     });
-    const boundedPhases = phases.slice(0, MAX_PHASES).map((phase) => {
-      const bounded = boundedIdentifier(phase, MAX_PHASE_BYTES);
-      if (bounded !== phase) counts.truncatedValues++;
-      return bounded;
-    });
-    if (phases.length > boundedPhases.length) {
-      counts.droppedValues += phases.length - boundedPhases.length;
-      counts.truncatedValues++;
-    }
     const safeRunError = safeError?.trim() || executionErrorMessage(outcome);
     const runError = safeRunError ? sanitizeString(safeRunError, MAX_ERROR_BYTES) : undefined;
     if (runError) addCounts(counts, runError.counts);
@@ -565,7 +545,6 @@ export class FabricExecutionTraceRecorder {
       kind: FABRIC_EXECUTION_TRACE_KIND,
       version: FABRIC_EXECUTION_TRACE_VERSION,
       outcome,
-      phases: boundedPhases,
       operations,
       counts,
       ...(runError ? { error: runError.value } : {}),
@@ -578,10 +557,7 @@ export class FabricExecutionTraceRecorder {
       beforeCountsBytes: number,
     ): void => {
       traceBytes +=
-        afterValueBytes -
-        beforeValueBytes +
-        serializedBytes(trace.counts) -
-        beforeCountsBytes;
+        afterValueBytes - beforeValueBytes + serializedBytes(trace.counts) - beforeCountsBytes;
     };
     for (
       let index = trace.operations.length - 1;
@@ -594,11 +570,7 @@ export class FabricExecutionTraceRecorder {
       const beforeCountsBytes = serializedBytes(trace.counts);
       delete operation.result;
       trace.counts.droppedValues++;
-      adjustMutation(
-        beforeOperationBytes,
-        serializedBytes(operation),
-        beforeCountsBytes,
-      );
+      adjustMutation(beforeOperationBytes, serializedBytes(operation), beforeCountsBytes);
     }
     for (
       let index = trace.operations.length - 1;
@@ -612,11 +584,7 @@ export class FabricExecutionTraceRecorder {
       operation.args = {};
       trace.counts.droppedValues++;
       trace.counts.truncatedValues++;
-      adjustMutation(
-        beforeOperationBytes,
-        serializedBytes(operation),
-        beforeCountsBytes,
-      );
+      adjustMutation(beforeOperationBytes, serializedBytes(operation), beforeCountsBytes);
     }
     while (traceBytes > FABRIC_EXECUTION_TRACE_MAX_BYTES && trace.operations.length > 0) {
       const beforeCountsBytes = serializedBytes(trace.counts);
@@ -624,14 +592,6 @@ export class FabricExecutionTraceRecorder {
       traceBytes -= serializedBytes(operation);
       if (trace.operations.length > 0) traceBytes--;
       trace.counts.droppedOperations++;
-      traceBytes += serializedBytes(trace.counts) - beforeCountsBytes;
-    }
-    while (traceBytes > FABRIC_EXECUTION_TRACE_MAX_BYTES && trace.phases.length > 0) {
-      const beforeCountsBytes = serializedBytes(trace.counts);
-      const phase = trace.phases.pop()!;
-      traceBytes -= serializedBytes(phase);
-      if (trace.phases.length > 0) traceBytes--;
-      trace.counts.droppedValues++;
       traceBytes += serializedBytes(trace.counts) - beforeCountsBytes;
     }
     return trace;
@@ -655,14 +615,19 @@ const hasOnlyKeys = (value: Record<string, unknown>, keys: readonly string[]): b
 const outcomes = new Set<FabricExecutionOutcomeV1>(["succeeded", "failed", "aborted", "timed_out"]);
 const stages = new Set<FabricExecutionFailureStageV1>(["resolve", "prepare", "validate", "approve", "invoke", "guard"]);
 
-const isJsonValue = (value: unknown, ancestors = new Set<object>(), depth = 0): value is FabricTraceJsonValue => {
+const isJsonValue = (
+  value: unknown,
+  ancestors = new Set<object>(),
+  depth = 0,
+): value is FabricTraceJsonValue => {
   if (value === null || typeof value === "string" || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
   if (typeof value !== "object" || depth > MAX_DEPTH + 2 || ancestors.has(value)) return false;
   ancestors.add(value);
   const valid = Array.isArray(value)
     ? value.every((item) => isJsonValue(item, ancestors, depth + 1))
-    : Object.values(value as Record<string, unknown>).every((item) => isJsonValue(item, ancestors, depth + 1));
+    : Object.values(value as Record<string, unknown>)
+        .every((item) => isJsonValue(item, ancestors, depth + 1));
   ancestors.delete(value);
   return valid;
 };
@@ -671,13 +636,20 @@ const isFabricExecutionTraceOperationV1Unchecked = (
   value: unknown,
 ): value is FabricExecutionTraceOperationV1 => {
   if (!isRecord(value)) return false;
-  if (!hasOnlyKeys(value, ["type", "sequence", "ref", "provider", "action", "args", "outcome", "failureStage", "error", "result", "resultTruncated"])) return false;
-  if (value.type !== "call" || !Number.isSafeInteger(value.sequence) || (value.sequence as number) < 0) return false;
+  if (!hasOnlyKeys(value, [
+    "type", "sequence", "ref", "provider", "action", "args", "outcome",
+    "failureStage", "error", "result", "resultTruncated",
+  ])) return false;
+  if (value.type !== "call" || !Number.isSafeInteger(value.sequence) || (value.sequence as number) < 0) {
+    return false;
+  }
   if (typeof value.ref !== "string" || !isRecord(value.args) || !isJsonValue(value.args)) return false;
   if (!outcomes.has(value.outcome as FabricExecutionOutcomeV1)) return false;
   if (value.provider !== undefined && typeof value.provider !== "string") return false;
   if (value.action !== undefined && typeof value.action !== "string") return false;
-  if (value.failureStage !== undefined && !stages.has(value.failureStage as FabricExecutionFailureStageV1)) return false;
+  if (value.failureStage !== undefined && !stages.has(value.failureStage as FabricExecutionFailureStageV1)) {
+    return false;
+  }
   if (value.error !== undefined && typeof value.error !== "string") return false;
   if (value.resultTruncated !== undefined && typeof value.resultTruncated !== "boolean") return false;
   return value.result === undefined || isJsonValue(value.result);
@@ -695,14 +667,29 @@ export const isFabricExecutionTraceOperationV1 = (
 
 const isFabricExecutionTraceV1Unchecked = (value: unknown): value is FabricExecutionTraceV1 => {
   if (!isRecord(value)) return false;
-  if (!hasOnlyKeys(value, ["kind", "version", "outcome", "phases", "operations", "counts", "error"])) return false;
-  if (value.kind !== FABRIC_EXECUTION_TRACE_KIND || value.version !== FABRIC_EXECUTION_TRACE_VERSION) return false;
+  // `phases` was emitted by historical V1 traces. Accept it on read so old
+  // persisted sessions remain valid, but current V1 writers no longer emit it.
+  if (!hasOnlyKeys(value, ["kind", "version", "outcome", "phases", "operations", "counts", "error"])) {
+    return false;
+  }
+  if (value.kind !== FABRIC_EXECUTION_TRACE_KIND || value.version !== FABRIC_EXECUTION_TRACE_VERSION) {
+    return false;
+  }
   if (!outcomes.has(value.outcome as FabricExecutionOutcomeV1)) return false;
-  if (!Array.isArray(value.phases) || !value.phases.every((phase) => typeof phase === "string")) return false;
-  if (!Array.isArray(value.operations) || !value.operations.every(isFabricExecutionTraceOperationV1)) return false;
-  if (!isRecord(value.counts) || !hasOnlyKeys(value.counts, ["droppedValues", "truncatedValues", "redactedValues", "droppedOperations"])) return false;
+  if (value.phases !== undefined && (
+    !Array.isArray(value.phases) || !value.phases.every((phase) => typeof phase === "string")
+  )) return false;
+  if (!Array.isArray(value.operations) || !value.operations.every(isFabricExecutionTraceOperationV1)) {
+    return false;
+  }
+  if (!isRecord(value.counts) || !hasOnlyKeys(
+    value.counts,
+    ["droppedValues", "truncatedValues", "redactedValues", "droppedOperations"],
+  )) return false;
   const counts = value.counts;
-  if (!["droppedValues", "truncatedValues", "redactedValues", "droppedOperations"].every((key) => Number.isSafeInteger(counts[key]) && (counts[key] as number) >= 0)) return false;
+  if (!["droppedValues", "truncatedValues", "redactedValues", "droppedOperations"].every(
+    (key) => Number.isSafeInteger(counts[key]) && (counts[key] as number) >= 0,
+  )) return false;
   if (value.error !== undefined && typeof value.error !== "string") return false;
   for (let index = 1; index < value.operations.length; index++) {
     if (value.operations[index]!.sequence <= value.operations[index - 1]!.sequence) return false;
@@ -718,5 +705,10 @@ export const isFabricExecutionTraceV1 = (value: unknown): value is FabricExecuti
   }
 };
 
-export const readFabricExecutionTraceV1 = (value: unknown): FabricExecutionTraceV1 | undefined =>
-  isFabricExecutionTraceV1(value) ? value : undefined;
+export const readFabricExecutionTraceV1 = (value: unknown): FabricExecutionTraceV1 | undefined => {
+  if (!isFabricExecutionTraceV1(value)) return undefined;
+  if (!isRecord(value) || value.phases === undefined) return value;
+  const normalized = structuredClone(value) as Record<string, unknown>;
+  delete normalized.phases;
+  return normalized as unknown as FabricExecutionTraceV1;
+};

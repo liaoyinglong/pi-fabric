@@ -18,7 +18,7 @@ import {
   ApprovalController,
   FabricSessionApprovals,
 } from "./core/approval-controller.js";
-import type { FabricCommittedCapabilityView } from "./protocol.js";
+import type { FabricCommittedCapabilityView } from "./core/execution-types.js";
 import type {
   QuickJsRuntime,
   FabricSandboxResult,
@@ -55,14 +55,10 @@ const executionOutcomeFromTermination = (
   reason: FabricSandboxTerminationReason,
 ): "succeeded" | "failed" | "aborted" | "timed_out" => {
   switch (reason) {
-    case "completed":
-      return "succeeded";
-    case "aborted":
-      return "aborted";
-    case "timed_out":
-      return "timed_out";
-    case "runtime_error":
-      return "failed";
+    case "completed": return "succeeded";
+    case "aborted": return "aborted";
+    case "timed_out": return "timed_out";
+    case "runtime_error": return "failed";
   }
 };
 
@@ -71,7 +67,6 @@ export interface FabricExecutionResult {
   value: unknown;
   logs: string[];
   audits: FabricCallAudit[];
-  phases: string[];
   trace: FabricExecutionTraceV1;
   elapsedMs: number;
   typeErrors?: FabricTypeError[];
@@ -80,7 +75,6 @@ export interface FabricExecutionResult {
 
 interface FabricExecutionPartial {
   audits: FabricCallAudit[];
-  phases: string[];
   progress?: string | undefined;
 }
 
@@ -153,10 +147,8 @@ export class FabricExecutionService {
         value: undefined,
         logs: [],
         audits: [],
-        phases: [],
         trace: traceRecorder.seal(
           "failed",
-          [],
           `Type checking failed (${checked.errors.length} ${checked.errors.length === 1 ? "error" : "errors"})`,
         ),
         elapsedMs: performance.now() - startedAt,
@@ -170,18 +162,13 @@ export class FabricExecutionService {
       this.sessionApprovals,
     );
     const audits: FabricCallAudit[] = [];
-    const phases: string[] = [];
 
     let currentProgress: string | undefined;
     let emitPending = false;
     let emitTimer: NodeJS.Timeout | undefined;
     const emitNow = (): void => {
       emitPending = false;
-      options.onPartial({
-        audits: audits.slice(),
-        phases: phases.slice(),
-        progress: currentProgress,
-      });
+      options.onPartial({ audits: audits.slice(), progress: currentProgress });
     };
     const flushEmit = (): void => {
       if (emitTimer) clearTimeout(emitTimer);
@@ -251,9 +238,7 @@ export class FabricExecutionService {
       const operation = traceRecorder.issueCall(ref, args);
       let stage: FabricExecutionFailureStageV1 = "invoke";
       try {
-        const value = await run((nextStage) => {
-          stage = nextStage;
-        });
+        const value = await run((nextStage) => { stage = nextStage; });
         operation.succeed(undefined);
         return value;
       } catch (error) {
@@ -290,14 +275,10 @@ export class FabricExecutionService {
                 "fabric.discovery.providers",
                 args,
                 runtimeSignal,
-                () =>
-                  this.registry
-                    .providers()
-                    .filter((provider) =>
-                      !callContext.capabilityView ||
-                      Object.values(callContext.capabilityView.bindings)
-                        .some((binding) => binding.provider === provider.name),
-                    ),
+                () => this.registry.providers().filter((provider) =>
+                  !callContext.capabilityView ||
+                  Object.values(callContext.capabilityView.bindings)
+                    .some((binding) => binding.provider === provider.name)),
               );
             case "fabric.$catalog":
               return traceAttempt(
@@ -340,12 +321,11 @@ export class FabricExecutionService {
                 "fabric.discovery.search",
                 args,
                 runtimeSignal,
-                () =>
-                  this.registry.search(
-                    String(args.query ?? ""),
-                    callContext,
-                    typeof args.limit === "number" ? args.limit : undefined,
-                  ),
+                () => this.registry.search(
+                  String(args.query ?? ""),
+                  callContext,
+                  typeof args.limit === "number" ? args.limit : undefined,
+                ),
               );
             case "fabric.$describe":
               return traceAttempt(
@@ -397,8 +377,7 @@ export class FabricExecutionService {
       value: sandboxResult.value,
       logs: sandboxResult.logs,
       audits,
-      phases,
-      trace: traceRecorder.seal(runOutcome, phases),
+      trace: traceRecorder.seal(runOutcome),
       elapsedMs: performance.now() - startedAt,
       ...(sandboxResult.error ? { error: sandboxResult.error } : {}),
     };

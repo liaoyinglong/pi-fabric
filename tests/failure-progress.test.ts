@@ -13,7 +13,6 @@ const trace = (
   kind: FABRIC_EXECUTION_TRACE_KIND,
   version: FABRIC_EXECUTION_TRACE_VERSION,
   outcome,
-  phases: [],
   operations,
   counts: {
     droppedValues: 0,

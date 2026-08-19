@@ -13,12 +13,16 @@ describe("package manifest", () => {
     expect(manifest.files).toContain("skills/fabric-exec/");
   });
 
-  it("does not publish orchestration or worker entrypoints", () => {
+  it("publishes only the narrow public protocol entrypoint", () => {
     const manifest = JSON.parse(fs.readFileSync("package.json", "utf8")) as {
-      exports?: Record<string, unknown>;
+      exports?: Record<string, { types?: string; import?: string }>;
       files: string[];
     };
     expect(Object.keys(manifest.exports ?? {})).toEqual([".", "./protocol"]);
+    expect(manifest.exports?.["./protocol"]).toEqual({
+      types: "./dist/public-protocol.d.ts",
+      import: "./dist/public-protocol.js",
+    });
     expect(manifest.files.some((file) => /worker|subagent|workflow/i.test(file))).toBe(false);
   });
 });

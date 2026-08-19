@@ -118,7 +118,7 @@ describe("PiToolsProvider lifecycle", () => {
     expect(result.output).toBe("executed:true\n");
     expect(audits[0]?.args).toEqual({ command: executedCommand });
     expect(audits[0]?.preview).toMatchObject({ bashCommand: executedCommand });
-    expect(trace.seal("succeeded", []).operations[0]?.args).toEqual({
+    expect(trace.seal("succeeded").operations[0]?.args).toEqual({
       command: executedCommand,
     });
   });

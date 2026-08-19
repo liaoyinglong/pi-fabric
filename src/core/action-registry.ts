@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Value } from "typebox/value";
 import { runAbortable } from "../async-settlement.js";
-import type { FabricCapabilityRequirement } from "../components/types.js";
 import {
   executionOutcomeFromError,
   FabricResolutionError,
@@ -9,21 +8,22 @@ import {
   type FabricExecutionTraceOperationHandle,
   type FabricExecutionTraceRecorder,
 } from "../audit/trace.js";
-import {
-  FABRIC_NESTED_TOOL_CALL_ID_PREFIX,
-  type FabricActionDescriptor,
-  type FabricActionEffect,
-  type FabricCapabilityBindingView,
-  type FabricCapabilityCatalog,
-  type FabricCapabilityResolution,
-  type FabricCommittedCapabilityView,
-  type FabricGuestTypeSources,
-  type FabricInvocationContext,
-  type FabricMediaBlock,
-  type FabricNamedActionTypeSource,
-  type FabricProvider,
-  type FabricProviderListRequest,
-} from "../protocol.js";
+import { FABRIC_NESTED_TOOL_CALL_ID_PREFIX } from "../protocol.js";
+import type {
+  FabricActionDescriptor,
+  FabricActionEffect,
+  FabricCapabilityBindingView,
+  FabricCapabilityCatalog,
+  FabricCapabilityRequirement,
+  FabricCapabilityResolution,
+  FabricCommittedCapabilityView,
+  FabricGuestTypeSources,
+  FabricInvocationContext,
+  FabricMediaBlock,
+  FabricNamedActionTypeSource,
+  FabricProvider,
+  FabricProviderListRequest,
+} from "./execution-types.js";
 import { stableJsonHash } from "./stable-hash.js";
 import type { FabricNestedToolResultProxy } from "./tool-result-proxy.js";
 
@@ -39,9 +39,7 @@ interface FabricEffectConflict {
 }
 
 interface RegisteredFabricProvider {
-  id: string;
   name: string;
-  generation: number;
   provider: FabricProvider;
 }
 
@@ -64,10 +62,6 @@ export interface FabricCallAudit {
   effectConflicts?: FabricEffectConflict[];
 }
 
-export interface FabricCapabilityViewLease extends FabricCapabilityResolution {
-  release(): Promise<void>;
-}
-
 export interface FabricRegistryInvocationContext extends FabricInvocationContext {
   approve(
     action: ResolvedFabricAction,
@@ -80,16 +74,10 @@ export interface FabricRegistryInvocationContext extends FabricInvocationContext
   onInvocationEnd?(): void;
 }
 
-/**
- * Prefix pi-fabric prepends to every nested tool-call id it generates inside a
- * fabric_exec run (one per pi., mcp., or extensions. invocation). Extensions
- * can detect that a tool_call/tool_result event came from a nested Fabric call
- * by checking `event.toolCallId.startsWith(NESTED_TOOL_CALL_ID_PREFIX)`.
- */
+/** Prefix generated for nested Pi/extension/MCP calls inside fabric_exec. */
 export const NESTED_TOOL_CALL_ID_PREFIX = FABRIC_NESTED_TOOL_CALL_ID_PREFIX;
 
 const providerNamePattern = /^[a-z][a-z0-9_-]*$/;
-
 const PREVIEW_ARG_CHARS = 2_000;
 const WRITE_PREVIEW_CONTENT_CHARS = 16_000;
 const PREVIEW_ARG_KEYS = 32;
@@ -121,14 +109,12 @@ const previewArgs = (ref: string, args: Record<string, unknown>): Record<string,
   let count = 0;
   for (const [key, value] of Object.entries(args)) {
     if (count++ >= PREVIEW_ARG_KEYS) break;
-    const maxChars =
-      ref === "pi.write" && key === "content"
-        ? WRITE_PREVIEW_CONTENT_CHARS
-        : PREVIEW_ARG_CHARS;
-    out[key] =
-      typeof value === "string"
-        ? truncateString(value, maxChars)
-        : boundedPreviewValue(value, PREVIEW_NESTED_CHARS);
+    const maxChars = ref === "pi.write" && key === "content"
+      ? WRITE_PREVIEW_CONTENT_CHARS
+      : PREVIEW_ARG_CHARS;
+    out[key] = typeof value === "string"
+      ? truncateString(value, maxChars)
+      : boundedPreviewValue(value, PREVIEW_NESTED_CHARS);
   }
   return out;
 };
@@ -140,10 +126,9 @@ const previewResult = (value: unknown): unknown => {
     let count = 0;
     for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
       if (count++ >= PREVIEW_ARG_KEYS) break;
-      out[key] =
-        typeof val === "string"
-          ? truncateString(val, PREVIEW_RESULT_CHARS)
-          : boundedPreviewValue(val, PREVIEW_NESTED_CHARS);
+      out[key] = typeof val === "string"
+        ? truncateString(val, PREVIEW_RESULT_CHARS)
+        : boundedPreviewValue(val, PREVIEW_NESTED_CHARS);
     }
     return out;
   }
@@ -270,7 +255,6 @@ const validationMessage = (
 
 export class ActionRegistry {
   readonly #providers = new Map<string, RegisteredFabricProvider>();
-  readonly #providersById = new Map<string, RegisteredFabricProvider>();
   readonly #activeEffects = new Map<string, { ref: string; effect: FabricActionEffect }>();
   readonly #unavailable = new Map<string, string>();
 
@@ -283,14 +267,7 @@ export class ActionRegistry {
     if (this.#providers.has(provider.name)) {
       throw new Error(`Fabric provider already registered: ${provider.name}`);
     }
-    const registered: RegisteredFabricProvider = {
-      id: randomUUID(),
-      name: provider.name,
-      generation: 1,
-      provider,
-    };
-    this.#providers.set(provider.name, registered);
-    this.#providersById.set(registered.id, registered);
+    this.#providers.set(provider.name, { name: provider.name, provider });
     this.#unavailable.delete(provider.name);
   }
 
@@ -320,19 +297,59 @@ export class ActionRegistry {
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  async inspectCapabilities(
+  async resolveCapabilities(
     requirements: readonly (string | FabricCapabilityRequirement)[],
     context: FabricInvocationContext,
   ): Promise<FabricCapabilityResolution> {
-    const { release: _release, ...resolution } = await this.#resolveCapabilities(requirements, context);
-    return resolution;
-  }
+    const normalized = new Map<string, boolean>();
+    for (const requirement of requirements) {
+      const ref = (typeof requirement === "string" ? requirement : requirement.ref).trim();
+      if (!ref || ref.length > 256 || !ref.includes(".")) {
+        throw new Error(`Fabric capability requirements must use provider.action: ${ref || "<empty>"}`);
+      }
+      const optional = typeof requirement === "string" ? false : requirement.optional === true;
+      normalized.set(ref, (normalized.get(ref) ?? true) && optional);
+    }
 
-  async acquireCapabilityView(
-    requirements: readonly (string | FabricCapabilityRequirement)[],
-    context: FabricInvocationContext,
-  ): Promise<FabricCapabilityViewLease> {
-    return this.#resolveCapabilities(requirements, context);
+    const missing: string[] = [];
+    const optionalMissing: string[] = [];
+    const resolved = new Map<string, FabricCapabilityBindingView>();
+    for (const [ref, optional] of [...normalized].sort(([left], [right]) =>
+      left.localeCompare(right),
+    )) {
+      try {
+        const { provider, actionName } = this.#parseRef(ref);
+        const descriptor = await runAbortable(context.signal, () =>
+          provider.describe(actionName, context),
+        );
+        if (!descriptor) throw new FabricResolutionError(`Unknown Fabric action: ${ref}`);
+        const action = resolveDescriptor(provider, descriptor);
+        resolved.set(ref, {
+          ref,
+          provider: provider.name,
+          descriptorHash: actionDescriptorHash(action),
+        });
+      } catch (error) {
+        if (!(error instanceof FabricResolutionError)) throw error;
+        (optional ? optionalMissing : missing).push(ref);
+      }
+    }
+
+    let view: FabricCommittedCapabilityView | undefined;
+    if (missing.length === 0) {
+      const bindings = Object.fromEntries(resolved);
+      const values = [...resolved.values()];
+      view = {
+        digest: descriptorHash(values),
+        bindings,
+      };
+    }
+    return {
+      satisfied: missing.length === 0,
+      missing,
+      optionalMissing,
+      ...(view ? { view } : {}),
+    };
   }
 
   async guestTypeSources(context: FabricInvocationContext): Promise<FabricGuestTypeSources> {
@@ -400,8 +417,7 @@ export class ActionRegistry {
           }));
         }
       } catch {
-        // Capture catalog not ready yet; the loose extensions surface stands
-        // for this execution.
+        // Capture catalog not ready yet; the loose extensions surface stands for this execution.
       }
     }
     return sources;
@@ -448,7 +464,7 @@ export class ActionRegistry {
     const providers = (context.capabilityView
       ? [...new Map(
           Object.values(context.capabilityView.bindings).flatMap((pinned) => {
-            const registered = this.#providersById.get(pinned.providerBindingId);
+            const registered = this.#providers.get(pinned.provider);
             return registered ? [[registered.name, registered.provider] as const] : [];
           }),
         ).values()]
@@ -573,10 +589,7 @@ export class ActionRegistry {
         return { action, score };
       })
       .filter((entry) => entry.score > 0)
-      .sort(
-        (left, right) =>
-          right.score - left.score || left.action.ref.localeCompare(right.action.ref),
-      )
+      .sort((left, right) => right.score - left.score || left.action.ref.localeCompare(right.action.ref))
       .slice(0, Math.max(1, Math.min(limit, 100)))
       .map((entry) => entry.action);
   }
@@ -597,9 +610,7 @@ export class ActionRegistry {
     }
     if (context.capabilityView) {
       const pinned = await Promise.all(
-        Object.keys(context.capabilityView.bindings).map((candidate) =>
-          this.describe(candidate, context),
-        ),
+        Object.keys(context.capabilityView.bindings).map((candidate) => this.describe(candidate, context)),
       );
       const matches = pinned.filter((action) => action.name === ref);
       if (matches.length === 1) return matches[0]!;
@@ -647,9 +658,7 @@ export class ActionRegistry {
         ref,
         context.capabilityView,
       );
-      const descriptor = await runAbortable(context.signal, () =>
-        provider.describe(actionName, context),
-      );
+      const descriptor = await runAbortable(context.signal, () => provider.describe(actionName, context));
       if (!descriptor) throw new FabricResolutionError(`Unknown Fabric action: ${ref}`);
       const action = resolveDescriptor(provider, descriptor);
       if (expectedDescriptorHash && actionDescriptorHash(action) !== expectedDescriptorHash) {
@@ -657,18 +666,9 @@ export class ActionRegistry {
       }
       traceOperation?.resolved(action.provider, action.name);
 
-      failureStage = "guard";
-      if (action.effect?.kind === "scoped") {
-        throw new FabricTraceSafeError(
-          `Fabric scoped action ${ref} is unsupported by the Lean execution runtime`,
-        );
-      }
-
       failureStage = "prepare";
       const preparedArgs = provider.prepareArguments
-        ? await runAbortable(context.signal, () =>
-            provider.prepareArguments!(actionName, args, context),
-          )
+        ? await runAbortable(context.signal, () => provider.prepareArguments!(actionName, args, context))
         : args;
       if (typeof preparedArgs !== "object" || preparedArgs === null || Array.isArray(preparedArgs)) {
         throw new FabricTraceSafeError(`Argument preparation for ${ref} did not return an object`);
@@ -719,12 +719,7 @@ export class ActionRegistry {
             ...context,
             nestedToolCallId,
             update(message) {
-              if (!invocationActive) return;
-              context.update(message);
-            },
-            activity(update) {
-              if (!invocationActive) return;
-              context.activity?.(update);
+              if (invocationActive) context.update(message);
             },
             attachMedia(blocks, note) {
               if (!invocationActive) return;
@@ -742,8 +737,7 @@ export class ActionRegistry {
               traceOperation?.prepared(updatedArgs);
             },
             attachPreview(preview) {
-              if (!invocationActive) return;
-              activeAudit.preview = preview;
+              if (invocationActive) activeAudit.preview = preview;
             },
           }),
         );
@@ -793,84 +787,16 @@ export class ActionRegistry {
   async close(): Promise<void> {
     const providers = [...this.#providers.values()].map(({ provider }) => provider);
     this.#providers.clear();
-    this.#providersById.clear();
     this.#activeEffects.clear();
     await Promise.allSettled(
       providers.flatMap((provider) => provider.close ? [provider.close()] : []),
     );
   }
 
-  async #resolveCapabilities(
-    requirements: readonly (string | FabricCapabilityRequirement)[],
-    context: FabricInvocationContext,
-  ): Promise<FabricCapabilityViewLease> {
-    const normalized = new Map<string, boolean>();
-    for (const requirement of requirements) {
-      const ref = (typeof requirement === "string" ? requirement : requirement.ref).trim();
-      if (!ref || ref.length > 256 || !ref.includes(".")) {
-        throw new Error(`Fabric capability requirements must use provider.action: ${ref || "<empty>"}`);
-      }
-      const optional = typeof requirement === "string" ? false : requirement.optional === true;
-      normalized.set(ref, (normalized.get(ref) ?? true) && optional);
-    }
-
-    const missing: string[] = [];
-    const optionalMissing: string[] = [];
-    const resolved = new Map<string, FabricCapabilityBindingView>();
-    for (const [ref, optional] of [...normalized].sort(([left], [right]) =>
-      left.localeCompare(right),
-    )) {
-      try {
-        const { registered, provider, actionName } = this.#parseRef(ref);
-        const descriptor = await runAbortable(context.signal, () =>
-          provider.describe(actionName, context),
-        );
-        if (!descriptor) throw new FabricResolutionError(`Unknown Fabric action: ${ref}`);
-        const action = resolveDescriptor(provider, descriptor);
-        resolved.set(ref, {
-          ref,
-          provider: provider.name,
-          providerBindingId: registered.id,
-          generation: registered.generation,
-          descriptorHash: actionDescriptorHash(action),
-        });
-      } catch (error) {
-        if (!(error instanceof FabricResolutionError)) throw error;
-        (optional ? optionalMissing : missing).push(ref);
-      }
-    }
-
-    let view: FabricCommittedCapabilityView | undefined;
-    if (missing.length === 0) {
-      const bindings = Object.fromEntries(resolved);
-      const values = [...resolved.values()];
-      view = {
-        id: randomUUID(),
-        digest: descriptorHash(values),
-        semanticDigest: descriptorHash(
-          values.map(({ ref, provider, descriptorHash: hash }) => ({
-            ref,
-            provider,
-            descriptorHash: hash,
-          })),
-        ),
-        bindings,
-      };
-    }
-    return {
-      satisfied: missing.length === 0,
-      missing,
-      optionalMissing,
-      ...(view ? { view } : {}),
-      async release() {},
-    };
-  }
-
   #parseRef(
     ref: string,
     view?: FabricCommittedCapabilityView,
   ): {
-    registered: RegisteredFabricProvider;
     provider: FabricProvider;
     actionName: string;
     expectedDescriptorHash?: string;
@@ -884,20 +810,18 @@ export class ActionRegistry {
     if (view && !pinned) {
       throw new FabricResolutionError(`Fabric capability is outside the committed view: ${ref}`);
     }
-    const registered = pinned
-      ? this.#providersById.get(pinned.providerBindingId)
-      : this.#providers.get(providerName);
-    if (!registered || registered.name !== providerName) {
+    if (pinned && pinned.provider !== providerName) {
+      throw new FabricResolutionError(`Fabric capability provider changed: ${ref}`);
+    }
+    const registered = this.#providers.get(pinned?.provider ?? providerName);
+    if (!registered) {
       if (pinned) {
-        throw new FabricResolutionError(
-          `Fabric capability binding is no longer available: ${ref} (${pinned.providerBindingId})`,
-        );
+        throw new FabricResolutionError(`Fabric capability provider is no longer available: ${ref}`);
       }
       this.#requireProvider(providerName);
       throw new FabricResolutionError(`Unknown Fabric provider: ${providerName}`);
     }
     return {
-      registered,
       provider: registered.provider,
       actionName: ref.slice(separator + 1),
       ...(pinned ? { expectedDescriptorHash: pinned.descriptorHash } : {}),
