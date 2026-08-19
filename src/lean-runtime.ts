@@ -39,19 +39,13 @@ const leanConfig = (
   context: ExtensionContext,
   agentDir: string,
   projectTrusted: boolean,
-): FabricConfig => {
-  const config = loadFabricConfig({
-    cwd: context.cwd,
-    agentDir,
-    projectTrusted,
-  });
-  config.capture.enabled = true;
-  config.capture.hideFromModel = true;
-  config.capture.advisory.mode = "disabled";
-  return config;
-};
+): FabricConfig => loadFabricConfig({
+  cwd: context.cwd,
+  agentDir,
+  projectTrusted,
+});
 
-export class LeanCodeModeRuntime {
+export class LeanFabricRuntime {
   #config: FabricConfig | undefined;
   #registry: ActionRegistry | undefined;
   #execution: FabricExecutionService | undefined;
@@ -67,12 +61,12 @@ export class LeanCodeModeRuntime {
   }
 
   get config(): FabricConfig {
-    if (!this.#config) throw new Error("Pi Code Mode runtime is not initialized");
+    if (!this.#config) throw new Error("Pi Fabric runtime is not initialized");
     return this.#config;
   }
 
   get registry(): ActionRegistry {
-    if (!this.#registry) throw new Error("Pi Code Mode runtime is not initialized");
+    if (!this.#registry) throw new Error("Pi Fabric runtime is not initialized");
     return this.#registry;
   }
 

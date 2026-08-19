@@ -35,23 +35,14 @@ export interface FabricMcpConfig {
     revalidate: FabricMcpRevalidatePolicy;
     revalidateBudgetMs: number;
   };
-  advisory: boolean;
-}
-
-export interface FabricCapabilityAdvisoryConfig {
-  mode: "enabled" | "hidden" | "disabled";
-  threshold: number;
-  maxPerSession: number;
-  budget: number;
 }
 
 export interface FabricToolCaptureConfig {
+  /** Internal capture lifecycle switch. Lean configuration always normalizes this to true. */
   enabled: boolean;
-  hideFromModel: boolean;
   keepVisible: string[];
   defaultRisk: FabricRisk;
   risks: Record<string, FabricRisk>;
-  advisory: FabricCapabilityAdvisoryConfig;
 }
 
 /** Lean V2 configuration contains execution mechanics only. */
@@ -95,11 +86,9 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
       revalidate: "changed",
       revalidateBudgetMs: 60_000,
     },
-    advisory: false,
   },
   capture: {
     enabled: true,
-    hideFromModel: true,
     keepVisible: ["fabric_exec"],
     defaultRisk: "execute",
     risks: {
@@ -111,7 +100,6 @@ export const DEFAULT_FABRIC_CONFIG: FabricConfig = {
       write: "write",
       bash: "execute",
     },
-    advisory: { mode: "disabled", threshold: 0.9, maxPerSession: 0, budget: 0 },
   },
   ui: { updateDebounceMs: 100 },
 };
@@ -251,15 +239,14 @@ export const normalizeFabricConfig = (raw: Record<string, unknown>): FabricConfi
           MAX_HOST_CALL_TIMEOUT_MS,
         ),
       },
-      advisory: false,
     },
     capture: {
-      enabled: booleanValue(capture.enabled, DEFAULT_FABRIC_CONFIG.capture.enabled),
-      hideFromModel: booleanValue(capture.hideFromModel, DEFAULT_FABRIC_CONFIG.capture.hideFromModel),
+      // Lean always captures registered extension tools so `extensions.*` and
+      // exact-name core overrides have one stable execution contract.
+      enabled: true,
       keepVisible: stringList(capture.keepVisible, DEFAULT_FABRIC_CONFIG.capture.keepVisible),
       defaultRisk: riskValue(capture.defaultRisk, DEFAULT_FABRIC_CONFIG.capture.defaultRisk),
       risks,
-      advisory: { ...DEFAULT_FABRIC_CONFIG.capture.advisory },
     },
     ui: { updateDebounceMs: 100 },
   };

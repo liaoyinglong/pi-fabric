@@ -16,7 +16,7 @@ const CWD_MARKER = "\nCurrent working directory:";
  * Lean hides `read`, so restore the same catalog and adapt only the load
  * instruction to the `fabric_exec` guest bridge.
  */
-export const restoreSkillsForFullCodePrompt = (
+export const restoreSkillsForLeanPrompt = (
   systemPrompt: string,
   skills: readonly Skill[],
 ): string => {

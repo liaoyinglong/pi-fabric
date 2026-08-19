@@ -40,6 +40,22 @@ describe("approval config normalization", () => {
     expect(config.capture.risks.delegate).toBe("execute");
   });
 
+  it("forces Lean capture on and drops removed capture and MCP switches", () => {
+    const config = normalizeFabricConfig({
+      capture: {
+        enabled: false,
+        hideFromModel: false,
+        advisory: { mode: "enabled" },
+      },
+      mcp: { advisory: true },
+    });
+
+    expect(config.capture.enabled).toBe(true);
+    expect("hideFromModel" in config.capture).toBe(false);
+    expect("advisory" in config.capture).toBe(false);
+    expect("advisory" in config.mcp).toBe(false);
+  });
+
   it("does not expose legacy code-mode or schema switches", () => {
     const config = normalizeFabricConfig({
       fullCodeMode: false,

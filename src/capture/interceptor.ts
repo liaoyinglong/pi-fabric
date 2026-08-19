@@ -25,12 +25,9 @@ export interface RegisteredToolCaptureOptions {
   anchorDefinition: ToolDefinition<any, any, any>;
   catalog: CapturedToolCatalog;
   initialPolicy?: FabricToolCaptureConfig;
-  // Called after each refresh of the captured catalog so callers can re-assert
-  // active-tool ownership. Tools are deliberately left in Pi's registry — the
-  // listener observes rather than filters — because extensions that gate tool
-  // calls against `pi.getAllTools()` (e.g. permission systems) must still see
-  // captured tools as registered; hiding from the model happens exclusively in
-  // the active tool set (see FabricToolOwnership).
+  // Called after each refresh so Lean can re-assert its model-facing active
+  // tool set. Registered tools stay visible to host extensions that inspect
+  // `pi.getAllTools()`; only the active model-facing set is narrowed.
   onCatalogRefresh?: () => void;
 }
 
@@ -51,11 +48,9 @@ const definitionDelegatesTo = (
 
 const clonePolicy = (config: FabricToolCaptureConfig): FabricToolCaptureConfig => ({
   enabled: config.enabled,
-  hideFromModel: config.hideFromModel,
   keepVisible: [...config.keepVisible],
   defaultRisk: config.defaultRisk,
   risks: { ...config.risks },
-  advisory: { ...config.advisory },
 });
 
 type ExtensionRunnerConstructor = {

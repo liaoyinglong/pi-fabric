@@ -7,9 +7,9 @@ import { installRegisteredToolCapture } from "./capture/interceptor.js";
 import { DEFAULT_FABRIC_CONFIG } from "./config.js";
 import { coreOverridePromptGuidance } from "./core/core-override-guidance.js";
 import { PI_CORE_TOOL_NAME_SET } from "./core/pi-tools.js";
-import { restoreSkillsForFullCodePrompt } from "./core/skill-prompt.js";
+import { restoreSkillsForLeanPrompt } from "./core/skill-prompt.js";
 import { createLeanFabricExecTool } from "./lean-exec-tool.js";
-import { LeanCodeModeRuntime } from "./lean-runtime.js";
+import { LeanFabricRuntime } from "./lean-runtime.js";
 
 const extensionPath = fileURLToPath(import.meta.url);
 const entryDir = path.dirname(extensionPath);
@@ -50,7 +50,7 @@ export const buildLeanSystemPrompt = ({
   skills,
   capturedTools,
 }: LeanSystemPromptInput): string => {
-  const restoredSystemPrompt = restoreSkillsForFullCodePrompt(systemPrompt, skills);
+  const restoredSystemPrompt = restoreSkillsForLeanPrompt(systemPrompt, skills);
   const overrideGuidance = coreOverridePromptGuidance(capturedTools).trim();
   return overrideGuidance
     ? `${restoredSystemPrompt}\n\n${overrideGuidance}`
@@ -59,14 +59,13 @@ export const buildLeanSystemPrompt = ({
 
 export default async function leanFabricExtension(pi: ExtensionAPI): Promise<void> {
   const capturedTools = new CapturedToolCatalog();
-  const runtime = new LeanCodeModeRuntime(pi, capturedTools);
+  const runtime = new LeanFabricRuntime(pi, capturedTools);
   const fabricTool = createLeanFabricExecTool(runtime);
   let savedActiveTools: string[] | undefined;
 
   const inactiveCapturePolicy = {
     ...structuredClone(DEFAULT_FABRIC_CONFIG.capture),
     enabled: false,
-    hideFromModel: false,
   };
 
   const applyToolOwnership = (): void => {
