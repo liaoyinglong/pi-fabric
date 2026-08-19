@@ -29,8 +29,10 @@ export const createLeanFabricExecTool = (
     "Use fabric_exec to batch related tool operations. Use sequential await when one result determines the next step and Promise.all(...) only for independent work.",
     "Inside fabric_exec, Pi core tools are pi.read, pi.bash, pi.edit, pi.write, pi.grep, pi.find, and pi.ls; shell execution is pi.bash, not pi.exec.",
     "Inside fabric_exec, pi.read/pi.grep/pi.find/pi.ls return strings, while pi.bash/pi.edit/pi.write return {ok, output, details} envelopes.",
+    "pi.bash accepts command/timeout/settle only; it has no cwd option, so change directory inside the command. Use settle: true when a nonzero exit is an expected result, such as rg/grep finding no matches.",
+    "pi.edit accepts {path, oldText, newText}, {path, edits:[...]}, or (path, oldText, newText); it has no patch or two-argument form. Put multiline or template-heavy replacement text in fabric_exec strings and reference it as π.key.",
     "fabric_exec runs in a sandbox, not a Node.js module environment; process and require are unavailable to guest code.",
-    "Inside fabric_exec, use extensions.* for captured Pi extension tools, mcp.* for known MCP tools, and tools.search/tools.describe/tools.call for dynamic discovery.",
+    "Inside fabric_exec, use extensions.* for captured Pi extension tools and mcp.* for known MCP tools. Dynamic calls use tools.call({ ref: \"provider.action\", args: {...} }); do not use name/input fields or positional ref,args arguments.",
     "Return compact decisions, evidence, or changed results from fabric_exec. Keep raw logs and unused intermediate values inside the program.",
   ],
   parameters: Type.Object({
