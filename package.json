@@ -1,7 +1,7 @@
 {
   "name": "pi-fabric",
   "version": "0.61.0",
-  "description": "Programmatic tool calling runtime for Pi",
+  "description": "Programmatic tool-calling execution layer for Pi",
   "type": "module",
   "main": "./dist/lean-index.js",
   "types": "./dist/lean-index.d.ts",
@@ -37,19 +37,20 @@
   "keywords": [
     "pi-package",
     "pi-extension",
-    "codemode",
+    "execution-layer",
     "programmatic-tool-calling",
+    "quickjs",
     "mcp"
   ],
   "license": "MIT",
   "author": "monotykamary",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/monotykamary/pi-fabric.git"
+    "url": "git+https://github.com/liaoyinglong/pi-fabric.git"
   },
-  "homepage": "https://github.com/monotykamary/pi-fabric#readme",
+  "homepage": "https://github.com/liaoyinglong/pi-fabric#readme",
   "bugs": {
-    "url": "https://github.com/monotykamary/pi-fabric/issues"
+    "url": "https://github.com/liaoyinglong/pi-fabric/issues"
   },
   "engines": {
     "node": ">=24"

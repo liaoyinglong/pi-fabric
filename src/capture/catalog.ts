@@ -6,7 +6,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { FabricToolCaptureConfig } from "../config.js";
-import type { FabricRisk } from "../protocol.js";
+import type { FabricRisk } from "../core/execution-types.js";
 
 const KNOWN_READ_ONLY_CAPTURE_TOOLS = new Set([
   "fovea_sketch",
@@ -41,10 +41,10 @@ export class CapturedToolCatalog {
   readonly #hiddenOnly = new Set<string>();
   readonly #listeners = new Set<() => void>();
   // The ExtensionRunner observed during the last tool refresh. Stored even
-  // when capture is disabled so PiToolsProvider can replay the tool-execution
-  // lifecycle (tool_call/tool_result/tool_execution_*) for nested pi.* calls
-  // in full-code mode — without it, extensions that hook those events
-  // (pi-vision-handoff, auditors, etc.) would never fire for pi core tools.
+  // while capture is inactive so PiToolsProvider can replay Pi's nested
+  // tool_call/tool_result/tool_execution_* lifecycle for `pi.*` calls. This
+  // keeps host extensions such as image handoff and auditing active inside
+  // Lean execution without widening the model-facing tool set.
   #runner: ExtensionRunner | undefined;
 
   constructor(readonly options: CapturedToolCatalogOptions = {}) {}
@@ -59,7 +59,6 @@ export class CapturedToolCatalog {
     config: FabricToolCaptureConfig,
     ownSourcePath: string,
   ): void {
-    // Always remember the runner (see field comment) before the enabled gate.
     this.#runner = runner;
     this.#tools.clear();
     this.#hiddenOnly.clear();

@@ -34,7 +34,6 @@ const config = (configPath: string): FabricMcpConfig => ({
   allowDynamicServers: true,
   callTimeoutMs: 1_000,
   cache: { enabled: true, revalidate: "off", revalidateBudgetMs: 1_000 },
-  advisory: true,
 });
 
 beforeEach(() => {
@@ -85,7 +84,10 @@ describe("McpProvider lazy mcporter runtime", () => {
         close,
       };
     });
-    const provider = new McpProvider(cwd, { ...config(configPath), cache: { enabled: false, revalidate: "off", revalidateBudgetMs: 1_000 } });
+    const provider = new McpProvider(cwd, {
+      ...config(configPath),
+      cache: { enabled: false, revalidate: "off", revalidateBudgetMs: 1_000 },
+    });
 
     const first = provider.invoke("$servers", {}, invocation);
     const second = provider.invoke("$servers", {}, invocation);

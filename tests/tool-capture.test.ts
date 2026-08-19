@@ -158,7 +158,6 @@ describe("registered extension tool capture", () => {
     controller.setPolicy({
       ...DEFAULT_FABRIC_CONFIG.capture,
       enabled: false,
-      hideFromModel: false,
     });
     expect(catalog.size).toBe(0);
     expect(runner.getAllRegisteredTools().map((entry) => entry.definition.name)).toEqual([

@@ -2,7 +2,7 @@ import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent
 import { Type } from "typebox";
 import { stringify as stringifyYaml } from "yaml";
 import { prepareFabricExecArguments } from "./fabric-exec-arguments.js";
-import type { LeanCodeModeRuntime } from "./lean-runtime.js";
+import type { LeanFabricRuntime } from "./lean-runtime.js";
 import { renderLeanExecCall, renderLeanExecResult } from "./ui/lean-exec-render.js";
 
 const RESULT_FORMATS = ["auto", "yaml", "json", "text"] as const;
@@ -18,7 +18,7 @@ const resultText = (value: unknown, format: string | undefined): string | undefi
 };
 
 export const createLeanFabricExecTool = (
-  runtime: LeanCodeModeRuntime,
+  runtime: LeanFabricRuntime,
 ): ToolDefinition<any, any, any> => defineTool({
   name: "fabric_exec",
   label: "Code Mode",

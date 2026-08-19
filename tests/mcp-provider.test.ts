@@ -26,7 +26,6 @@ const mcpConfig = (overrides: Partial<FabricMcpConfig> = {}): FabricMcpConfig =>
   allowDynamicServers: true,
   callTimeoutMs: 5_000,
   cache: { enabled: false, revalidate: "changed", revalidateBudgetMs: 10_000 },
-  advisory: false,
   ...overrides,
 });
 

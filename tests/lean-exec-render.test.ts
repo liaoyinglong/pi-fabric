@@ -1,14 +1,14 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import { createLeanFabricExecTool } from "../src/lean-exec-tool.js";
-import type { LeanCodeModeRuntime } from "../src/lean-runtime.js";
+import type { LeanFabricRuntime } from "../src/lean-runtime.js";
 
 const plainTheme = {
   fg: (_color: string, text: string) => text,
   bold: (text: string) => text,
 } as unknown as Theme;
 
-const tool = createLeanFabricExecTool({} as LeanCodeModeRuntime);
+const tool = createLeanFabricExecTool({} as LeanFabricRuntime);
 
 const renderContext = (expanded = false) => ({
   args: {},

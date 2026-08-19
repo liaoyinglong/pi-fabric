@@ -1,6 +1,6 @@
 import { type Skill } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { restoreSkillsForFullCodePrompt } from "../src/core/skill-prompt.js";
+import { restoreSkillsForLeanPrompt } from "../src/core/skill-prompt.js";
 
 const makeSkill = (
   input: Pick<Skill, "name" | "description" | "filePath"> & Partial<Skill>,
@@ -28,9 +28,9 @@ const skills: Skill[] = [
 const occurrences = (value: string, search: string): number =>
   value.split(search).length - 1;
 
-describe("full code skill prompt", () => {
+describe("Lean skill prompt", () => {
   it("restores Pi's skill catalog before the working directory", () => {
-    const prompt = restoreSkillsForFullCodePrompt(
+    const prompt = restoreSkillsForLeanPrompt(
       "Core prompt\nCurrent working directory: /workspace",
       skills,
     );
@@ -46,7 +46,7 @@ describe("full code skill prompt", () => {
   });
 
   it("uses Pi's XML escaping for model-visible skill metadata", () => {
-    const prompt = restoreSkillsForFullCodePrompt(
+    const prompt = restoreSkillsForLeanPrompt(
       "Core prompt",
       [makeSkill({
         name: "review",
@@ -59,7 +59,7 @@ describe("full code skill prompt", () => {
     expect(prompt).toContain("/skills/a&amp;b/SKILL.md");
   });
 
-  it("adapts an existing Pi skill section instead of duplicating it", () => {
+  it("adapts an existing Pi skill section without duplicating it", () => {
     const original = [
       "Core prompt",
       "The following skills provide specialized instructions for specific tasks.",
@@ -70,7 +70,7 @@ describe("full code skill prompt", () => {
       "Current working directory: /workspace",
     ].join("\n");
 
-    const prompt = restoreSkillsForFullCodePrompt(original, skills);
+    const prompt = restoreSkillsForLeanPrompt(original, skills);
 
     expect(occurrences(prompt, "<available_skills>")).toBe(1);
     expect(prompt).not.toContain("Use the read tool to load a skill");
@@ -80,12 +80,12 @@ describe("full code skill prompt", () => {
   it("leaves the prompt unchanged when every skill requires explicit invocation", () => {
     const prompt = "Core prompt\nCurrent working directory: /workspace";
     expect(
-      restoreSkillsForFullCodePrompt(prompt, [skills[1]!]),
+      restoreSkillsForLeanPrompt(prompt, [skills[1]!]),
     ).toBe(prompt);
   });
 
   it("appends the catalog when a custom prompt has no working-directory marker", () => {
-    const prompt = restoreSkillsForFullCodePrompt("Custom prompt", skills);
+    const prompt = restoreSkillsForLeanPrompt("Custom prompt", skills);
 
     expect(prompt.startsWith("Custom prompt\n\nThe following skills")).toBe(true);
     expect(prompt).toContain("<available_skills>");

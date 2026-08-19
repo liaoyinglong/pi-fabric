@@ -25,4 +25,21 @@ describe("package manifest", () => {
     });
     expect(manifest.files.some((file) => /worker|subagent|workflow/i.test(file))).toBe(false);
   });
+
+  it("describes this fork as an execution layer", () => {
+    const manifest = JSON.parse(fs.readFileSync("package.json", "utf8")) as {
+      description?: string;
+      repository?: { url?: string };
+      homepage?: string;
+      bugs?: { url?: string };
+      keywords?: string[];
+    };
+
+    expect(manifest.description).toBe("Programmatic tool-calling execution layer for Pi");
+    expect(manifest.repository?.url).toContain("liaoyinglong/pi-fabric");
+    expect(manifest.homepage).toContain("liaoyinglong/pi-fabric");
+    expect(manifest.bugs?.url).toContain("liaoyinglong/pi-fabric");
+    expect(manifest.keywords).toContain("execution-layer");
+    expect(manifest.keywords).not.toContain("codemode");
+  });
 });
