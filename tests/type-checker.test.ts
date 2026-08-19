@@ -47,6 +47,46 @@ describe("Fabric guest type checker", () => {
     expect(result.javascript).toBeUndefined();
   });
 
+  it("rejects positional tools.call arguments", () => {
+    const result = typeCheckFabricCode(
+      'return await tools.call("pi.grep", { pattern: "target" });',
+      GUEST_TYPE_DECLARATIONS,
+    );
+    expect(result.javascript).toBeUndefined();
+    expect(result.errors.some((error) => error.message.includes("Expected 1 arguments, but got 2"))).toBe(true);
+  });
+
+  it("rejects non-canonical tools.call object fields", () => {
+    const result = typeCheckFabricCode(
+      'return await tools.call({ name: "pi.grep", input: { pattern: "target" } });',
+      GUEST_TYPE_DECLARATIONS,
+    );
+    expect(result.javascript).toBeUndefined();
+    expect(result.errors.some((error) =>
+      error.message.includes("'name' does not exist") && error.message.includes("ref")
+    )).toBe(true);
+  });
+
+  it("rejects unsupported native pi.bash options", () => {
+    const result = typeCheckFabricCode(
+      'return await pi.bash({ command: "pwd", cwd: "/tmp" });',
+      GUEST_TYPE_DECLARATIONS,
+    );
+    expect(result.javascript).toBeUndefined();
+    expect(result.errors.some((error) =>
+      error.message.includes("'cwd' does not exist") && error.message.includes("PiBash")
+    )).toBe(true);
+  });
+
+  it("rejects the unsupported two-argument pi.edit patch form", () => {
+    const result = typeCheckFabricCode(
+      'return await pi.edit("src/file.ts", { patch: "replacement" });',
+      GUEST_TYPE_DECLARATIONS,
+    );
+    expect(result.javascript).toBeUndefined();
+    expect(result.errors.some((error) => error.message.includes("No overload expects 2 arguments"))).toBe(true);
+  });
+
   it("accepts dynamic MCP namespaces", () => {
     const result = typeCheckFabricCode(
       'return mcp.context7.resolve_library_id({ libraryName: "react" });',
