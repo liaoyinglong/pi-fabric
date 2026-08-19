@@ -156,6 +156,40 @@ const normalizeResult = (
   };
 };
 
+const assertSupportedToolArguments = (
+  name: PiCoreToolName,
+  tool: ToolDefinition<any, any, any>,
+  args: Record<string, unknown>,
+): void => {
+  const schema = tool.parameters as unknown as {
+    type?: unknown;
+    properties?: unknown;
+    additionalProperties?: unknown;
+  };
+  if (schema.type !== "object" || !schema.properties || typeof schema.properties !== "object") {
+    return;
+  }
+  if (
+    schema.additionalProperties === true ||
+    (typeof schema.additionalProperties === "object" && schema.additionalProperties !== null)
+  ) {
+    return;
+  }
+  const properties = schema.properties as Record<string, unknown>;
+  const unsupported = Object.keys(args).filter((key) => !(key in properties)).sort();
+  if (unsupported.length === 0) return;
+  const supported = Object.keys(properties).sort();
+  const hint = name === "bash" && unsupported.includes("cwd")
+    ? " pi.bash runs in the session working directory; change directory inside the command instead."
+    : name === "edit" && unsupported.includes("patch")
+      ? " pi.edit has no patch argument; use oldText/newText or edits[]."
+      : "";
+  throw new Error(
+    `Unsupported arguments for pi.${name}: ${unsupported.join(", ")}. ` +
+      `Supported arguments: ${supported.join(", ")}.${hint}`,
+  );
+};
+
 // Shape of a pi core tool's execute() result. AgentToolResult<unknown> is
 // { content, details, terminate? }; pi core tools throw on error rather than
 // returning isError, so isError is tracked separately in #invokeWithEvents.
@@ -236,7 +270,9 @@ export class PiToolsProvider implements FabricProvider {
     const input = actionName === "edit" && Object.hasOwn(args, "all")
       ? Object.fromEntries(Object.entries(args).filter(([key]) => key !== "all"))
       : args;
-    const prepare = this.#tools[actionName as PiCoreToolName].prepareArguments;
+    const name = actionName as PiCoreToolName;
+    const tool = this.#tools[name];
+    const prepare = tool.prepareArguments;
     const prepared = prepare ? prepare(input) : input;
     if (typeof prepared !== "object" || prepared === null || Array.isArray(prepared)) {
       throw new Error(`Pi tool ${actionName} prepared non-object arguments`);
@@ -248,9 +284,11 @@ export class PiToolsProvider implements FabricProvider {
         (edit) => typeof edit === "object" && edit !== null
           && !Array.isArray(edit) && (edit as Record<string, unknown>).all === true,
       );
-    return actionName === "edit" && (args.all === true || hasPerEditAll)
+    const normalized = actionName === "edit" && (args.all === true || hasPerEditAll)
       ? expandReplaceAllEdit(this.#cwd, record, args.all === true)
       : record;
+    assertSupportedToolArguments(name, tool, normalized);
+    return normalized;
   }
 
   async invoke(
