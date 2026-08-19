@@ -224,6 +224,15 @@ export class PiToolsProvider implements FabricProvider {
       return this.#capturedTools!.prepareArguments(actionName, args);
     }
     if (!(actionName in this.#tools)) return args;
+    if (actionName === "grep" && Object.hasOwn(args, "caseSensitive")) {
+      const { caseSensitive, ...withoutCaseSensitive } = args;
+      args = Object.hasOwn(withoutCaseSensitive, "ignoreCase")
+        ? withoutCaseSensitive
+        : {
+            ...withoutCaseSensitive,
+            ignoreCase: typeof caseSensitive === "boolean" ? !caseSensitive : caseSensitive,
+          };
+    }
     const input = actionName === "edit" && Object.hasOwn(args, "all")
       ? Object.fromEntries(Object.entries(args).filter(([key]) => key !== "all"))
       : args;
