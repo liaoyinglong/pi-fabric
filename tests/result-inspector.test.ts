@@ -1,5 +1,5 @@
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import { TuiAltScreen, type TUI } from "@earendil-works/pi-tui";
+import type { TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { FabricResultInspector } from "../src/ui/result-inspector.js";
 
@@ -8,11 +8,48 @@ const plainTheme = {
   bold: (text: string) => text,
 } as unknown as Theme;
 
-const fakeTui = (mode: "regular" | "fullscreen"): TUI => ({
+type FakeInteractiveTui = TUI & {
+  sourceLine: string;
+  copied: number;
+  openedUrl?: string;
+  selectionPressActive?: boolean;
+  selectionDragged?: boolean;
+  selectionAnchor?: { row: number; col: number };
+  pressedUrl?: string;
+  handleSelectionMouseEvent(event: { release: boolean; x: number }): void;
+  getSelectionSourceLine(point: { row: number; col: number }): string;
+};
+
+const fakeTui = (mode: "regular" | "fullscreen"): FakeInteractiveTui => ({
   mode,
-  terminal: { rows: 40 },
+  terminal: { rows: 40, columns: 120 },
   requestRender: vi.fn(),
-} as unknown as TUI);
+  sourceLine: "",
+  copied: 0,
+  handleSelectionMouseEvent(event) {
+    if (event.release) {
+      if (!this.selectionPressActive) return;
+      this.selectionPressActive = false;
+      if (this.pressedUrl) {
+        this.openedUrl = this.pressedUrl;
+        this.pressedUrl = undefined;
+        return;
+      }
+      this.copied += 1;
+      return;
+    }
+
+    this.selectionPressActive = true;
+    this.selectionDragged = false;
+    this.selectionAnchor = { row: 0, col: event.x };
+    // Reproduce Pi's fullscreen ScrollView failure: the painted screen lookup
+    // misses the OSC 8 link even though the scroll-content source still has it.
+    this.pressedUrl = undefined;
+  },
+  getSelectionSourceLine() {
+    return this.sourceLine;
+  },
+} as unknown as FakeInteractiveTui);
 
 const bindInspector = (mode: "regular" | "fullscreen") => {
   const tui = fakeTui(mode);
@@ -49,8 +86,8 @@ describe("Fabric result inspector", () => {
     inspector.dispose();
   });
 
-  it("opens a fullscreen overlay when the inspect link is clicked", async () => {
-    const { inspector, custom } = bindInspector("fullscreen");
+  it("opens the overlay instead of falling through to copied", async () => {
+    const { inspector, tui, custom } = bindInspector("fullscreen");
     const action = inspector.renderAction({
       inspectId: "call-fullscreen",
       output: "line 1\nline 2",
@@ -61,17 +98,17 @@ describe("Fabric result inspector", () => {
     const url = /\x1b\]8;;([^\x07]+)\x07/.exec(action ?? "")?.[1];
     expect(url).toMatch(/^pi-fabric:\/\/inspect\//);
 
-    const mouseHandler = (TuiAltScreen.prototype as unknown as Record<string, unknown>)
-      .handleSelectionMouseEvent;
-    expect(typeof mouseHandler).toBe("function");
-    (mouseHandler as (this: Record<string, unknown>, event: { release: boolean }) => void).call({
-      selectionPressActive: true,
-      selectionDragged: false,
-      pressedUrl: url,
-      requestRender: vi.fn(),
-    }, { release: true });
+    // The current renderer's painted-screen URL lookup misses, but its
+    // scroll-content source line still contains Fabric's OSC 8 action.
+    tui.sourceLine = action ?? "";
+    tui.handleSelectionMouseEvent({ release: false, x: 1 });
+    expect(tui.pressedUrl).toBe(url);
 
+    tui.handleSelectionMouseEvent({ release: true, x: 1 });
     await Promise.resolve();
+
+    expect(tui.copied).toBe(0);
+    expect(tui.openedUrl).toBeUndefined();
     expect(custom).toHaveBeenCalledTimes(1);
     expect(custom.mock.calls[0]?.[1]).toMatchObject({
       overlay: true,
