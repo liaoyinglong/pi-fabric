@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text, type Component } from "@earendil-works/pi-tui";
 import { diffLines } from "diff";
 import { headlineArg } from "../core/call-preview.js";
+import type { FabricResultInspectorLike } from "./result-inspector.js";
 
 const COLLAPSED_CODE_LINES = 15;
 const COLLAPSED_AUDIT_LINES = 5;
@@ -43,6 +44,11 @@ interface LeanAudit {
   preview?: unknown;
   startedAt?: number;
   endedAt?: number;
+}
+
+export interface LeanExecResultInteraction {
+  inspectId?: string;
+  inspector?: FabricResultInspectorLike;
 }
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
@@ -244,14 +250,27 @@ const truncateResultLine = (line: string): { text: string; truncated: boolean } 
   };
 };
 
-const renderResultBody = (output: string, theme: Theme, expanded: boolean): string[] => {
+const renderResultBody = (
+  output: string,
+  theme: Theme,
+  expanded: boolean,
+  interaction?: LeanExecResultInteraction,
+): string[] => {
   if (!output) return [];
   const lines = output.split("\n");
   if (!expanded) {
     if (lines.length === 1 && output.length <= COLLAPSED_INLINE_RESULT_CHARS) {
       return [`${theme.fg("dim", "result ›")} ${theme.fg("toolOutput", output)}`];
     }
-    return [theme.fg("dim", `result · ${resultMeta(output)} · Ctrl+O to inspect`)];
+    const meta = resultMeta(output);
+    const inspectAction = interaction?.inspectId
+      ? interaction.inspector?.renderAction({ inspectId: interaction.inspectId, output, meta }, theme)
+      : undefined;
+    return [
+      inspectAction
+        ? `${theme.fg("dim", `result · ${meta} · `)}${inspectAction}`
+        : theme.fg("dim", `result · ${meta} · Ctrl+O to inspect`),
+    ];
   }
 
   const visible = lines.slice(0, EXPANDED_RESULT_LINES).map(truncateResultLine);
@@ -275,6 +294,7 @@ export const renderLeanExecResult = (
   theme: Theme,
   expanded: boolean,
   isPartial: boolean,
+  interaction?: LeanExecResultInteraction,
 ): Component => {
   const details = asRecord(result.details) ?? {};
   const audits = normalizedAudits(details.audits);
@@ -300,7 +320,7 @@ export const renderLeanExecResult = (
   const activity = renderAudits(visibleAudits, theme, expanded);
   const output = safeExecDisplayText(textContent(result.content)).trimEnd();
   const sections = [header, ...(activity.length > 0 ? [activity.join("\n")] : [])];
-  const resultBody = renderResultBody(output, theme, expanded);
+  const resultBody = renderResultBody(output, theme, expanded, interaction);
   if (resultBody.length > 0) sections.push(resultBody.join("\n"));
   return new Text(sections.join("\n"), 0, 0);
 };
