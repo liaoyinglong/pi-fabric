@@ -25,10 +25,12 @@ export const createLeanFabricExecTool = (
   name: "fabric_exec",
   label: "Code Mode",
   description:
-    "Execute one type-checked TypeScript program that composes Pi core tools, captured Pi extension tools, and MCP tools. Intermediate values stay inside the runtime; return only the bounded value needed by the caller.",
+    "Execute one type-checked TypeScript program that composes Pi core tools, captured Pi extension tools, and MCP tools. Prefer it for data-heavy work where raw output may be large or unpredictable: intermediate values stay inside the runtime; return only the bounded value needed by the caller.",
   promptSnippet: "programmatic tool calling through one bounded TypeScript execution",
   promptGuidelines: [
     "Use fabric_exec to batch related tool operations. Use sequential await when one result determines the next step and Promise.all(...) only for independent work.",
+    "Prefer fabric_exec when tool output size/shape is unknown or potentially large (repo-wide search, logs, list/query endpoints, browser/MCP snapshots), especially when you only need derived facts.",
+    "If the task requires filtering/counting/aggregating/parsing/comparing/transformation, do that inside fabric_exec and return only compact evidence; use direct tools for short fixed observational output you intend to read verbatim.",
     "Inside fabric_exec, Pi core tools are pi.read, pi.bash, pi.edit, pi.write, pi.grep, pi.find, and pi.ls; shell execution is pi.bash, not pi.exec.",
     "Inside fabric_exec, pi.read/pi.grep/pi.find/pi.ls return strings, while pi.bash/pi.edit/pi.write return {ok, output, details} envelopes.",
     "pi.bash accepts a command string/object or (command, options); options include timeout/timeoutMs/settle, not cwd. Change directory inside the command, and use settle: true when a nonzero exit is an expected result such as rg/grep finding no matches.",
