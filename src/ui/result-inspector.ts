@@ -11,8 +11,8 @@ import {
 
 const INSPECT_URL_PREFIX = "pi-fabric://inspect/";
 const CAPTURE_WIDGET_KEY = "pi-fabric.result-inspector.capture";
-const ROUTES_SYMBOL = Symbol.for("pi-fabric.result-inspector.routes");
 const PATCH_SYMBOL = Symbol.for("pi-fabric.result-inspector.alt-screen-patch");
+const ROUTES_GLOBAL_KEY = "__piFabricResultInspectorRoutes";
 
 interface InspectPayload {
   output: string;
@@ -30,14 +30,14 @@ export interface FabricResultInspectorLike {
 }
 
 type InspectRouteMap = Map<string, () => void>;
-
-type InspectorGlobal = typeof globalThis & {
-  [ROUTES_SYMBOL]?: InspectRouteMap;
-};
+type InspectorGlobal = typeof globalThis & Record<string, unknown>;
 
 const globalState = globalThis as InspectorGlobal;
-const inspectRoutes = globalState[ROUTES_SYMBOL] ?? new Map<string, () => void>();
-globalState[ROUTES_SYMBOL] = inspectRoutes;
+const existingRoutes = globalState[ROUTES_GLOBAL_KEY];
+const inspectRoutes: InspectRouteMap = existingRoutes instanceof Map
+  ? existingRoutes as InspectRouteMap
+  : new Map<string, () => void>();
+globalState[ROUTES_GLOBAL_KEY] = inspectRoutes;
 
 interface AltScreenMouseEventLike {
   release?: boolean;
