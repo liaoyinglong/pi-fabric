@@ -46,7 +46,7 @@ interface AltScreenMouseEventLike {
 interface AltScreenMouseInternals {
   selectionPressActive?: boolean;
   selectionDragged?: boolean;
-  pressedUrl?: string;
+  pressedUrl?: string | undefined;
   selectionAnchor?: unknown;
   selectionFocus?: unknown;
   selectionInitialRange?: unknown;
@@ -205,7 +205,7 @@ class ResultInspectorOverlay implements Component {
 
     const wheel = /^\x1b\[<(\d+);\d+;\d+[Mm]$/.exec(data);
     if (!wheel) return;
-    const button = Number.parseInt(wheel[1], 10);
+    const button = Number.parseInt(wheel[1] ?? "0", 10);
     if ((button & 64) === 0) return;
     this.move((button & 3) === 0 ? -3 : 3);
   }
