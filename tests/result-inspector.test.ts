@@ -15,7 +15,7 @@ type FakeInteractiveTui = TUI & {
   selectionPressActive?: boolean;
   selectionDragged?: boolean;
   selectionAnchor?: { row: number; col: number };
-  pressedUrl?: string;
+  pressedUrl: string | undefined;
   handleSelectionMouseEvent(event: { release: boolean; x: number }): void;
   getSelectionSourceLine(point: { row: number; col: number }): string;
 };
@@ -26,6 +26,7 @@ const fakeTui = (mode: "regular" | "fullscreen"): FakeInteractiveTui => ({
   requestRender: vi.fn(),
   sourceLine: "",
   copied: 0,
+  pressedUrl: undefined,
   handleSelectionMouseEvent(this: FakeInteractiveTui, event: { release: boolean; x: number }) {
     if (event.release) {
       if (!this.selectionPressActive) return;
