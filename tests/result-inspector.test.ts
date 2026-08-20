@@ -26,7 +26,7 @@ const fakeTui = (mode: "regular" | "fullscreen"): FakeInteractiveTui => ({
   requestRender: vi.fn(),
   sourceLine: "",
   copied: 0,
-  handleSelectionMouseEvent(event) {
+  handleSelectionMouseEvent(this: FakeInteractiveTui, event: { release: boolean; x: number }) {
     if (event.release) {
       if (!this.selectionPressActive) return;
       this.selectionPressActive = false;
@@ -46,7 +46,7 @@ const fakeTui = (mode: "regular" | "fullscreen"): FakeInteractiveTui => ({
     // misses the OSC 8 link even though the scroll-content source still has it.
     this.pressedUrl = undefined;
   },
-  getSelectionSourceLine() {
+  getSelectionSourceLine(this: FakeInteractiveTui) {
     return this.sourceLine;
   },
 } as unknown as FakeInteractiveTui);
