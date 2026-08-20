@@ -1,7 +1,10 @@
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
-import { FabricResultInspector } from "../src/ui/result-inspector.js";
+import {
+  buildFabricExecutionInspectContent,
+  FabricResultInspector,
+} from "../src/ui/result-inspector.js";
 
 const plainTheme = {
   fg: (_color: string, text: string) => text,
@@ -77,6 +80,39 @@ const bindInspector = (mode: "regular" | "fullscreen") => {
 };
 
 describe("Fabric result inspector", () => {
+  it("formats the full Fabric execution instead of only the final result", () => {
+    const content = buildFabricExecutionInspectContent({
+      args: {
+        code: "const data = await pi.bash('echo hi');\nreturn data.output;",
+        strings: { query: "hello" },
+        resultFormat: "text",
+      },
+      details: {
+        audits: [{
+          ref: "pi.bash",
+          success: false,
+          args: { command: "echo hi" },
+          preview: { output: "hi" },
+          error: "boom",
+          startedAt: 10,
+          endedAt: 591,
+        }],
+      },
+    }, "final-result");
+
+    expect(content).toContain("Code · 2 lines");
+    expect(content).toContain("1 const data = await pi.bash('echo hi');");
+    expect(content).toContain("Strings · 1");
+    expect(content).toContain("Result format · text");
+    expect(content).toContain("Calls · 1");
+    expect(content).toContain("1. ✗ pi.bash · 581ms");
+    expect(content).toContain('\"command\": \"echo hi\"');
+    expect(content).toContain('\"output\": \"hi\"');
+    expect(content).toContain("boom");
+    expect(content).toContain("Result · 1 line");
+    expect(content).toContain("final-result");
+  });
+
   it("keeps inspect actions disabled in regular mode", () => {
     const { inspector } = bindInspector("regular");
     expect(inspector.renderAction({
@@ -89,6 +125,11 @@ describe("Fabric result inspector", () => {
 
   it("opens the overlay instead of falling through to copied", async () => {
     const { inspector, tui, custom } = bindInspector("fullscreen");
+    inspector.captureExecution({
+      inspectId: "call-fullscreen",
+      args: { code: "return 42;" },
+      details: { audits: [] },
+    });
     const action = inspector.renderAction({
       inspectId: "call-fullscreen",
       output: "line 1\nline 2",
