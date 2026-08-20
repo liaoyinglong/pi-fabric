@@ -55,7 +55,7 @@ export const createLeanFabricExecTool = (
   renderResult(result, { expanded, isPartial }, theme, context) {
     return renderLeanExecResult(result, theme, expanded, isPartial, {
       inspectId: context.toolCallId,
-      inspector: resultInspector,
+      ...(resultInspector ? { inspector: resultInspector } : {}),
     });
   },
   async execute(toolCallId, params, signal, onUpdate, context) {
