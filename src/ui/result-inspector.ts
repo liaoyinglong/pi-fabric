@@ -1,8 +1,8 @@
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
+  getOsc8LinkAtColumn,
   matchesKey,
   Text,
-  TuiAltScreen,
   truncateToWidth,
   visibleWidth,
   type Component,
@@ -11,7 +11,7 @@ import {
 
 const INSPECT_URL_PREFIX = "pi-fabric://inspect/";
 const CAPTURE_WIDGET_KEY = "pi-fabric.result-inspector.capture";
-const PATCH_SYMBOL = Symbol.for("pi-fabric.result-inspector.alt-screen-patch");
+const PATCH_SYMBOL = Symbol.for("pi-fabric.result-inspector.active-tui-patch");
 const ROUTES_GLOBAL_KEY = "__piFabricResultInspectorRoutes";
 
 interface InspectPayload {
@@ -39,8 +39,16 @@ const inspectRoutes: InspectRouteMap = existingRoutes instanceof Map
   : new Map<string, () => void>();
 globalState[ROUTES_GLOBAL_KEY] = inspectRoutes;
 
+interface SelectionPointLike {
+  row?: number;
+  col: number;
+}
+
 interface AltScreenMouseEventLike {
   release?: boolean;
+  button?: number;
+  x?: number;
+  y?: number;
 }
 
 interface AltScreenMouseInternals {
@@ -51,28 +59,52 @@ interface AltScreenMouseInternals {
   selectionFocus?: unknown;
   selectionInitialRange?: unknown;
   lastClick?: unknown;
+  getSelectionSourceLine?: (point: SelectionPointLike) => string;
+  stopSelectionAutoScroll?: () => void;
   requestRender?: () => void;
 }
 
 let nextInspectorInstance = 0;
 
-/**
- * Pi 0.84.x owns mouse input in fullscreen mode, but does not yet expose
- * component-level mouse events to extensions. Intercept only Fabric's internal
- * OSC 8 links at the point where TuiAltScreen would otherwise open them in the
- * browser. All other mouse/link behavior delegates to Pi unchanged.
- *
- * This is intentionally fullscreen-only. Regular mode leaves mouse ownership
- * with the terminal so native scrollback and selection continue to work.
- */
-const installAltScreenInspectInterceptor = (): boolean => {
-  const prototype = TuiAltScreen.prototype as unknown as Record<PropertyKey, unknown>;
-  if (prototype[PATCH_SYMBOL] === true) return true;
+const recoverInspectUrlFromSelection = (state: AltScreenMouseInternals): void => {
+  if (typeof state.getSelectionSourceLine !== "function") return;
+  const anchor = state.selectionAnchor as Partial<SelectionPointLike> | undefined;
+  if (!anchor || typeof anchor.col !== "number") return;
 
-  const original = prototype.handleSelectionMouseEvent;
+  let sourceLine: string;
+  try {
+    sourceLine = state.getSelectionSourceLine(anchor as SelectionPointLike);
+  } catch {
+    return;
+  }
+
+  const url = getOsc8LinkAtColumn(sourceLine, anchor.col);
+  if (url && inspectRoutes.has(url)) state.pressedUrl = url;
+};
+
+/**
+ * Pi 0.84.x owns mouse input in fullscreen mode but does not expose
+ * component-level mouse events to extensions yet. Patch the *active renderer
+ * instance* handed to extensions instead of importing/patching TuiAltScreen's
+ * class prototype: an extension may resolve a different pi-tui module instance
+ * than the host renderer.
+ *
+ * Pi's fullscreen selection code normally resolves OSC 8 links from the painted
+ * screen row. For transcript ScrollViews that can lose the link identity and a
+ * click falls through to "copied". After the host processes mouse-down, recover
+ * Fabric's private link from the scroll-content selection source. On mouse-up,
+ * consume only registered Fabric inspect links and delegate every other event to
+ * Pi unchanged.
+ */
+const installActiveTuiInspectInterceptor = (tui: TUI): boolean => {
+  if (tui.mode !== "fullscreen") return false;
+  const target = tui as unknown as Record<PropertyKey, unknown>;
+  if (target[PATCH_SYMBOL] === true) return true;
+
+  const original = target.handleSelectionMouseEvent;
   if (typeof original !== "function") return false;
 
-  prototype.handleSelectionMouseEvent = function (
+  target.handleSelectionMouseEvent = function (
     this: AltScreenMouseInternals,
     event: AltScreenMouseEventLike,
   ): unknown {
@@ -85,18 +117,30 @@ const installAltScreenInspectInterceptor = (): boolean => {
       handler
     ) {
       this.selectionPressActive = false;
+      this.selectionDragged = false;
       this.pressedUrl = undefined;
       this.selectionAnchor = undefined;
       this.selectionFocus = undefined;
       this.selectionInitialRange = undefined;
       this.lastClick = undefined;
+      this.stopSelectionAutoScroll?.();
       handler();
       this.requestRender?.();
       return;
     }
-    return original.call(this, event);
+
+    const result = Reflect.apply(original, this, [event]);
+    if (
+      event.release !== true &&
+      this.selectionPressActive === true &&
+      this.selectionDragged !== true &&
+      !(typeof this.pressedUrl === "string" && inspectRoutes.has(this.pressedUrl))
+    ) {
+      recoverInspectUrlFromSelection(this);
+    }
+    return result;
   };
-  prototype[PATCH_SYMBOL] = true;
+  target[PATCH_SYMBOL] = true;
   return true;
 };
 
@@ -221,18 +265,17 @@ export class FabricResultInspector implements FabricResultInspectorLike {
   private readonly urls = new Map<string, string>();
   private ui: ExtensionUIContext | undefined;
   private tui: TUI | undefined;
-  private interceptorAvailable = false;
   private overlayOpen = false;
 
   bind(ui: ExtensionUIContext | undefined): void {
     this.dispose();
     if (!ui) return;
     this.ui = ui;
-    this.interceptorAvailable = installAltScreenInspectInterceptor();
     ui.setWidget(
       CAPTURE_WIDGET_KEY,
       (tui) => {
         this.tui = tui;
+        installActiveTuiInspectInterceptor(tui);
         return new EmptyCaptureComponent();
       },
       { placement: "belowEditor" },
@@ -247,11 +290,13 @@ export class FabricResultInspector implements FabricResultInspectorLike {
     if (this.ui) this.ui.setWidget(CAPTURE_WIDGET_KEY, undefined);
     this.ui = undefined;
     this.tui = undefined;
-    this.interceptorAvailable = false;
   }
 
   renderAction(action: FabricResultInspectAction, theme: Theme): string | undefined {
-    if (!this.interceptorAvailable || this.tui?.mode !== "fullscreen" || !this.ui) return undefined;
+    const tui = this.tui;
+    if (!this.ui || !tui || tui.mode !== "fullscreen" || !installActiveTuiInspectInterceptor(tui)) {
+      return undefined;
+    }
 
     this.payloads.set(action.inspectId, { output: action.output, meta: action.meta });
     let url = this.urls.get(action.inspectId);
