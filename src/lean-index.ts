@@ -10,6 +10,7 @@ import { PI_CORE_TOOL_NAME_SET } from "./core/pi-tools.js";
 import { restoreSkillsForLeanPrompt } from "./core/skill-prompt.js";
 import { createLeanFabricExecTool } from "./lean-exec-tool.js";
 import { LeanFabricRuntime } from "./lean-runtime.js";
+import { FabricResultInspector } from "./ui/result-inspector.js";
 
 const extensionPath = fileURLToPath(import.meta.url);
 const entryDir = path.dirname(extensionPath);
@@ -60,7 +61,8 @@ export const buildLeanSystemPrompt = ({
 export default async function leanFabricExtension(pi: ExtensionAPI): Promise<void> {
   const capturedTools = new CapturedToolCatalog();
   const runtime = new LeanFabricRuntime(pi, capturedTools);
-  const fabricTool = createLeanFabricExecTool(runtime);
+  const resultInspector = new FabricResultInspector();
+  const fabricTool = createLeanFabricExecTool(runtime, resultInspector);
   let savedActiveTools: string[] | undefined;
 
   const inactiveCapturePolicy = {
@@ -95,6 +97,7 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
 
   pi.on("session_start", async (_event, context) => {
     savedActiveTools = undefined;
+    resultInspector.bind(context.mode === "tui" ? context.ui : undefined);
     await runtime.initialize(context);
     toolCapture.setPolicy(runtime.config.capture);
     pi.registerTool(fabricTool);
@@ -114,6 +117,7 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
   });
 
   pi.on("session_shutdown", async () => {
+    resultInspector.dispose();
     toolCapture.setPolicy(inactiveCapturePolicy);
     await runtime.close();
     if (savedActiveTools) {
