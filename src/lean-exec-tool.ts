@@ -53,6 +53,11 @@ export const createLeanFabricExecTool = (
     return renderLeanExecCall(params as Record<string, unknown>, theme, context.expanded);
   },
   renderResult(result, { expanded, isPartial }, theme, context) {
+    resultInspector?.captureExecution?.({
+      inspectId: context.toolCallId,
+      args: context.args as Record<string, unknown>,
+      ...(result.details === undefined ? {} : { details: result.details }),
+    });
     return renderLeanExecResult(result, theme, expanded, isPartial, {
       inspectId: context.toolCallId,
       ...(resultInspector ? { inspector: resultInspector } : {}),

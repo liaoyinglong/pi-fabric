@@ -15,8 +15,17 @@ const PATCH_SYMBOL = Symbol.for("pi-fabric.result-inspector.active-tui-patch");
 const ROUTES_GLOBAL_KEY = "__piFabricResultInspectorRoutes";
 
 interface InspectPayload {
-  output: string;
+  content: string;
   meta: string;
+}
+
+interface FabricExecutionSnapshot {
+  args: Record<string, unknown>;
+  details?: unknown;
+}
+
+export interface FabricExecutionInspectSnapshot extends FabricExecutionSnapshot {
+  inspectId: string;
 }
 
 export interface FabricResultInspectAction {
@@ -26,6 +35,7 @@ export interface FabricResultInspectAction {
 }
 
 export interface FabricResultInspectorLike {
+  captureExecution?(snapshot: FabricExecutionInspectSnapshot): void;
   renderAction(action: FabricResultInspectAction, theme: Theme): string | undefined;
 }
 
@@ -64,7 +74,128 @@ interface AltScreenMouseInternals {
   requestRender?: () => void;
 }
 
+interface AuditLike {
+  ref?: string;
+  provider?: string;
+  tool?: string;
+  success?: boolean;
+  error?: string;
+  args?: Record<string, unknown>;
+  preview?: unknown;
+  startedAt?: number;
+  endedAt?: number;
+}
+
 let nextInspectorInstance = 0;
+
+const safeText = (value: unknown): string =>
+  String(value ?? "")
+    .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, "")
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+
+const asRecord = (value: unknown): Record<string, unknown> | undefined =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+
+const stringifyValue = (value: unknown): string => {
+  if (typeof value === "string") return safeText(value);
+  try {
+    return safeText(JSON.stringify(value, null, 2) ?? String(value));
+  } catch {
+    return safeText(String(value));
+  }
+};
+
+const indent = (text: string, spaces = 2): string => {
+  const prefix = " ".repeat(spaces);
+  return text.split("\n").map((line) => `${prefix}${line}`).join("\n");
+};
+
+const elapsedLabel = (startedAt: unknown, endedAt: unknown): string | undefined => {
+  if (typeof startedAt !== "number" || typeof endedAt !== "number") return undefined;
+  const elapsed = Math.max(0, endedAt - startedAt);
+  if (elapsed < 1_000) return `${Math.round(elapsed)}ms`;
+  return `${(elapsed / 1_000).toFixed(elapsed < 10_000 ? 1 : 0)}s`;
+};
+
+const auditRef = (audit: AuditLike): string =>
+  (audit.ref ?? [audit.provider, audit.tool].filter(Boolean).join(".")) || "tool";
+
+const formatCode = (args: Record<string, unknown>): string[] => {
+  const raw = Array.isArray(args.code) ? args.code.join("\n") : String(args.code ?? "");
+  const lines = safeText(raw).split("\n");
+  const width = String(Math.max(1, lines.length)).length;
+  return [
+    `Code · ${lines.length} ${lines.length === 1 ? "line" : "lines"}`,
+    ...lines.map((line, index) => `${String(index + 1).padStart(width, " ")} ${line}`),
+  ];
+};
+
+const formatInputs = (args: Record<string, unknown>): string[] => {
+  const lines: string[] = [];
+  const strings = asRecord(args.strings);
+  if (strings && Object.keys(strings).length > 0) {
+    lines.push(`Strings · ${Object.keys(strings).length}`);
+    for (const [key, value] of Object.entries(strings)) {
+      lines.push(`${key}:`);
+      lines.push(indent(stringifyValue(value)));
+    }
+  }
+  if (typeof args.resultFormat === "string" && args.resultFormat !== "auto") {
+    lines.push(`Result format · ${safeText(args.resultFormat)}`);
+  }
+  return lines;
+};
+
+const formatAudits = (details: unknown): string[] => {
+  const record = asRecord(details);
+  const audits = Array.isArray(record?.audits)
+    ? record.audits.filter((value): value is AuditLike => typeof value === "object" && value !== null)
+    : [];
+  const visible = audits.filter((audit) => auditRef(audit) !== "todo.replace");
+  if (visible.length === 0) return ["Calls · 0"];
+
+  const lines = [`Calls · ${visible.length}`];
+  visible.forEach((audit, index) => {
+    const glyph = audit.success === false ? "✗" : audit.success === true ? "✓" : "◆";
+    const duration = elapsedLabel(audit.startedAt, audit.endedAt);
+    lines.push(`${index + 1}. ${glyph} ${safeText(auditRef(audit))}${duration ? ` · ${duration}` : ""}`);
+    if (audit.args && Object.keys(audit.args).length > 0) {
+      lines.push("  Args");
+      lines.push(indent(stringifyValue(audit.args), 4));
+    }
+    if (audit.preview !== undefined) {
+      lines.push("  Preview");
+      lines.push(indent(stringifyValue(audit.preview), 4));
+    }
+    if (audit.error) {
+      lines.push("  Error");
+      lines.push(indent(safeText(audit.error), 4));
+    }
+  });
+  return lines;
+};
+
+export const buildFabricExecutionInspectContent = (
+  snapshot: FabricExecutionSnapshot | undefined,
+  output: string,
+): string => {
+  const sections: string[][] = [];
+  if (snapshot) {
+    sections.push(formatCode(snapshot.args));
+    const inputs = formatInputs(snapshot.args);
+    if (inputs.length > 0) sections.push(inputs);
+    sections.push(formatAudits(snapshot.details));
+  }
+  const resultLines = safeText(output).split("\n");
+  sections.push([
+    `Result · ${output ? `${resultLines.length} ${resultLines.length === 1 ? "line" : "lines"}` : "empty"}`,
+    ...(output ? resultLines : ["(no result)"]),
+  ]);
+  return sections.map((section) => section.join("\n")).join("\n\n");
+};
 
 const recoverInspectUrlFromSelection = (state: AltScreenMouseInternals): void => {
   if (typeof state.getSelectionSourceLine !== "function") return;
@@ -166,7 +297,7 @@ class ResultInspectorOverlay implements Component {
     private readonly payload: InspectPayload,
     private readonly close: () => void,
   ) {
-    this.body = new Text(payload.output || "(no output)", 0, 0);
+    this.body = new Text(payload.content || "(no details)", 0, 0);
   }
 
   private framed(content: string, width: number): string {
@@ -206,10 +337,10 @@ class ResultInspectorOverlay implements Component {
 
     return [
       this.theme.fg("dim", `┌${"─".repeat(Math.max(0, safeWidth - 2))}┐`),
-      this.framed(this.theme.fg("accent", this.theme.bold("Fabric result")), safeWidth),
+      this.framed(this.theme.fg("accent", this.theme.bold("Fabric execution")), safeWidth),
       this.framed(this.theme.fg("dim", this.payload.meta), safeWidth),
       rule,
-      ...shown.map((line) => this.framed(this.theme.fg("toolOutput", line || " "), safeWidth)),
+      ...shown.map((line) => this.framed(line || " ", safeWidth)),
       this.framed(this.theme.fg("dim", footer), safeWidth),
       this.theme.fg("dim", `└${"─".repeat(Math.max(0, safeWidth - 2))}┘`),
     ];
@@ -262,6 +393,7 @@ class ResultInspectorOverlay implements Component {
 export class FabricResultInspector implements FabricResultInspectorLike {
   private readonly instanceId = ++nextInspectorInstance;
   private readonly payloads = new Map<string, InspectPayload>();
+  private readonly snapshots = new Map<string, FabricExecutionSnapshot>();
   private readonly urls = new Map<string, string>();
   private ui: ExtensionUIContext | undefined;
   private tui: TUI | undefined;
@@ -282,10 +414,18 @@ export class FabricResultInspector implements FabricResultInspectorLike {
     );
   }
 
+  captureExecution(snapshot: FabricExecutionInspectSnapshot): void {
+    this.snapshots.set(snapshot.inspectId, {
+      args: snapshot.args,
+      ...(snapshot.details === undefined ? {} : { details: snapshot.details }),
+    });
+  }
+
   dispose(): void {
     for (const url of this.urls.values()) inspectRoutes.delete(url);
     this.urls.clear();
     this.payloads.clear();
+    this.snapshots.clear();
     this.overlayOpen = false;
     if (this.ui) this.ui.setWidget(CAPTURE_WIDGET_KEY, undefined);
     this.ui = undefined;
@@ -298,7 +438,10 @@ export class FabricResultInspector implements FabricResultInspectorLike {
       return undefined;
     }
 
-    this.payloads.set(action.inspectId, { output: action.output, meta: action.meta });
+    this.payloads.set(action.inspectId, {
+      content: buildFabricExecutionInspectContent(this.snapshots.get(action.inspectId), action.output),
+      meta: action.meta,
+    });
     let url = this.urls.get(action.inspectId);
     if (!url) {
       url = `${INSPECT_URL_PREFIX}${this.instanceId}/${encodeURIComponent(action.inspectId)}`;
