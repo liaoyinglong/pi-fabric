@@ -4,6 +4,7 @@ import { stringify as stringifyYaml } from "yaml";
 import { prepareFabricExecArguments } from "./fabric-exec-arguments.js";
 import type { LeanFabricRuntime } from "./lean-runtime.js";
 import { renderLeanExecCall, renderLeanExecResult } from "./ui/lean-exec-render.js";
+import type { FabricResultInspectorLike } from "./ui/result-inspector.js";
 
 const RESULT_FORMATS = ["auto", "yaml", "json", "text"] as const;
 
@@ -19,6 +20,7 @@ const resultText = (value: unknown, format: string | undefined): string | undefi
 
 export const createLeanFabricExecTool = (
   runtime: LeanFabricRuntime,
+  resultInspector?: FabricResultInspectorLike,
 ): ToolDefinition<any, any, any> => defineTool({
   name: "fabric_exec",
   label: "Code Mode",
@@ -50,8 +52,11 @@ export const createLeanFabricExecTool = (
   renderCall(params, theme, context) {
     return renderLeanExecCall(params as Record<string, unknown>, theme, context.expanded);
   },
-  renderResult(result, { expanded, isPartial }, theme) {
-    return renderLeanExecResult(result, theme, expanded, isPartial);
+  renderResult(result, { expanded, isPartial }, theme, context) {
+    return renderLeanExecResult(result, theme, expanded, isPartial, {
+      inspectId: context.toolCallId,
+      inspector: resultInspector,
+    });
   },
   async execute(toolCallId, params, signal, onUpdate, context) {
     const code = Array.isArray(params.code) ? params.code.join("\n") : String(params.code ?? "");
