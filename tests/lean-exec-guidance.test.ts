@@ -19,4 +19,15 @@ describe("fabric_exec prompt contract", () => {
     expect(guidance).toContain("no patch or two-argument form");
     expect(guidance).toContain("π.key");
   });
+
+  it("routes unpredictable or data-heavy output through code mode", () => {
+    const tool = createLeanFabricExecTool({} as LeanFabricRuntime);
+    const guidance = (tool.promptGuidelines ?? []).join("\n");
+
+    expect(tool.description).toContain("large or unpredictable");
+    expect(guidance).toContain("output size/shape is unknown or potentially large");
+    expect(guidance).toContain("filtering/counting/aggregating/parsing/comparing/transformation");
+    expect(guidance).toContain("short fixed observational output");
+    expect(guidance).toContain("return only compact evidence");
+  });
 });
