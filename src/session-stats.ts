@@ -22,15 +22,6 @@ const resultLines = (text: string | undefined): number =>
 const codeLines = (code: string): number =>
   code.length === 0 ? 0 : code.split("\n").length;
 
-const serializedChars = (value: unknown): number | undefined => {
-  if (value === undefined) return undefined;
-  try {
-    return JSON.stringify(value)?.length;
-  } catch {
-    return undefined;
-  }
-};
-
 const discoveryRef = (ref: string): string | undefined => {
   switch (ref) {
     case "fabric.discovery.providers": return "tools.providers";
@@ -168,7 +159,7 @@ export class FabricSessionStats {
         ref,
         success: operation.outcome === "succeeded",
         failed: operation.outcome !== "succeeded",
-        resultChars: serializedChars(operation.result),
+        resultChars: operation.resultChars,
         truncated: operation.resultTruncated === true,
       });
     }
@@ -290,6 +281,7 @@ export const formatFabricSessionStats = (stats: FabricSessionStatsSnapshot): str
         ? `${compactCount(call.totalResultChars)} chars · ${compactCount(call.maxResultChars)} max`
         : "result size n/a";
       const suffix = [
+        call.maxResultChars > VERY_LARGE_RESULT_CHARS ? "⚠ large" : "",
         call.failed > 0 ? `${call.failed} failed` : "",
         call.truncatedResults > 0 ? `${call.truncatedResults} truncated` : "",
         call.measuredDurations > 0 ? `${durationLabel(call.totalDurationMs)} total` : "",
