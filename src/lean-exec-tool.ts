@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { stringify as stringifyYaml } from "yaml";
 import { prepareFabricExecArguments } from "./fabric-exec-arguments.js";
 import type { LeanFabricRuntime } from "./lean-runtime.js";
+import type { FabricSessionStats } from "./session-stats.js";
 import { renderLeanExecCall, renderLeanExecResult } from "./ui/lean-exec-render.js";
 import type { FabricResultInspectorLike } from "./ui/result-inspector.js";
 
@@ -21,6 +22,7 @@ const resultText = (value: unknown, format: string | undefined): string | undefi
 export const createLeanFabricExecTool = (
   runtime: LeanFabricRuntime,
   resultInspector?: FabricResultInspectorLike,
+  sessionStats?: FabricSessionStats,
 ): ToolDefinition<any, any, any> => defineTool({
   name: "fabric_exec",
   label: "Code Mode",
@@ -67,37 +69,60 @@ export const createLeanFabricExecTool = (
   },
   async execute(toolCallId, params, signal, onUpdate, context) {
     const code = Array.isArray(params.code) ? params.code.join("\n") : String(params.code ?? "");
-    const result = await runtime.execute({
-      code,
-      ...(params.strings ? { strings: params.strings } : {}),
-      signal,
-      parentToolCallId: toolCallId,
-      context,
-      onPartial(snapshot) {
-        onUpdate?.({
-          content: [],
-          details: {
-            audits: snapshot.audits,
-            ...(snapshot.progress ? { progress: snapshot.progress } : {}),
-          },
-        } as never);
-      },
-    });
+    const startedAt = performance.now();
+    let recorded = false;
+    try {
+      const result = await runtime.execute({
+        code,
+        ...(params.strings ? { strings: params.strings } : {}),
+        signal,
+        parentToolCallId: toolCallId,
+        context,
+        onPartial(snapshot) {
+          onUpdate?.({
+            content: [],
+            details: {
+              audits: snapshot.audits,
+              ...(snapshot.progress ? { progress: snapshot.progress } : {}),
+            },
+          } as never);
+        },
+      });
 
-    if (!result.success) {
-      const typeErrors = result.typeErrors?.map((error) => error.message).filter(Boolean) ?? [];
-      throw new Error(typeErrors.length > 0 ? typeErrors.join("\n") : result.error ?? "Code Mode execution failed");
-    }
-
-    const text = resultText(result.value, params.resultFormat);
-    return {
-      content: text === undefined || text === "" ? [] : [{ type: "text", text }],
-      details: {
-        success: true,
+      const text = resultText(result.value, params.resultFormat);
+      sessionStats?.recordExecution({
+        code,
+        ...(text === undefined ? {} : { resultText: text }),
+        success: result.success,
         elapsedMs: result.elapsedMs,
         audits: result.audits,
         trace: result.trace,
-      },
-    };
+      });
+      recorded = true;
+
+      if (!result.success) {
+        const typeErrors = result.typeErrors?.map((error) => error.message).filter(Boolean) ?? [];
+        throw new Error(typeErrors.length > 0 ? typeErrors.join("\n") : result.error ?? "Code Mode execution failed");
+      }
+
+      return {
+        content: text === undefined || text === "" ? [] : [{ type: "text", text }],
+        details: {
+          success: true,
+          elapsedMs: result.elapsedMs,
+          audits: result.audits,
+          trace: result.trace,
+        },
+      };
+    } catch (error) {
+      if (!recorded) {
+        sessionStats?.recordExecution({
+          code,
+          success: false,
+          elapsedMs: performance.now() - startedAt,
+        });
+      }
+      throw error;
+    }
   },
 });

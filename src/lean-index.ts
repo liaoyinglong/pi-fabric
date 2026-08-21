@@ -10,6 +10,7 @@ import { PI_CORE_TOOL_NAME_SET } from "./core/pi-tools.js";
 import { restoreSkillsForLeanPrompt } from "./core/skill-prompt.js";
 import { createLeanFabricExecTool } from "./lean-exec-tool.js";
 import { LeanFabricRuntime } from "./lean-runtime.js";
+import { FabricSessionStats } from "./session-stats.js";
 import { FabricResultInspector } from "./ui/result-inspector.js";
 
 const extensionPath = fileURLToPath(import.meta.url);
@@ -62,7 +63,8 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
   const capturedTools = new CapturedToolCatalog();
   const runtime = new LeanFabricRuntime(pi, capturedTools);
   const resultInspector = new FabricResultInspector();
-  const fabricTool = createLeanFabricExecTool(runtime, resultInspector);
+  const sessionStats = new FabricSessionStats();
+  const fabricTool = createLeanFabricExecTool(runtime, resultInspector, sessionStats);
   let savedActiveTools: string[] | undefined;
 
   const inactiveCapturePolicy = {
@@ -92,11 +94,25 @@ export default async function leanFabricExtension(pi: ExtensionAPI): Promise<voi
   });
 
   pi.registerTool(fabricTool);
+  pi.registerCommand("fabric", {
+    description: "Show current-session Fabric statistics",
+    getArgumentCompletions: (prefix) =>
+      "stats".startsWith(prefix.trim()) ? [{ value: "stats", label: "stats" }] : null,
+    handler: async (args, context) => {
+      const action = args.trim();
+      if (action && action !== "stats") {
+        context.ui.notify("Usage: /fabric stats", "info");
+        return;
+      }
+      context.ui.notify(sessionStats.format(), "info");
+    },
+  });
 
   pi.on("resources_discover", async () => ({ skillPaths: getLeanFabricSkillPaths() }));
 
   pi.on("session_start", async (_event, context) => {
     savedActiveTools = undefined;
+    sessionStats.reset();
     resultInspector.bind(context.mode === "tui" ? context.ui : undefined);
     await runtime.initialize(context);
     toolCapture.setPolicy(runtime.config.capture);

@@ -63,7 +63,7 @@ describe("Fabric execution trace V1", () => {
       kind: "pi-fabric.execution",
       version: 1,
       outcome: "succeeded",
-      operations: [{ ref: "demo.echo", outcome: "succeeded", args: {} }],
+      operations: [{ ref: "demo.echo", outcome: "succeeded", args: {}, resultChars: 24 }],
     });
     expect("phases" in result.trace).toBe(false);
     expect(JSON.stringify(result.trace)).not.toContain("secret-value");
@@ -156,6 +156,8 @@ describe("Fabric execution trace V1", () => {
       { sequence: 0, ref: "demo.one", outcome: "succeeded" },
       { sequence: 1, ref: "demo.two", outcome: "succeeded" },
     ]);
+    expect(trace.operations[0]?.resultChars).toBe(16);
+    expect(trace.operations[1]?.resultChars).toBeUndefined();
     expect(JSON.stringify(trace)).not.toContain("hidden");
   });
 });
