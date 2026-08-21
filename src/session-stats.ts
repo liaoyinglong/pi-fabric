@@ -231,8 +231,8 @@ export class FabricSessionStats {
     ref: string;
     success: boolean;
     failed: boolean;
-    durationMs?: number;
-    resultChars?: number;
+    durationMs?: number | undefined;
+    resultChars?: number | undefined;
     truncated: boolean;
   }): void {
     let stats = this.#calls.get(input.ref);
