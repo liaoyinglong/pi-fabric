@@ -26,8 +26,18 @@ describe("fabric_exec prompt contract", () => {
 
     expect(tool.description).toContain("large or unpredictable");
     expect(guidance).toContain("output size/shape is unknown or potentially large");
-    expect(guidance).toContain("filtering/counting/aggregating/parsing/comparing/transformation");
-    expect(guidance).toContain("short fixed observational output");
-    expect(guidance).toContain("return only compact evidence");
+    expect(guidance).toContain("filter, count, aggregate, parse, compare, or transform");
+    expect(guidance).toContain("smallest bounded evidence");
+    expect(guidance).toContain("do not forward raw logs");
+  });
+
+  it("tells the model to reduce shell and discovery output before returning", () => {
+    const tool = createLeanFabricExecTool({} as LeanFabricRuntime);
+    const guidance = (tool.promptGuidelines ?? []).join("\n");
+
+    expect(guidance).toContain("Treat shell stdout as data to reduce before returning");
+    expect(guidance).toContain("selected lines, counts, fields, or summaries");
+    expect(guidance).toContain("tools.search({query, limit:5})");
+    expect(guidance).toContain("schema-light summaries");
   });
 });
