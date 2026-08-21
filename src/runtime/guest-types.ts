@@ -28,16 +28,18 @@ interface FabricActionEffect {
   resources?: string[];
   ordering?: "commutative" | "ordered" | "unknown";
 }
-interface FabricAction {
+interface FabricActionSummary {
   ref: string;
   provider: string;
   name: string;
   description: string;
-  inputSchema: Record<string, unknown>;
-  outputSchema?: Record<string, unknown>;
   risk: "read" | "write" | "execute" | "network";
   namespace?: string;
   effect?: FabricActionEffect;
+}
+interface FabricAction extends FabricActionSummary {
+  inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
 }
 interface FabricCapabilityActionHead {
   key: string;
@@ -73,12 +75,28 @@ interface FabricCapabilityCatalog {
   complete: boolean;
   reasons: string[];
 }
+type FabricDiscoveryListArgs = {
+  provider?: string;
+  namespace?: string;
+  query?: string;
+  limit?: number;
+  includeSchemas?: false;
+};
+type FabricDiscoveryListWithSchemasArgs = Omit<FabricDiscoveryListArgs, "includeSchemas"> & {
+  includeSchemas: true;
+};
+type FabricDiscoverySearchArgs = { query: string; limit?: number; includeSchemas?: false };
+type FabricDiscoverySearchWithSchemasArgs = Omit<FabricDiscoverySearchArgs, "includeSchemas"> & {
+  includeSchemas: true;
+};
 interface FabricToolsApi {
   providers(): Promise<Array<{ name: string; description: string }>>;
   catalog(args?: { provider?: string; limit?: number }): Promise<FabricCapabilityCatalog>;
-  list(args?: { provider?: string; namespace?: string; query?: string; limit?: number }): Promise<FabricAction[]>;
-  search(query: string): Promise<FabricAction[]>;
-  search(args: { query: string; limit?: number }): Promise<FabricAction[]>;
+  list(args?: FabricDiscoveryListArgs): Promise<FabricActionSummary[]>;
+  list(args: FabricDiscoveryListWithSchemasArgs): Promise<FabricAction[]>;
+  search(query: string): Promise<FabricActionSummary[]>;
+  search(args: FabricDiscoverySearchArgs): Promise<FabricActionSummary[]>;
+  search(args: FabricDiscoverySearchWithSchemasArgs): Promise<FabricAction[]>;
   describe(args: { ref: string }): Promise<FabricAction>;
   call(args: { ref: string; args?: Record<string, unknown> }): Promise<unknown>;
   progress(args: { message: string }): Promise<void>;

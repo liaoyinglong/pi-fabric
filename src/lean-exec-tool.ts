@@ -33,6 +33,7 @@ export const createLeanFabricExecTool = (
     "Use fabric_exec to batch related tool operations. Use sequential await when one result determines the next step and Promise.all(...) only for independent work.",
     "Prefer fabric_exec when tool output size/shape is unknown or potentially large (repo-wide search, logs, list/query endpoints, browser/MCP snapshots), especially when you only need derived facts.",
     "If the task requires filtering/counting/aggregating/parsing/comparing/transformation, do that inside fabric_exec and return only compact evidence; use direct tools for short fixed observational output you intend to read verbatim.",
+    "For unfamiliar tools, use progressive discovery: tools.list()/tools.search() return schema-light summaries by default; select candidate refs, then call tools.describe({ref}) only for the tool(s) you intend to invoke. Avoid includeSchemas:true unless bulk schemas are genuinely required.",
     "Inside fabric_exec, Pi core tools are pi.read, pi.bash, pi.edit, pi.write, pi.grep, pi.find, and pi.ls; shell execution is pi.bash, not pi.exec.",
     "Inside fabric_exec, pi.read/pi.grep/pi.find/pi.ls return strings, while pi.bash/pi.edit/pi.write return {ok, output, details} envelopes.",
     "pi.bash accepts a command string/object or (command, options); options include timeout/timeoutMs/settle, not cwd. Change directory inside the command, and use settle: true when a nonzero exit is an expected result such as rg/grep finding no matches.",

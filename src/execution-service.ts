@@ -13,6 +13,7 @@ import {
 import {
   ActionRegistry,
   type FabricCallAudit,
+  type ResolvedFabricAction,
 } from "./core/action-registry.js";
 import {
   ApprovalController,
@@ -61,6 +62,16 @@ const executionOutcomeFromTermination = (
     case "runtime_error": return "failed";
   }
 };
+
+const discoverySummary = (action: ResolvedFabricAction) => ({
+  ref: action.ref,
+  provider: action.provider,
+  name: action.name,
+  description: action.description,
+  risk: action.risk,
+  ...(action.namespace === undefined ? {} : { namespace: action.namespace }),
+  ...(action.effect === undefined ? {} : { effect: action.effect }),
+});
 
 export interface FabricExecutionResult {
   success: boolean;
@@ -239,7 +250,7 @@ export class FabricExecutionService {
       let stage: FabricExecutionFailureStageV1 = "invoke";
       try {
         const value = await run((nextStage) => { stage = nextStage; });
-        operation.succeed(undefined);
+        operation.succeed(value);
         return value;
       } catch (error) {
         operation.fail(stage, error, executionOutcomeFromError(error, signal));
@@ -305,7 +316,7 @@ export class FabricExecutionService {
                       ? "resolve"
                       : "invoke",
                   );
-                  return this.registry.list(
+                  const actions = await this.registry.list(
                     {
                       ...(typeof args.provider === "string" ? { provider: args.provider } : {}),
                       ...(typeof args.namespace === "string" ? { namespace: args.namespace } : {}),
@@ -314,6 +325,7 @@ export class FabricExecutionService {
                     },
                     callContext,
                   );
+                  return args.includeSchemas === true ? actions : actions.map(discoverySummary);
                 },
               );
             case "fabric.$search":
@@ -321,11 +333,14 @@ export class FabricExecutionService {
                 "fabric.discovery.search",
                 args,
                 runtimeSignal,
-                () => this.registry.search(
-                  String(args.query ?? ""),
-                  callContext,
-                  typeof args.limit === "number" ? args.limit : undefined,
-                ),
+                async () => {
+                  const actions = await this.registry.search(
+                    String(args.query ?? ""),
+                    callContext,
+                    typeof args.limit === "number" ? args.limit : undefined,
+                  );
+                  return args.includeSchemas === true ? actions : actions.map(discoverySummary);
+                },
               );
             case "fabric.$describe":
               return traceAttempt(

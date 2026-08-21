@@ -44,6 +44,18 @@ Retained guest surfaces:
 
 Fabric-specific scheduling helpers such as `all({...})` are intentionally absent. Use the language runtime directly.
 
+## Progressive discovery
+
+Generic discovery is schema-lazy by default. Broad `tools.list()` and `tools.search()` calls return lightweight action summaries without input/output schemas.
+
+```ts
+const candidates = await tools.search({ query: "repository issue", limit: 10 });
+const descriptor = await tools.describe({ ref: candidates[0].ref });
+return descriptor.inputSchema;
+```
+
+Prefer `list/search -> choose refs -> describe selected refs -> call`. `includeSchemas: true` remains available as an explicit high-cost compatibility path for tasks that require many complete schemas at once.
+
 ## On-demand reference skill
 
 Fabric ships `fabric-exec` as a progressive, on-demand reference for exact guest ABI, MCP, captured-extension, discovery, and error-recovery details. The skill is documentation, not an orchestration layer.

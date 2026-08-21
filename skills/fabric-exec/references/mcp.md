@@ -35,12 +35,15 @@ return mcp.call({ server: "my-server", tool: "weird-tool-name", args: { q: "x" }
 
 ## Introspect an uncertain tool
 
-MCP tools are discoverable through the generic `tools` surface; refs are `mcp.<server>.<tool>`.
+MCP tools are discoverable through the generic `tools` surface; refs are `mcp.<server>.<tool>`. Discovery is schema-lazy: search/list first, then describe only the selected refs.
 
 ```ts
-const schema = await tools.describe({ ref: "mcp.context7.resolve_library_id" });
-// schema.inputSchema is the tool JSON Schema
+const matches = await tools.search({ query: "resolve library", limit: 5 });
+const schema = await tools.describe({ ref: matches[0].ref });
+// schema.inputSchema is the full tool JSON Schema
 ```
+
+Avoid `includeSchemas: true` during ordinary MCP discovery; use it only when the task genuinely needs many complete schemas at once.
 
 ## Notes
 

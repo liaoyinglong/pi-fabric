@@ -46,15 +46,26 @@ Known MCP tools use generated namespaces:
 return mcp.github.get_repo({ owner: "acme", repo: "app" });
 ```
 
-For unknown or computed refs:
+For unknown or computed refs, discovery is progressive by default:
 
 ```ts
-const matches = await tools.search({ query: "repository issue" });
+const matches = await tools.search({ query: "repository issue", limit: 10 });
 const descriptor = await tools.describe({ ref: matches[0].ref });
-return { matches, descriptor };
+return {
+  candidate: matches[0],
+  schema: descriptor.inputSchema,
+};
 ```
 
-Use `tools.call({ ref, args })` only when a direct namespace call is not practical.
+`tools.list()` and `tools.search()` return lightweight summaries and omit schemas. Choose the smallest relevant candidate set, then call `tools.describe({ ref })` only for refs whose argument shape is needed.
+
+Use `includeSchemas: true` only for bulk-schema tasks:
+
+```ts
+const full = await tools.list({ provider: "mcp", includeSchemas: true });
+```
+
+That path is intentionally explicit because it can produce large discovery payloads. Use `tools.call({ ref, args })` only when a direct namespace call is not practical.
 
 ## Skills
 
