@@ -59,6 +59,31 @@ return mcp.some_server.some_tool({ query: "..." });
 
 Use `tools.search`, `tools.describe`, and `tools.call` for unknown or computed refs. `tools.providers()` and `tools.catalog()` expose bounded discovery metadata.
 
+### Progressive discovery
+
+Discovery is schema-lazy by default. `tools.list()` and `tools.search()` return lightweight action summaries without `inputSchema` or `outputSchema`. Do not bulk-load schemas just to discover what tools exist.
+
+Preferred flow:
+
+```ts
+const candidates = await tools.search({ query: "repository issue", limit: 10 });
+const selected = candidates.slice(0, 2);
+const descriptors = await Promise.all(
+  selected.map(({ ref }) => tools.describe({ ref })),
+);
+return descriptors.map(({ ref, inputSchema }) => ({ ref, inputSchema }));
+```
+
+Use this sequence:
+
+1. `tools.providers()` / `tools.catalog()` when broad navigation is enough.
+2. `tools.list()` or `tools.search()` to get lightweight candidates.
+3. Choose the smallest relevant set of refs.
+4. `tools.describe({ ref })` only for those selected refs.
+5. Call the selected tool directly or with `tools.call({ ref, args })`.
+
+`includeSchemas: true` on `tools.list()` / `tools.search()` is an explicit compatibility escape hatch for genuine bulk-schema tasks. Treat it as high-cost: avoid it unless the task actually requires many schemas at once.
+
 Read `<skill-dir>/references/mcp.md` when exact MCP server-management, aliasing, or dynamic registration behavior matters.
 
 ## Progress and diagnostics
