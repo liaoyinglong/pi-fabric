@@ -67,6 +67,15 @@ A long explicit `pi.bash` timeout can raise the enclosing execution deadline eno
 
 Known Pi, captured extension, and MCP actions use direct namespaces. Generic discovery remains available through `tools.providers`, `tools.catalog`, `tools.list`, `tools.search`, and `tools.describe`. `tools.call` handles computed refs.
 
+Discovery follows progressive disclosure:
+
+- `tools.providers()` / `tools.catalog()` expose broad lightweight navigation metadata.
+- `tools.list()` / `tools.search()` return lightweight action summaries by default and omit input/output schemas.
+- `tools.describe({ ref })` fetches the full descriptor for one selected action.
+- `includeSchemas: true` on list/search is an explicit high-cost compatibility path for bulk-schema use cases, not the default discovery strategy.
+
+The model-facing guidance should therefore prefer `list/search -> choose refs -> describe selected refs -> call`, rather than bulk-loading every schema into a single execution result.
+
 ## Public protocol
 
 The npm `pi-fabric/protocol` entrypoint is intentionally narrow. It exposes the nested tool-call prefix plus the V1 tool-result proxy envelope and reader used by extension middleware.
