@@ -32,6 +32,7 @@ describe("FabricSessionStats", () => {
             ref: "fabric.discovery.list",
             args: {},
             outcome: "succeeded",
+            resultChars: 81_000,
           },
         ],
         counts: {
@@ -92,7 +93,9 @@ describe("FabricSessionStats", () => {
       expect.objectContaining({
         ref: "tools.list",
         calls: 1,
-        measuredResults: 0,
+        measuredResults: 1,
+        totalResultChars: 81_000,
+        maxResultChars: 81_000,
       }),
     ]));
 
@@ -102,7 +105,8 @@ describe("FabricSessionStats", () => {
     expect(rendered).toContain("~13k tokens est.");
     expect(rendered).toContain("pi.bash");
     expect(rendered).toContain("tools.list");
-    expect(rendered).toContain("result size n/a");
+    expect(rendered).toContain("81k chars");
+    expect(rendered).toContain("⚠ large");
   });
 
   it("resets with the active session", () => {
