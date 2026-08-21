@@ -74,7 +74,7 @@ Discovery follows progressive disclosure:
 - `tools.describe({ ref })` fetches the full descriptor for one selected action.
 - `includeSchemas: true` on list/search is an explicit high-cost compatibility path for bulk-schema use cases, not the default discovery strategy.
 
-The model-facing guidance should therefore prefer `list/search -> choose refs -> describe selected refs -> call`, rather than bulk-loading every schema into a single execution result.
+The model-facing guidance should prefer `list/search -> choose refs -> describe selected refs -> call` and avoid bulk-loading every schema into a single execution result.
 
 ## Public protocol
 
