@@ -13,6 +13,17 @@ description: >-
 
 Use ordinary TypeScript control flow. Sequential `await` is for dependent work. Use `Promise.all(...)` for independent calls. Fabric does not add a workflow or scheduling DSL.
 
+## Result economy
+
+Use `fabric_exec` to keep high-volume intermediate data inside the execution and return only the result needed by the caller. When a nested tool produces broad output, reduce it before `return`:
+
+- filter to relevant records or lines;
+- count, aggregate, compare, or parse inside TypeScript;
+- select only decision-critical fields;
+- keep raw logs, complete listings, and unused file contents out of the final result.
+
+Treat shell stdout as input data, not as the default final answer. For potentially large `pi.bash` output, narrow the command with focused filters where practical or parse `result.output` in TypeScript and return selected lines, counts, fields, or a short summary.
+
 ## Pi tools
 
 In Code Mode, call Pi core tools through `pi.*`:
@@ -66,7 +77,7 @@ Discovery is schema-lazy by default. `tools.list()` and `tools.search()` return 
 Preferred flow:
 
 ```ts
-const candidates = await tools.search({ query: "repository issue", limit: 10 });
+const candidates = await tools.search({ query: "repository issue", limit: 5 });
 const selected = candidates.slice(0, 2);
 const descriptors = await Promise.all(
   selected.map(({ ref }) => tools.describe({ ref })),
@@ -77,12 +88,12 @@ return descriptors.map(({ ref, inputSchema }) => ({ ref, inputSchema }));
 Use this sequence:
 
 1. `tools.providers()` / `tools.catalog()` when broad navigation is enough.
-2. `tools.list()` or `tools.search()` to get lightweight candidates.
+2. `tools.list()` or `tools.search()` with a small explicit limit to get lightweight candidates.
 3. Choose the smallest relevant set of refs.
 4. `tools.describe({ ref })` only for those selected refs.
 5. Call the selected tool directly or with `tools.call({ ref, args })`.
 
-`includeSchemas: true` on `tools.list()` / `tools.search()` is an explicit compatibility escape hatch for genuine bulk-schema tasks. Treat it as high-cost: avoid it unless the task actually requires many schemas at once.
+`includeSchemas: true` on `tools.list()` / `tools.search()` is an explicit compatibility escape hatch for bulk-schema tasks. Treat it as high-cost: avoid it unless the task requires many schemas at once.
 
 Read `<skill-dir>/references/mcp.md` when exact MCP server-management, aliasing, or dynamic registration behavior matters.
 
