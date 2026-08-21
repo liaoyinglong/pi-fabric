@@ -98,7 +98,7 @@ export const renderLeanExecCall = (
 
   const title = `${theme.fg("toolTitle", theme.bold("fabric"))}${
     displayName ? ` ${theme.fg("accent", displayName)}` : ""
-  } ${theme.fg("dim", `TypeScript · ${countLabel(lines.length, "line")}`)}`;
+  } ${theme.fg("dim", `TypeScript · ${countLabel(lines.length, "line")} · ${compactCount(rawCode.length)} chars`)}`;
 
   const limit = expanded ? lines.length : Math.min(lines.length, COLLAPSED_CODE_LINES);
   const shown = lines.slice(0, limit);
