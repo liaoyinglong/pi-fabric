@@ -41,6 +41,7 @@ export interface FabricExecutionTraceOperationV1 {
   failureStage?: FabricExecutionFailureStageV1;
   error?: string;
   result?: FabricTraceJsonValue;
+  resultChars?: number;
   resultTruncated?: boolean;
 }
 
@@ -88,6 +89,7 @@ interface MutableOperation {
   failureStage?: FabricExecutionFailureStageV1;
   error?: Sanitized<string>;
   result?: Sanitized<FabricTraceJsonValue>;
+  resultChars?: number;
   resultTruncated?: boolean;
   droppedResultValues: number;
 }
@@ -103,6 +105,14 @@ const emptyCounts = (): MutableCounts => ({
 
 const byteLength = (value: string): number => Buffer.byteLength(value, "utf8");
 const serializedBytes = (value: unknown): number => byteLength(JSON.stringify(value));
+const serializedChars = (value: unknown): number | undefined => {
+  if (value === undefined) return undefined;
+  try {
+    return JSON.stringify(value)?.length;
+  } catch {
+    return undefined;
+  }
+};
 
 const truncateUtf8 = (value: string, maxBytes: number): string => {
   if (byteLength(value) <= maxBytes) return value;
@@ -406,6 +416,8 @@ export class FabricExecutionTraceOperationHandle {
 
   succeed(result: unknown, meta?: TraceResultMeta): void {
     if (!this.operation || this.recorder.sealed) return;
+    const resultChars = serializedChars(result);
+    if (resultChars !== undefined) this.operation.resultChars = resultChars;
     const projected = projectFabricAuditResult(this.operation.projectionRef, result);
     if (projected !== undefined) {
       this.operation.result = sanitize(projected.value, MAX_RESULT_BYTES);
@@ -439,6 +451,8 @@ export class FabricExecutionTraceOperationHandle {
     );
     this.operation.outcome = outcome;
     if (meta?.resultTruncated === true) this.operation.resultTruncated = true;
+    const resultChars = serializedChars(result);
+    if (resultChars !== undefined) this.operation.resultChars = resultChars;
     const projected = projectFabricAuditResult(this.operation.projectionRef, result);
     if (projected !== undefined) {
       this.operation.result = sanitize(projected.value, MAX_RESULT_BYTES);
@@ -535,6 +549,7 @@ export class FabricExecutionTraceRecorder {
         ...(operation.failureStage ? { failureStage: operation.failureStage } : {}),
         ...(operation.error ? { error: operation.error.value } : {}),
         ...(operation.result ? { result: operation.result.value } : {}),
+        ...(operation.resultChars === undefined ? {} : { resultChars: operation.resultChars }),
         ...(operation.resultTruncated === true ? { resultTruncated: true as const } : {}),
       };
     });
@@ -638,7 +653,7 @@ const isFabricExecutionTraceOperationV1Unchecked = (
   if (!isRecord(value)) return false;
   if (!hasOnlyKeys(value, [
     "type", "sequence", "ref", "provider", "action", "args", "outcome",
-    "failureStage", "error", "result", "resultTruncated",
+    "failureStage", "error", "result", "resultChars", "resultTruncated",
   ])) return false;
   if (value.type !== "call" || !Number.isSafeInteger(value.sequence) || (value.sequence as number) < 0) {
     return false;
@@ -651,6 +666,9 @@ const isFabricExecutionTraceOperationV1Unchecked = (
     return false;
   }
   if (value.error !== undefined && typeof value.error !== "string") return false;
+  if (value.resultChars !== undefined && (!Number.isSafeInteger(value.resultChars) || (value.resultChars as number) < 0)) {
+    return false;
+  }
   if (value.resultTruncated !== undefined && typeof value.resultTruncated !== "boolean") return false;
   return value.result === undefined || isJsonValue(value.result);
 };
