@@ -57,9 +57,9 @@ return {
 };
 ```
 
-`tools.list()` and `tools.search()` return lightweight summaries and omit schemas. Choose the smallest relevant candidate set, then call `tools.describe({ ref })` only for the refs whose argument shape you actually need.
+`tools.list()` and `tools.search()` return lightweight summaries and omit schemas. Choose the smallest relevant candidate set, then call `tools.describe({ ref })` only for refs whose argument shape is needed.
 
-Use `includeSchemas: true` only for genuine bulk-schema tasks:
+Use `includeSchemas: true` only for bulk-schema tasks:
 
 ```ts
 const full = await tools.list({ provider: "mcp", includeSchemas: true });
